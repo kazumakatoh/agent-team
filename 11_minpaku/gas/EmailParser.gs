@@ -204,13 +204,8 @@ function parseBookingEmail(msg) {
       status:    '予約'
     };
 
-    // 予約番号：Booking Ref: 8桁数字を最優先
-    const idMatch = body.match(/Booking Ref[：:\s]*(\d{8})/i) ||
-                    body.match(/予約ID[：:\s]*(\d+)/i) ||
-                    body.match(/予約番号[：:\s]*(\d+)/) ||
-                    body.match(/Booking number[：:\s]*(\d+)/i) ||
-                    body.match(/Booking Ref[：:\s]*(\d+)/i) ||
-                    body.match(/Reservation number[：:\s]*(\d+)/i);
+    // 予約番号：「Booking Ref:」以降の8桁数字のみ
+    const idMatch = body.match(/Booking Ref[：:\s]*(\d{8})/i);
     data.reservationId = idMatch ? `BC_${idMatch[1]}` : `BC_${msg.getId().substring(0,8)}`;
 
     // チェックイン・チェックアウト（英語日付形式: "Fri 13 Mar 2026" も対応）
@@ -322,8 +317,7 @@ function parseCancellationEmail(msg) {
               body.match(/予約コード[：:\s]*([A-Z0-9]+)/i);
     reservationId = m ? m[1] : null;
   } else {
-    const m = body.match(/予約ID[：:\s]*(\d+)/i) ||
-              body.match(/Booking Ref[：:\s]+([0-9]+)/i);
+    const m = body.match(/Booking Ref[：:\s]*(\d{8})/i);
     reservationId = m ? `BC_${m[1]}` : null;
   }
   if (!reservationId) return null;
