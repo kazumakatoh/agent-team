@@ -56,12 +56,17 @@ function parseAirbnbEmail(msg) {
   const from    = msg.getFrom();
 
   // Airbnbからのメールか確認
+  const isBeds24 = from.includes('email.master@co-reception.com');
   const isAirbnb = CONFIG.GMAIL.FROM.AIRBNB.some(f => from.includes(f)) ||
                    from.includes('airbnb');
   if (!isAirbnb) return null;
 
-  // 予約確定メールか確認
-  const isConfirmation = CONFIG.GMAIL.SUBJECTS.AIRBNB.some(s =>
+  // Beds24経由の場合、件名末尾でAirbnbか判定
+  if (isBeds24 && !subject.includes('- Airbnb') && !subject.includes('Airbnb')) return null;
+
+  // 予約確定メールか確認（キャンセル・変更は除外）
+  const isCancel = CONFIG.GMAIL.SUBJECTS.CANCEL.some(s => subject.includes(s));
+  const isConfirmation = !isCancel && CONFIG.GMAIL.SUBJECTS.AIRBNB.some(s =>
     subject.includes(s)
   );
   if (!isConfirmation) return null;
@@ -71,7 +76,7 @@ function parseAirbnbEmail(msg) {
       emailId:     msg.getId(),
       platform:    'Airbnb',
       bookedDate:  msg.getDate(),
-      status:      '確定'
+      status:      '予約'
     };
 
     // 予約ID（例: HM... または数字、Beds24形式も対応）
@@ -157,11 +162,17 @@ function parseBookingEmail(msg) {
   const body    = msg.getPlainBody();
   const from    = msg.getFrom();
 
+  const isBeds24Booking = from.includes('email.master@co-reception.com');
   const isBooking = CONFIG.GMAIL.FROM.BOOKING.some(f => from.includes(f)) ||
                     from.includes('booking.com');
   if (!isBooking) return null;
 
-  const isConfirmation = CONFIG.GMAIL.SUBJECTS.BOOKING.some(s =>
+  // Beds24経由の場合、件名末尾でBooking.comか判定
+  if (isBeds24Booking && subject.includes('- Airbnb')) return null;
+
+  // キャンセルメールは除外
+  const isCancel = CONFIG.GMAIL.SUBJECTS.CANCEL.some(s => subject.includes(s));
+  const isConfirmation = !isCancel && CONFIG.GMAIL.SUBJECTS.BOOKING.some(s =>
     subject.includes(s)
   );
   if (!isConfirmation) return null;
@@ -172,7 +183,7 @@ function parseBookingEmail(msg) {
       emailId:   msg.getId(),
       platform:  'Booking.com',
       bookedDate: msg.getDate(),
-      status:    isModified ? '変更' : '確定'
+      status:    isModified ? 'キャンセル' : '予約'
     };
 
     // 予約番号（Beds24形式: "予約ID: 83458884" も対応）
@@ -266,16 +277,27 @@ function parseCancellationEmail(msg) {
                    body.includes('キャンセル');
   if (!isCancel) return null;
 
+  // プラットフォームを件名から判定
+  const platform = subject.includes('- Airbnb') ? 'Airbnb' : 'Booking.com';
+
   // 予約IDを抽出（AirbnbコードまたはBooking Ref）
-  const idMatch = body.match(/Airbnb\s+([A-Z0-9]{6,})/i) ||
-                  body.match(/Booking Ref[：:\s]+([0-9]+)/i) ||
-                  body.match(/予約コード[：:\s]*([A-Z0-9]+)/i);
-  if (!idMatch) return null;
+  let reservationId = null;
+  if (platform === 'Airbnb') {
+    const m = body.match(/Airbnb\s+([A-Z0-9]{6,})/i) ||
+              body.match(/予約コード[：:\s]*([A-Z0-9]+)/i);
+    reservationId = m ? m[1] : null;
+  } else {
+    const m = body.match(/予約ID[：:\s]*(\d+)/i) ||
+              body.match(/Booking Ref[：:\s]+([0-9]+)/i);
+    reservationId = m ? `BC_${m[1]}` : null;
+  }
+  if (!reservationId) return null;
 
   return {
-    reservationId: idMatch[1],
-    emailId:       msg.getId(),
-    cancelDate:    msg.getDate()
+    reservationId,
+    platform,
+    emailId:    msg.getId(),
+    cancelDate: msg.getDate()
   };
 }
 

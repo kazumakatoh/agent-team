@@ -65,6 +65,34 @@ function dailyAggregation() {
 // ==============================
 
 /**
+ * 既存データのステータスを一括修正する（確定→予約、変更→キャンセル）
+ */
+function fixExistingStatuses() {
+  const ss    = getSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.RESERVATIONS);
+  if (!sheet || sheet.getLastRow() <= 1) return;
+
+  const C = CONFIG.RESERVATION_COLS;
+  const lastRow = sheet.getLastRow();
+  const statuses = sheet.getRange(2, C.STATUS, lastRow - 1, 1).getValues();
+  let fixed = 0;
+
+  statuses.forEach((row, i) => {
+    const s = String(row[0]);
+    if (s === '確定') {
+      sheet.getRange(i + 2, C.STATUS).setValue('予約');
+      fixed++;
+    } else if (s === '変更') {
+      sheet.getRange(i + 2, C.STATUS).setValue('キャンセル');
+      fixed++;
+    }
+  });
+
+  Logger.log(`ステータス一括修正: ${fixed}件`);
+  SpreadsheetApp.getUi().alert(`✅ ステータス修正完了\n・${fixed}件を更新しました`);
+}
+
+/**
  * 今すぐGmailを確認して予約を取り込む（手動実行用）
  */
 function runManualEmailCheck() {
