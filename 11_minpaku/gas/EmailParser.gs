@@ -79,11 +79,10 @@ function parseAirbnbEmail(msg) {
       status:      '予約'
     };
 
-    // 予約ID: HM始まりのAirbnbコードを最優先、次にConfirmation code
-    const idMatch = subject.match(/\b(HM[A-Z0-9]{6,})\b/) ||
-                    body.match(/\b(HM[A-Z0-9]{6,})\b/) ||
-                    body.match(/Confirmation code[：:\s]*([A-Z0-9]+)/i) ||
-                    body.match(/予約コード[：:\s]*([A-Z0-9]+)/i);
+    // 予約ID: Beds24が割り振る「Booking Ref: 8桁」を最優先、次に「予約ID: 8桁」
+    // AirbnbのHMコードやConfirmation codeはプラットフォーム依存のため採用しない
+    const idMatch = body.match(/Booking Ref[：:\s]*(\d{8})/i) ||
+                    body.match(/予約ID[：:\s]*(\d{8})/);
     data.reservationId = idMatch ? idMatch[1] : `AB_${msg.getId().substring(0,8)}`;
 
     // チェックイン・チェックアウト日
@@ -202,9 +201,11 @@ function parseBookingEmail(msg) {
       status:    '予約'
     };
 
-    // 予約番号：「Booking Ref:」以降の8桁数字のみ
-    const idMatch = body.match(/Booking Ref[：:\s]*(\d{8})/i);
-    data.reservationId = idMatch ? `BC_${idMatch[1]}` : `BC_${msg.getId().substring(0,8)}`;
+    // 予約番号：Beds24が割り振る「Booking Ref: 8桁」を最優先、次に「予約ID: 8桁」
+    // BC_ プレフィックスは付けない（Airbnbと統一したBeds24番号を採用）
+    const idMatch = body.match(/Booking Ref[：:\s]*(\d{8})/i) ||
+                    body.match(/予約ID[：:\s]*(\d{8})/);
+    data.reservationId = idMatch ? idMatch[1] : `BC_${msg.getId().substring(0,8)}`;
 
     // チェックイン・チェックアウト（英語日付形式: "Fri 13 Mar 2026" も対応）
     const enDate2 = /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{4})/i;
@@ -308,16 +309,11 @@ function parseCancellationEmail(msg) {
   // プラットフォームを件名末尾から判定
   const platform = detectPlatformFromSubject_(subject) || 'Booking.com';
 
-  // 予約IDを抽出（AirbnbコードまたはBooking Ref）
+  // 予約IDを抽出（Beds24の「Booking Ref: 8桁」を最優先、両プラットフォーム共通）
   let reservationId = null;
-  if (platform === 'Airbnb') {
-    const m = body.match(/Airbnb\s+([A-Z0-9]{6,})/i) ||
-              body.match(/予約コード[：:\s]*([A-Z0-9]+)/i);
-    reservationId = m ? m[1] : null;
-  } else {
-    const m = body.match(/Booking Ref[：:\s]*(\d{8})/i);
-    reservationId = m ? `BC_${m[1]}` : null;
-  }
+  const beds24Match = body.match(/Booking Ref[：:\s]*(\d{8})/i) ||
+                      body.match(/予約ID[：:\s]*(\d{8})/);
+  reservationId = beds24Match ? beds24Match[1] : null;
   if (!reservationId) return null;
 
   return {
