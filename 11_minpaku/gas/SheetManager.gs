@@ -24,47 +24,57 @@ function writeReservations(reservations) {
   const sheet = ss.getSheetByName(CONFIG.SHEETS.RESERVATIONS);
   if (!sheet) throw new Error(`シート「${CONFIG.SHEETS.RESERVATIONS}」が見つかりません。Setupを実行してください。`);
 
-  // 既存のEmailIDセットを取得（重複防止）
-  const lastRow      = sheet.getLastRow();
-  const existingIds  = new Set();
+  // 既存データを取得（EmailID重複防止 & 予約ID更新用）
+  const lastRow = sheet.getLastRow();
+  const existingEmailIds = new Set();
+  const reservationIdToRow = {}; // 予約ID → 行番号
+  const C = CONFIG.RESERVATION_COLS;
   if (lastRow > 1) {
-    const emailIdCol = CONFIG.RESERVATION_COLS.EMAIL_ID;
-    const ids = sheet.getRange(2, emailIdCol, lastRow - 1, 1).getValues();
-    ids.forEach(row => { if (row[0]) existingIds.add(String(row[0])); });
+    const allData = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+    allData.forEach((row, i) => {
+      if (row[C.EMAIL_ID - 1]) existingEmailIds.add(String(row[C.EMAIL_ID - 1]));
+      if (row[C.ID - 1]) reservationIdToRow[String(row[C.ID - 1])] = i + 2; // 行番号(1始まり)
+    });
   }
 
   let added = 0;
-  const C = CONFIG.RESERVATION_COLS;
 
   reservations.forEach(r => {
-    if (existingIds.has(r.emailId)) {
+    if (existingEmailIds.has(r.emailId)) {
       Logger.log(`スキップ（重複）: ${r.reservationId}`);
       return;
     }
 
-    const netRevenue = r.revenue - r.commission - r.cleaningFee;
-    const newRow = new Array(15).fill('');
+    const netRevenue = r.revenue - r.commission - (r.cleaningFee || 0);
+    const rowData = new Array(15).fill('');
+    rowData[C.ID           - 1] = r.reservationId  || '';
+    rowData[C.PLATFORM     - 1] = r.platform        || '';
+    rowData[C.BOOKED_DATE  - 1] = r.bookedDate      || new Date();
+    rowData[C.CHECKIN      - 1] = r.checkin         || '';
+    rowData[C.CHECKOUT     - 1] = r.checkout        || '';
+    rowData[C.NIGHTS       - 1] = r.nights          || 0;
+    rowData[C.GUESTS       - 1] = r.guests          || 1;
+    rowData[C.GUEST_NAME   - 1] = r.guestName       || '';
+    rowData[C.REVENUE      - 1] = r.revenue         || 0;
+    rowData[C.COMMISSION   - 1] = r.commission      || 0;
+    rowData[C.CLEANING_FEE - 1] = r.cleaningFee     || 0;
+    rowData[C.NET_REVENUE  - 1] = netRevenue;
+    rowData[C.STATUS       - 1] = r.status          || '確定';
+    rowData[C.NOTES        - 1] = r.notes           || '';
+    rowData[C.EMAIL_ID     - 1] = r.emailId         || '';
 
-    newRow[C.ID           - 1] = r.reservationId  || '';
-    newRow[C.PLATFORM     - 1] = r.platform        || '';
-    newRow[C.BOOKED_DATE  - 1] = r.bookedDate      || new Date();
-    newRow[C.CHECKIN      - 1] = r.checkin         || '';
-    newRow[C.CHECKOUT     - 1] = r.checkout        || '';
-    newRow[C.NIGHTS       - 1] = r.nights          || 0;
-    newRow[C.GUESTS       - 1] = r.guests          || 1;
-    newRow[C.GUEST_NAME   - 1] = r.guestName       || '';
-    newRow[C.REVENUE      - 1] = r.revenue         || 0;
-    newRow[C.COMMISSION   - 1] = r.commission      || 0;
-    newRow[C.CLEANING_FEE - 1] = r.cleaningFee     || 0;
-    newRow[C.NET_REVENUE  - 1] = netRevenue;
-    newRow[C.STATUS       - 1] = r.status          || '確定';
-    newRow[C.NOTES        - 1] = r.notes           || '';
-    newRow[C.EMAIL_ID     - 1] = r.emailId         || '';
+    // 同じ予約IDが既存行にある場合は更新（変更メール対応）
+    const existingRow = reservationIdToRow[String(r.reservationId)];
+    if (existingRow && r.status === '変更') {
+      sheet.getRange(existingRow, 1, 1, 15).setValues([rowData]);
+      Logger.log(`予約更新（変更）: ${r.reservationId}`);
+    } else {
+      sheet.appendRow(rowData);
+      Logger.log(`予約追加: ${r.reservationId} (${r.platform})`);
+    }
 
-    sheet.appendRow(newRow);
-    existingIds.add(r.emailId);
+    existingEmailIds.add(r.emailId);
     added++;
-    Logger.log(`予約追加: ${r.reservationId} (${r.platform})`);
   });
 
   // 日付列のフォーマット

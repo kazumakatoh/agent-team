@@ -49,7 +49,8 @@ const CONFIG = {
         'New booking',
         'Booking confirmation',
         '予約確認',
-        '予約:'
+        '予約:',
+        'Booking Modified:'
       ],
       CANCEL: [
         '予約キャンセルになりました',

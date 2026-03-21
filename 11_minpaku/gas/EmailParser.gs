@@ -167,30 +167,43 @@ function parseBookingEmail(msg) {
   if (!isConfirmation) return null;
 
   try {
+    const isModified = subject.includes('Booking Modified');
     const data = {
       emailId:   msg.getId(),
       platform:  'Booking.com',
       bookedDate: msg.getDate(),
-      status:    '確定'
+      status:    isModified ? '変更' : '確定'
     };
 
-    // 予約番号
-    const idMatch = body.match(/予約番号[：:\s]*(\d+)/) ||
+    // 予約番号（Beds24形式: "予約ID: 83458884" も対応）
+    const idMatch = body.match(/予約ID[：:\s]*(\d+)/i) ||
+                    body.match(/予約番号[：:\s]*(\d+)/) ||
                     body.match(/Booking number[：:\s]*(\d+)/i) ||
+                    body.match(/Booking Ref[：:\s]*(\d+)/i) ||
                     body.match(/Reservation number[：:\s]*(\d+)/i);
     data.reservationId = idMatch ? `BC_${idMatch[1]}` : `BC_${msg.getId().substring(0,8)}`;
 
-    // チェックイン・チェックアウト
+    // チェックイン・チェックアウト（英語日付形式: "Fri 13 Mar 2026" も対応）
+    const enDate2 = /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{4})/i;
+    const checkinLine  = body.match(/チェックイン[^\n]*\n?([^\n]+)/) || body.match(/チェックイン\s+\S+\s+(\d.+)/);
+    const checkoutLine = body.match(/チェックアウト[^\n]*\n?([^\n]+)/) || body.match(/チェックアウト\s+\S+\s+(\d.+)/);
+
     const checkinMatch = body.match(/チェックイン[：:\s]*(\d{4})[年\/\-](\d{1,2})[月\/\-](\d{1,2})/) ||
+                         body.match(/チェックイン\s+\w+\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})/i) ||
                          body.match(/Check-?in[：:\s]*(\w+)\s+(\d{1,2}),?\s+(\d{4})/i);
     const checkoutMatch = body.match(/チェックアウト[：:\s]*(\d{4})[年\/\-](\d{1,2})[月\/\-](\d{1,2})/) ||
+                          body.match(/チェックアウト\s+\w+\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})/i) ||
                           body.match(/Check-?out[：:\s]*(\w+)\s+(\d{1,2}),?\s+(\d{4})/i);
 
     if (checkinMatch && checkoutMatch) {
-      // 日本語形式
       if (/^\d{4}$/.test(checkinMatch[1])) {
+        // 日本語形式: 年/月/日
         data.checkin  = new Date(checkinMatch[1], checkinMatch[2] - 1, checkinMatch[3]);
         data.checkout = new Date(checkoutMatch[1], checkoutMatch[2] - 1, checkoutMatch[3]);
+      } else if (/^\d{1,2}$/.test(checkinMatch[1])) {
+        // 英語形式: DD Mon YYYY
+        data.checkin  = new Date(`${checkinMatch[2]} ${checkinMatch[1]}, ${checkinMatch[3]}`);
+        data.checkout = new Date(`${checkoutMatch[2]} ${checkoutMatch[1]}, ${checkoutMatch[3]}`);
       } else {
         data.checkin  = new Date(`${checkinMatch[1]} ${checkinMatch[2]}, ${checkinMatch[3]}`);
         data.checkout = new Date(`${checkoutMatch[1]} ${checkoutMatch[2]}, ${checkoutMatch[3]}`);
@@ -198,18 +211,27 @@ function parseBookingEmail(msg) {
       data.nights = Math.round((data.checkout - data.checkin) / (1000 * 60 * 60 * 24));
     }
 
-    // 宿泊人数
-    const guestMatch = body.match(/(\d+)\s*(名|人|大人|guests?|adults?)/i);
-    data.guests = guestMatch ? parseInt(guestMatch[1]) : 1;
+    // 宿泊人数（大人+子供の合計、Beds24形式対応）
+    const adultMatch = body.match(/大人\s*(\d+)/);
+    const childMatch = body.match(/子供\s*(\d+)/);
+    if (adultMatch) {
+      data.guests = parseInt(adultMatch[1]) + (childMatch ? parseInt(childMatch[1]) : 0);
+    } else {
+      const guestMatch = body.match(/(\d+)\s*(名|人|guests?|adults?)/i);
+      data.guests = guestMatch ? parseInt(guestMatch[1]) : 1;
+    }
 
-    // ゲスト名
-    const nameMatch = body.match(/ゲスト名[：:\s]+([^\n\r]+)/) ||
+    // ゲスト名（Beds24形式: "名前 CZARINA CATAMBING" も対応）
+    const nameMatch = body.match(/^名前\s+(.+)$/im) ||
+                      body.match(/ゲスト名[：:\s]+([^\n\r]+)/) ||
                       body.match(/Guest name[：:\s]+([^\n\r]+)/i) ||
-                      body.match(/Name[：:\s]+([^\n\r]+)/i);
+                      body.match(/^Name\s+(.+)$/im);
     data.guestName = nameMatch ? nameMatch[1].trim() : '';
 
-    // 売上
-    const priceMatch = body.match(/合計金額[：:\s]*[¥￥]?\s*([\d,]+)/) ||
+    // 売上（Beds24形式: "価格 69,779.00" も対応）
+    const priceMatch = body.match(/^価格\s+([\d,]+(?:\.\d+)?)/im) ||
+                       body.match(/合計金額[：:\s]*[¥￥]?\s*([\d,]+)/) ||
+                       body.match(/Total Price\s+([\d,]+(?:\.\d+)?)/i) ||
                        body.match(/Total[：:\s]*[¥￥]?\s*([\d,]+)/i) ||
                        body.match(/[¥￥]([\d,]+)/);
     data.revenue = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) : 0;
