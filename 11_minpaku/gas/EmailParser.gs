@@ -74,9 +74,10 @@ function parseAirbnbEmail(msg) {
       status:      '確定'
     };
 
-    // 予約ID（例: HM... または数字）
+    // 予約ID（例: HM... または数字、Beds24形式も対応）
     const idMatch = body.match(/予約コード[：:\s]*([A-Z0-9]+)/i) ||
                     body.match(/Confirmation code[：:\s]*([A-Z0-9]+)/i) ||
+                    body.match(/Airbnb\s+([A-Z0-9]{6,})/i) ||
                     body.match(/([A-Z]{2}[0-9]{9})/);
     data.reservationId = idMatch ? idMatch[1] : `AB_${msg.getId().substring(0,8)}`;
 
@@ -111,17 +112,20 @@ function parseAirbnbEmail(msg) {
       data.nights   = Math.round((uniqueDates[1] - uniqueDates[0]) / (1000 * 60 * 60 * 24));
     }
 
-    // 宿泊人数
-    const guestMatch = body.match(/(\d+)\s*(名|人|ゲスト|guests?)/i);
+    // 宿泊人数（Beds24形式: "People 2" も対応）
+    const guestMatch = body.match(/(\d+)\s*(名|人|ゲスト|guests?)/i) ||
+                       body.match(/^People\s+(\d+)/im);
     data.guests = guestMatch ? parseInt(guestMatch[1]) : 1;
 
-    // ゲスト名
+    // ゲスト名（Beds24形式: "Name Rene Kolenkovic" も対応）
     const guestNameMatch = body.match(/ゲスト[：:\s]+([^\n\r]+)/) ||
-                           body.match(/Guest[：:\s]+([^\n\r]+)/i);
+                           body.match(/Guest[：:\s]+([^\n\r]+)/i) ||
+                           body.match(/^Name\s+(.+)$/im);
     data.guestName = guestNameMatch ? guestNameMatch[1].trim() : '';
 
-    // 売上（金額）
+    // 売上（金額）（Beds24形式: "Total Price 88,813.00" も対応）
     const priceMatch = body.match(/合計[：:\s]*[¥￥]?\s*([\d,]+)/) ||
+                       body.match(/Total Price\s+([\d,]+(?:\.\d+)?)/i) ||
                        body.match(/Total[：:\s]*[¥￥$]?\s*([\d,]+)/i) ||
                        body.match(/[¥￥]([\d,]+)/);
     data.revenue = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) : 0;

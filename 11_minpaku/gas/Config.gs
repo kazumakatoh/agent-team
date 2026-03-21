@@ -41,13 +41,15 @@ const CONFIG = {
         '予約確定',
         'Reservation confirmed',
         'New reservation',
-        '予約リクエストが承認されました'
+        '予約リクエストが承認されました',
+        '予約:'
       ],
       BOOKING: [
         '新しい予約',
         'New booking',
         'Booking confirmation',
-        '予約確認'
+        '予約確認',
+        '予約:'
       ]
     },
     FROM: {
