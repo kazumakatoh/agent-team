@@ -285,7 +285,7 @@ function renderCharts_(sheet, ss, monthlyRows, dataStartRow) {
        .setValues([['稼働率(%)', ...occupancies]]);
 
   // 売上・利益グラフ
-  const revenueChart = ss.newChart()
+  const revenueChart = sheet.newChart()
     .setChartType(Charts.ChartType.COLUMN)
     .addRange(sheet.getRange(chartDataRow + 1, 1, 3, labels.length + 1))
     .setPosition(chartDataRow + 6, 1, 0, 0)
@@ -298,7 +298,7 @@ function renderCharts_(sheet, ss, monthlyRows, dataStartRow) {
   sheet.insertChart(revenueChart);
 
   // 稼働率グラフ
-  const occupancyChart = ss.newChart()
+  const occupancyChart = sheet.newChart()
     .setChartType(Charts.ChartType.LINE)
     .addRange(sheet.getRange(chartDataRow + 1, 1, 1, labels.length + 1))
     .addRange(sheet.getRange(chartDataRow + 4, 1, 1, labels.length + 1))
