@@ -78,16 +78,18 @@ const CONFIG = {
     CHECKOUT:       5,  // E: チェックアウト日
     NIGHTS:         6,  // F: 宿泊数
     GUESTS:         7,  // G: 人数
-    GUEST_NAME:     8,  // H: ゲスト名
-    REVENUE:        9,  // I: 売上（Total Price / 合計金額）
-    ACCOMMODATION: 10,  // J: 宿泊料（Base Price / Standard Rate合計）
-    CLEANING_FEE:  11,  // K: 清掃費（ゲスト負担の売上の一部・費用ではない）
-    OTA_FEE:       12,  // L: OTA手数料（Host Fee / Total Commission）
-    TRANSFER_FEE:  13,  // M: 振込手数料（Airbnb:0 / Payment Charge）
-    PAYOUT:        14,  // N: 入金金額（Expected Payout Amount）
-    STATUS:        15,  // O: ステータス
-    NOTES:         16,  // P: 備考
-    EMAIL_ID:      17   // Q: GmailメッセージID（重複防止）
+    USAGE_DAYS:     8,  // H: 利用日数（宿泊数＋1）
+    TOTAL_GUESTS:   9,  // I: 総利用人数（利用日数×人数）
+    GUEST_NAME:    10,  // J: ゲスト名
+    REVENUE:       11,  // K: 売上（Total Price / 合計金額）
+    ACCOMMODATION: 12,  // L: 宿泊料（Base Price / Standard Rate合計）
+    CLEANING_FEE:  13,  // M: 清掃費（ゲスト負担の売上の一部・費用ではない）
+    OTA_FEE:       14,  // N: OTA手数料（Host Fee / Total Commission）
+    TRANSFER_FEE:  15,  // O: 振込手数料（Airbnb:0 / Payment Charge）
+    PAYOUT:        16,  // P: 入金金額（Expected Payout Amount）
+    STATUS:        17,  // Q: ステータス
+    NOTES:         18,  // R: 備考
+    EMAIL_ID:      19   // S: GmailメッセージID（重複防止）
   },
 
   // ==============================

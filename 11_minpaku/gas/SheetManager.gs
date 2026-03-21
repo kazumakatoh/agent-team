@@ -29,7 +29,7 @@ function writeReservations(reservations) {
   const existingEmailIds = new Set();
   const reservationIdToRow = {}; // 予約ID → 行番号
   const C = CONFIG.RESERVATION_COLS;
-  const NUM_COLS = 17;
+  const NUM_COLS = 19;
   if (lastRow > 1) {
     const allData = sheet.getRange(2, 1, lastRow - 1, NUM_COLS).getValues();
     allData.forEach((row, i) => {
@@ -46,14 +46,21 @@ function writeReservations(reservations) {
       return;
     }
 
+    const nights    = r.nights  || 0;
+    const guests    = r.guests  || 1;
+    const usageDays = r.usageDays   != null ? r.usageDays   : nights + 1;
+    const totalGuests = r.totalGuests != null ? r.totalGuests : usageDays * guests;
+
     const rowData = new Array(NUM_COLS).fill('');
     rowData[C.ID            - 1] = r.reservationId   || '';
     rowData[C.PLATFORM      - 1] = r.platform         || '';
     rowData[C.BOOKED_DATE   - 1] = r.bookedDate       || new Date();
     rowData[C.CHECKIN       - 1] = r.checkin          || '';
     rowData[C.CHECKOUT      - 1] = r.checkout         || '';
-    rowData[C.NIGHTS        - 1] = r.nights           || 0;
-    rowData[C.GUESTS        - 1] = r.guests           || 1;
+    rowData[C.NIGHTS        - 1] = nights;
+    rowData[C.GUESTS        - 1] = guests;
+    rowData[C.USAGE_DAYS    - 1] = usageDays;
+    rowData[C.TOTAL_GUESTS  - 1] = totalGuests;
     rowData[C.GUEST_NAME    - 1] = r.guestName        || '';
     rowData[C.REVENUE       - 1] = r.revenue          || 0;
     rowData[C.ACCOMMODATION - 1] = r.accommodationFee || 0;
@@ -125,7 +132,7 @@ function getMonthlyReservationData(year, month) {
   if (!sheet || sheet.getLastRow() <= 1) return buildEmptyMonthData_(year, month);
 
   const C    = CONFIG.RESERVATION_COLS;
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 17).getValues();
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 19).getValues();
 
   let revenue      = 0;
   let otaFee       = 0;
@@ -353,7 +360,7 @@ function formatReservationSheet_(sheet) {
   // 交互に色付け
   for (let i = 2; i <= lastRow; i++) {
     const bg = i % 2 === 0 ? '#f8f9fa' : '#ffffff';
-    sheet.getRange(i, 1, 1, 17).setBackground(bg);
+    sheet.getRange(i, 1, 1, 19).setBackground(bg);
   }
 }
 

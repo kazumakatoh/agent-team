@@ -228,32 +228,38 @@ function runReservationSheetMigration() {
     return;
   }
 
-  // 既存データを全件読み込み（旧15列想定）
-  const oldData = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+  // 既存データを全件読み込み（旧17列想定）
+  const oldData = sheet.getRange(2, 1, lastRow - 1, 17).getValues();
 
   // 旧列インデックス（0始まり）
-  // 旧: ID=0, Platform=1, BookedDate=2, Checkin=3, Checkout=4,
-  //     Nights=5, Guests=6, GuestName=7, Revenue=8, Commission=9,
-  //     CleaningFee=10, NetRevenue=11, Status=12, Notes=13, EmailId=14
+  // 旧17列: ID=0, Platform=1, BookedDate=2, Checkin=3, Checkout=4,
+  //         Nights=5, Guests=6, GuestName=7, Revenue=8, Accommodation=9,
+  //         CleaningFee=10, OtaFee=11, TransferFee=12, Payout=13,
+  //         Status=14, Notes=15, EmailId=16
   const newRows = oldData.map(row => {
-    const newRow = new Array(17).fill('');
-    newRow[0]  = row[0];  // 予約ID
-    newRow[1]  = row[1];  // プラットフォーム
-    newRow[2]  = row[2];  // 予約受付日
-    newRow[3]  = row[3];  // チェックイン
-    newRow[4]  = row[4];  // チェックアウト
-    newRow[5]  = row[5];  // 宿泊数
-    newRow[6]  = row[6];  // 人数
-    newRow[7]  = row[7];  // ゲスト名
-    newRow[8]  = row[8];  // 売上（旧: Revenue → そのまま）
-    newRow[9]  = 0;       // 宿泊料（旧データなし → 0）
-    newRow[10] = row[10]; // 清掃費（旧: CleaningFee → そのまま）
-    newRow[11] = row[9];  // OTA手数料（旧: Commission → L列へ）
-    newRow[12] = 0;       // 振込手数料（旧データなし → 0）
-    newRow[13] = 0;       // 入金金額（旧データなし → 0）
-    newRow[14] = row[12]; // ステータス（旧: Status → O列へ）
-    newRow[15] = row[13]; // 備考（旧: Notes → P列へ）
-    newRow[16] = row[14]; // メールID（旧: EmailId → Q列へ）
+    const nights    = Number(row[5]) || 0;
+    const guests    = Number(row[6]) || 1;
+    const usageDays = nights + 1;
+    const newRow = new Array(19).fill('');
+    newRow[0]  = row[0];       // 予約ID
+    newRow[1]  = row[1];       // プラットフォーム
+    newRow[2]  = row[2];       // 予約受付日
+    newRow[3]  = row[3];       // チェックイン
+    newRow[4]  = row[4];       // チェックアウト
+    newRow[5]  = nights;       // 宿泊数
+    newRow[6]  = guests;       // 人数
+    newRow[7]  = usageDays;    // 利用日数（新列）
+    newRow[8]  = usageDays * guests; // 総利用人数（新列）
+    newRow[9]  = row[7];       // ゲスト名
+    newRow[10] = row[8];       // 売上
+    newRow[11] = row[9];       // 宿泊料
+    newRow[12] = row[10];      // 清掃費
+    newRow[13] = row[11];      // OTA手数料
+    newRow[14] = row[12];      // 振込手数料
+    newRow[15] = row[13];      // 入金金額
+    newRow[16] = row[14];      // ステータス
+    newRow[17] = row[15];      // 備考
+    newRow[18] = row[16];      // メールID
     return newRow;
   });
 
@@ -261,17 +267,17 @@ function runReservationSheetMigration() {
   sheet.clearContents();
   applyReservationHeaders_(sheet);
   if (newRows.length > 0) {
-    sheet.getRange(2, 1, newRows.length, 17).setValues(newRows);
+    sheet.getRange(2, 1, newRows.length, 19).setValues(newRows);
   }
   applyReservationColumnWidths_(sheet);
 
-  Logger.log(`マイグレーション完了: ${newRows.length}件を17列構造に変換しました`);
+  Logger.log(`マイグレーション完了: ${newRows.length}件を19列構造に変換しました`);
 
   try {
     SpreadsheetApp.getUi().alert(
-      `✅ マイグレーション完了\n\n${newRows.length}件のデータを新しい17列構造に変換しました。\n\n` +
-      '※ 宿泊料・振込手数料・入金金額は旧データに存在しないため0になっています。\n' +
-      '再バックフィルを実行すると正確な値が取り込まれます。'
+      `✅ マイグレーション完了\n\n${newRows.length}件のデータを新しい19列構造に変換しました。\n\n` +
+      '追加列: 利用日数（宿泊数+1）・総利用人数（利用日数×人数）\n' +
+      '※ 既存データは宿泊数・人数から自動計算しました。'
     );
   } catch (e) {}
 }
@@ -279,7 +285,7 @@ function runReservationSheetMigration() {
 function applyReservationHeaders_(sheet) {
   const headers = [
     '予約ID', 'プラットフォーム', '予約受付日', 'チェックイン', 'チェックアウト',
-    '宿泊数', '人数', 'ゲスト名',
+    '宿泊数', '人数', '利用日数', '総利用人数', 'ゲスト名',
     '売上', '宿泊料', '清掃費', 'OTA手数料', '振込手数料', '入金金額',
     'ステータス', '備考', 'メールID'
   ];
@@ -288,7 +294,7 @@ function applyReservationHeaders_(sheet) {
 }
 
 function applyReservationColumnWidths_(sheet) {
-  const widths = [150, 120, 110, 110, 110, 70, 60, 150, 100, 100, 80, 100, 90, 110, 80, 200, 180];
+  const widths = [150, 120, 110, 110, 110, 70, 60, 80, 100, 150, 100, 100, 80, 100, 90, 110, 80, 200, 180];
   widths.forEach((w, i) => sheet.setColumnWidth(i + 1, w));
 }
 

@@ -148,6 +148,10 @@ function parseAirbnbEmail(msg) {
                          body.match(/Host Fee[：:\s]*([-\d,]+)/i);
     data.otaFee = hostFeeMatch ? Math.abs(parseInt(hostFeeMatch[1].replace(/,/g, ''))) : 0;
 
+    // 利用日数・総利用人数
+    data.usageDays   = (data.nights || 0) + 1;
+    data.totalGuests = data.usageDays * (data.guests || 1);
+
     // 振込手数料：Airbnbはメール記載なし → 常に0
     data.transferFee = 0;
 
@@ -198,8 +202,9 @@ function parseBookingEmail(msg) {
       status:    '予約'
     };
 
-    // 予約番号（Beds24形式: "予約ID: 83458884" も対応）
-    const idMatch = body.match(/予約ID[：:\s]*(\d+)/i) ||
+    // 予約番号：Booking Ref: 8桁数字を最優先
+    const idMatch = body.match(/Booking Ref[：:\s]*(\d{8})/i) ||
+                    body.match(/予約ID[：:\s]*(\d+)/i) ||
                     body.match(/予約番号[：:\s]*(\d+)/) ||
                     body.match(/Booking number[：:\s]*(\d+)/i) ||
                     body.match(/Booking Ref[：:\s]*(\d+)/i) ||
@@ -276,6 +281,10 @@ function parseBookingEmail(msg) {
     const transferMatch = body.match(/Payment Charge\s+([\d,]+(?:\.\d+)?)/i) ||
                           body.match(/Payment Charge[：:\s]*([\d,]+)/i);
     data.transferFee = transferMatch ? parseInt(transferMatch[1].replace(/,/g, '')) : 0;
+
+    // 利用日数・総利用人数
+    data.usageDays   = (data.nights || 0) + 1;
+    data.totalGuests = data.usageDays * (data.guests || 1);
 
     // 入金金額：売上 - OTA手数料 - 振込手数料
     data.payoutAmount = data.revenue - data.otaFee - data.transferFee;
