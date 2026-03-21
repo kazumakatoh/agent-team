@@ -322,20 +322,20 @@ function processCancellationEmails(sinceDate) {
         return ` after:${Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy/MM/dd')}`;
       })();
 
-  const query = `(${fromAddresses})${datePart} -label:${CONFIG.GMAIL.PROCESSED_LABEL}`;
+  // キャンセルメールは処理済みラベルを除外しない（すでにラベル付きでも再処理する）
+  const query = `(${fromAddresses})${datePart}`;
   const threads = GmailApp.search(query, 0, 500);
 
   let updated = 0;
   threads.forEach(thread => {
     thread.getMessages().forEach(msg => {
+      // 件名で「予約キャンセルになりました:」のみ対象
+      if (!msg.getSubject().startsWith('予約キャンセルになりました:')) return;
       const cancel = parseCancellationEmail(msg);
       if (cancel) {
         const result = updateReservationStatus(cancel.reservationId, 'キャンセル');
-        if (result) {
-          updated++;
-          msg.getThread().addLabel(processedLabel);
-          Logger.log(`キャンセル処理: ${cancel.reservationId}`);
-        }
+        if (result) updated++;
+        Logger.log(`キャンセル処理: ${cancel.reservationId} → ${result ? '成功' : '予約ID未発見'}`);
       }
     });
   });
