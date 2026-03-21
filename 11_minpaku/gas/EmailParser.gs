@@ -83,7 +83,9 @@ function parseAirbnbEmail(msg) {
     const idMatch = body.match(/予約コード[：:\s]*([A-Z0-9]+)/i) ||
                     body.match(/Confirmation code[：:\s]*([A-Z0-9]+)/i) ||
                     body.match(/Airbnb\s+([A-Z0-9]{6,})/i) ||
-                    body.match(/([A-Z]{2}[0-9]{9})/);
+                    body.match(/([A-Z]{2}[0-9]{9})/) ||
+                    subject.match(/\b(HM[A-Z0-9]{6,})\b/) ||
+                    body.match(/\b(HM[A-Z0-9]{6,})\b/);
     data.reservationId = idMatch ? idMatch[1] : `AB_${msg.getId().substring(0,8)}`;
 
     // チェックイン・チェックアウト日
