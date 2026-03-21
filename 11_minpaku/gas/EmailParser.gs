@@ -128,20 +128,33 @@ function parseAirbnbEmail(msg) {
                            body.match(/^Name\s+(.+)$/im);
     data.guestName = guestNameMatch ? guestNameMatch[1].trim() : '';
 
-    // 売上（金額）（Beds24形式: "Total Price 88,813.00" も対応）
-    const priceMatch = body.match(/合計[：:\s]*[¥￥]?\s*([\d,]+)/) ||
-                       body.match(/Total Price\s+([\d,]+(?:\.\d+)?)/i) ||
-                       body.match(/Total[：:\s]*[¥￥$]?\s*([\d,]+)/i) ||
-                       body.match(/[¥￥]([\d,]+)/);
+    // 売上：Total Price（ゲストが支払う合計金額）
+    const priceMatch = body.match(/Total Price\s+([\d,]+(?:\.\d+)?)/i) ||
+                       body.match(/合計[：:\s]*[¥￥]?\s*([\d,]+)/);
     data.revenue = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) : 0;
 
-    // 清掃費
-    const cleaningMatch = body.match(/清掃[料費][：:\s]*[¥￥]?\s*([\d,]+)/) ||
+    // 宿泊料：Base Price
+    const basePriceMatch = body.match(/Base Price\s+([\d,]+(?:\.\d+)?)\s*JPY/i) ||
+                           body.match(/Base Price[：:\s]*([\d,]+)/i);
+    data.accommodationFee = basePriceMatch ? parseInt(basePriceMatch[1].replace(/,/g, '')) : 0;
+
+    // 清掃費：Cleaning fee（費用ではなくゲスト負担の売上の一部）
+    const cleaningMatch = body.match(/Cleaning fee\s+([\d,]+(?:\.\d+)?)\s*JPY/i) ||
                           body.match(/Cleaning fee[：:\s]*[¥￥$]?\s*([\d,]+)/i);
     data.cleaningFee = cleaningMatch ? parseInt(cleaningMatch[1].replace(/,/g, '')) : 0;
 
-    // 手数料計算（Airbnbホスト手数料は売上の3%）
-    data.commission = Math.round(data.revenue * CONFIG.COMMISSION_RATE.AIRBNB);
+    // OTA手数料：Host Fee（Airbnbに支払う販売手数料・負の値で記載されるため絶対値）
+    const hostFeeMatch = body.match(/Host Fee\s*([-\d,]+(?:\.\d+)?)\s*JPY/i) ||
+                         body.match(/Host Fee[：:\s]*([-\d,]+)/i);
+    data.otaFee = hostFeeMatch ? Math.abs(parseInt(hostFeeMatch[1].replace(/,/g, ''))) : 0;
+
+    // 振込手数料：Airbnbはメール記載なし → 常に0
+    data.transferFee = 0;
+
+    // 入金金額：Expected Payout Amount
+    const payoutMatch = body.match(/Expected Payout Amount\s+([\d,]+(?:\.\d+)?)\s*JPY/i) ||
+                        body.match(/Expected Payout Amount[：:\s]*([\d,]+)/i);
+    data.payoutAmount = payoutMatch ? parseInt(payoutMatch[1].replace(/,/g, '')) : 0;
 
     Logger.log(`Airbnb予約解析成功: ${data.reservationId} (${data.checkin} - ${data.checkout})`);
     return data;
@@ -238,20 +251,36 @@ function parseBookingEmail(msg) {
                       body.match(/^Name\s+(.+)$/im);
     data.guestName = nameMatch ? nameMatch[1].trim() : '';
 
-    // 売上（Beds24形式: "価格 69,779.00" も対応）
-    const priceMatch = body.match(/^価格\s+([\d,]+(?:\.\d+)?)/im) ||
-                       body.match(/合計金額[：:\s]*[¥￥]?\s*([\d,]+)/) ||
-                       body.match(/Total Price\s+([\d,]+(?:\.\d+)?)/i) ||
-                       body.match(/Total[：:\s]*[¥￥]?\s*([\d,]+)/i) ||
-                       body.match(/[¥￥]([\d,]+)/);
+    // 売上：合計金額（Beds24形式: "価格 69,779.00" も対応）
+    const priceMatch = body.match(/合計金額[：:\s]*[¥￥]?\s*([\d,]+)/) ||
+                       body.match(/^価格\s+([\d,]+(?:\.\d+)?)/im) ||
+                       body.match(/Total Price\s+([\d,]+(?:\.\d+)?)/i);
     data.revenue = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) : 0;
 
-    // 清掃費
-    const cleaningMatch = body.match(/清掃[料費][：:\s]*[¥￥]?\s*([\d,]+)/);
-    data.cleaningFee = cleaningMatch ? parseInt(cleaningMatch[1].replace(/,/g, '')) : 0;
+    // 宿泊料：Standard Rate（連泊の場合は複数行を合算）
+    // 例: "Standard Rate) JPY 69779" の形式
+    const standardRateMatches = [...body.matchAll(/Standard Rate[^0-9\n]*([\d,]+)/gi)];
+    data.accommodationFee = standardRateMatches.reduce(
+      (sum, m) => sum + parseInt(m[1].replace(/,/g, '')), 0
+    );
 
-    // Booking.com手数料（売上の15%）
-    data.commission = Math.round(data.revenue * CONFIG.COMMISSION_RATE.BOOKING);
+    // 清掃費：メール記載なし → 固定14,410円（費用ではなくゲスト負担の売上の一部）
+    data.cleaningFee = 14410;
+
+    // OTA手数料：Total Commission（Booking.comに支払う販売手数料）
+    const commissionMatch = body.match(/Total Commission\s+([\d,]+(?:\.\d+)?)/i) ||
+                            body.match(/Total Commission[：:\s]*([\d,]+)/i);
+    data.otaFee = commissionMatch ? parseInt(commissionMatch[1].replace(/,/g, '')) : 0;
+
+    // 振込手数料：Payment Charge
+    const transferMatch = body.match(/Payment Charge\s+([\d,]+(?:\.\d+)?)/i) ||
+                          body.match(/Payment Charge[：:\s]*([\d,]+)/i);
+    data.transferFee = transferMatch ? parseInt(transferMatch[1].replace(/,/g, '')) : 0;
+
+    // 入金金額：Expected Payout Amount
+    const payoutMatch = body.match(/Expected Payout Amount\s+([\d,]+(?:\.\d+)?)/i) ||
+                        body.match(/Expected Payout Amount[：:\s]*([\d,]+)/i);
+    data.payoutAmount = payoutMatch ? parseInt(payoutMatch[1].replace(/,/g, '')) : 0;
 
     Logger.log(`Booking.com予約解析成功: ${data.reservationId}`);
     return data;

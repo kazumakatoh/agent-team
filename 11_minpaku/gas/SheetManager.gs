@@ -29,8 +29,9 @@ function writeReservations(reservations) {
   const existingEmailIds = new Set();
   const reservationIdToRow = {}; // 予約ID → 行番号
   const C = CONFIG.RESERVATION_COLS;
+  const NUM_COLS = 17;
   if (lastRow > 1) {
-    const allData = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+    const allData = sheet.getRange(2, 1, lastRow - 1, NUM_COLS).getValues();
     allData.forEach((row, i) => {
       if (row[C.EMAIL_ID - 1]) existingEmailIds.add(String(row[C.EMAIL_ID - 1]));
       if (row[C.ID - 1]) reservationIdToRow[String(row[C.ID - 1])] = i + 2; // 行番号(1始まり)
@@ -45,28 +46,29 @@ function writeReservations(reservations) {
       return;
     }
 
-    const netRevenue = r.revenue - r.commission - (r.cleaningFee || 0);
-    const rowData = new Array(15).fill('');
-    rowData[C.ID           - 1] = r.reservationId  || '';
-    rowData[C.PLATFORM     - 1] = r.platform        || '';
-    rowData[C.BOOKED_DATE  - 1] = r.bookedDate      || new Date();
-    rowData[C.CHECKIN      - 1] = r.checkin         || '';
-    rowData[C.CHECKOUT     - 1] = r.checkout        || '';
-    rowData[C.NIGHTS       - 1] = r.nights          || 0;
-    rowData[C.GUESTS       - 1] = r.guests          || 1;
-    rowData[C.GUEST_NAME   - 1] = r.guestName       || '';
-    rowData[C.REVENUE      - 1] = r.revenue         || 0;
-    rowData[C.COMMISSION   - 1] = r.commission      || 0;
-    rowData[C.CLEANING_FEE - 1] = r.cleaningFee     || 0;
-    rowData[C.NET_REVENUE  - 1] = netRevenue;
-    rowData[C.STATUS       - 1] = r.status          || '確定';
-    rowData[C.NOTES        - 1] = r.notes           || '';
-    rowData[C.EMAIL_ID     - 1] = r.emailId         || '';
+    const rowData = new Array(NUM_COLS).fill('');
+    rowData[C.ID            - 1] = r.reservationId   || '';
+    rowData[C.PLATFORM      - 1] = r.platform         || '';
+    rowData[C.BOOKED_DATE   - 1] = r.bookedDate       || new Date();
+    rowData[C.CHECKIN       - 1] = r.checkin          || '';
+    rowData[C.CHECKOUT      - 1] = r.checkout         || '';
+    rowData[C.NIGHTS        - 1] = r.nights           || 0;
+    rowData[C.GUESTS        - 1] = r.guests           || 1;
+    rowData[C.GUEST_NAME    - 1] = r.guestName        || '';
+    rowData[C.REVENUE       - 1] = r.revenue          || 0;
+    rowData[C.ACCOMMODATION - 1] = r.accommodationFee || 0;
+    rowData[C.CLEANING_FEE  - 1] = r.cleaningFee      || 0;
+    rowData[C.OTA_FEE       - 1] = r.otaFee           || 0;
+    rowData[C.TRANSFER_FEE  - 1] = r.transferFee      || 0;
+    rowData[C.PAYOUT        - 1] = r.payoutAmount      || 0;
+    rowData[C.STATUS        - 1] = r.status           || '予約';
+    rowData[C.NOTES         - 1] = r.notes            || '';
+    rowData[C.EMAIL_ID      - 1] = r.emailId          || '';
 
     // 同じ予約IDが既存行にある場合は更新（変更メール対応）
     const existingRow = reservationIdToRow[String(r.reservationId)];
     if (existingRow && r.status === '変更') {
-      sheet.getRange(existingRow, 1, 1, 15).setValues([rowData]);
+      sheet.getRange(existingRow, 1, 1, NUM_COLS).setValues([rowData]);
       Logger.log(`予約更新（変更）: ${r.reservationId}`);
     } else {
       sheet.appendRow(rowData);
@@ -123,13 +125,15 @@ function getMonthlyReservationData(year, month) {
   if (!sheet || sheet.getLastRow() <= 1) return buildEmptyMonthData_(year, month);
 
   const C    = CONFIG.RESERVATION_COLS;
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 15).getValues();
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 17).getValues();
 
-  let revenue     = 0;
-  let commission  = 0;
-  let cleaningFee = 0;
-  let guests      = 0;
-  let usageDays   = 0; // 稼働日数（ステイ中の日数）
+  let revenue      = 0;
+  let otaFee       = 0;
+  let transferFee  = 0;
+  let payout       = 0;
+  let cleaningFee  = 0;
+  let guests       = 0;
+  let usageDays    = 0;
   let bookingCount = 0;
 
   data.forEach(row => {
@@ -147,7 +151,9 @@ function getMonthlyReservationData(year, month) {
 
     bookingCount++;
     revenue     += Number(row[C.REVENUE      - 1]) || 0;
-    commission  += Number(row[C.COMMISSION   - 1]) || 0;
+    otaFee      += Number(row[C.OTA_FEE      - 1]) || 0;
+    transferFee += Number(row[C.TRANSFER_FEE - 1]) || 0;
+    payout      += Number(row[C.PAYOUT       - 1]) || 0;
     cleaningFee += Number(row[C.CLEANING_FEE - 1]) || 0;
     guests      += Number(row[C.GUESTS       - 1]) || 0;
     usageDays   += Number(row[C.NIGHTS       - 1]) || 0;
@@ -160,8 +166,10 @@ function getMonthlyReservationData(year, month) {
     usageDays,
     guests,
     revenue,
-    commission,
-    cleaningFee
+    otaFee,
+    transferFee,
+    payout,
+    cleaningFee  // ゲスト負担分（参考値。費用は経費入力シートで管理）
   };
 }
 
@@ -237,15 +245,15 @@ function updateMonthlySheet(fiscalYear) {
     const costData = getMonthlyCostData(year, month);
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    // 清掃費は予約リストからの合計 + 経費入力シートの値を合算
-    const totalCleaning   = resData.cleaningFee + costData.cleaning;
-    const totalCosts      = totalCleaning + costData.supplies + costData.utilities + costData.rent + costData.other;
-    const netRevenue      = resData.revenue - resData.commission;
-    const profit          = netRevenue - totalCosts;
+    // 清掃費（経費）は経費入力シートの値のみ（予約リストの清掃費はゲスト負担の売上）
+    const totalCleaning = costData.cleaning;
+    const totalCosts    = totalCleaning + costData.supplies + costData.utilities + costData.rent + costData.other;
+    const netRevenue    = resData.payout || (resData.revenue - resData.otaFee - resData.transferFee);
+    const profit        = netRevenue - totalCosts;
 
     const kpis = KPICalculator.calcMonthlyKPIs({
       revenue:    resData.revenue,
-      commission: resData.commission,
+      commission: resData.otaFee,
       usageDays:  resData.usageDays,
       daysInMonth,
       totalCosts
@@ -265,7 +273,7 @@ function updateMonthlySheet(fiscalYear) {
       resData.bookingCount,
       resData.guests,
       resData.revenue,
-      resData.commission,
+      resData.otaFee,
       totalCleaning,
       costData.supplies,
       costData.utilities,
@@ -337,7 +345,7 @@ function formatReservationSheet_(sheet) {
   });
 
   // 金額フォーマット
-  [C.REVENUE, C.COMMISSION, C.CLEANING_FEE, C.NET_REVENUE].forEach(col => {
+  [C.REVENUE, C.ACCOMMODATION, C.CLEANING_FEE, C.OTA_FEE, C.TRANSFER_FEE, C.PAYOUT].forEach(col => {
     sheet.getRange(2, col, lastRow - 1, 1)
          .setNumberFormat('¥#,##0');
   });
@@ -345,7 +353,7 @@ function formatReservationSheet_(sheet) {
   // 交互に色付け
   for (let i = 2; i <= lastRow; i++) {
     const bg = i % 2 === 0 ? '#f8f9fa' : '#ffffff';
-    sheet.getRange(i, 1, 1, 15).setBackground(bg);
+    sheet.getRange(i, 1, 1, 17).setBackground(bg);
   }
 }
 

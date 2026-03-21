@@ -312,6 +312,7 @@ function onOpen() {
     .addItem('❌ キャンセルメールを処理', 'runCancellationCheck')
     .addSeparator()
     .addItem('⚙️ 初期セットアップ', 'runSetup')
+    .addItem('🔄 列構造マイグレーション（旧15列→新17列）', 'runReservationSheetMigration')
     .addItem('⏰ 定期実行トリガー設定', 'setupTriggers')
     .addToUi();
 }

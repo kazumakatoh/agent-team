@@ -68,33 +68,26 @@ const CONFIG = {
   },
 
   // ==============================
-  // 手数料率
-  // ==============================
-  COMMISSION_RATE: {
-    AIRBNB:  0.03, // ホスト手数料3%
-    BOOKING: 0.15, // Booking.com手数料15%
-    OTHER:   0.10
-  },
-
-  // ==============================
   // 予約リストのカラム定義（A列=1始まり）
   // ==============================
   RESERVATION_COLS: {
-    ID:           1,  // A: 予約ID
-    PLATFORM:     2,  // B: プラットフォーム
-    BOOKED_DATE:  3,  // C: 予約受付日
-    CHECKIN:      4,  // D: チェックイン日
-    CHECKOUT:     5,  // E: チェックアウト日
-    NIGHTS:       6,  // F: 宿泊数
-    GUESTS:       7,  // G: 人数
-    GUEST_NAME:   8,  // H: ゲスト名
-    REVENUE:      9,  // I: 売上（税込）
-    COMMISSION:  10,  // J: 手数料
-    CLEANING_FEE:11,  // K: 清掃費
-    NET_REVENUE: 12,  // L: 純売上（=売上-手数料-清掃費）
-    STATUS:      13,  // M: ステータス
-    NOTES:       14,  // N: 備考
-    EMAIL_ID:    15   // O: GmailメッセージID（重複防止）
+    ID:             1,  // A: 予約ID
+    PLATFORM:       2,  // B: プラットフォーム
+    BOOKED_DATE:    3,  // C: 予約受付日
+    CHECKIN:        4,  // D: チェックイン日
+    CHECKOUT:       5,  // E: チェックアウト日
+    NIGHTS:         6,  // F: 宿泊数
+    GUESTS:         7,  // G: 人数
+    GUEST_NAME:     8,  // H: ゲスト名
+    REVENUE:        9,  // I: 売上（Total Price / 合計金額）
+    ACCOMMODATION: 10,  // J: 宿泊料（Base Price / Standard Rate合計）
+    CLEANING_FEE:  11,  // K: 清掃費（ゲスト負担の売上の一部・費用ではない）
+    OTA_FEE:       12,  // L: OTA手数料（Host Fee / Total Commission）
+    TRANSFER_FEE:  13,  // M: 振込手数料（Airbnb:0 / Payment Charge）
+    PAYOUT:        14,  // N: 入金金額（Expected Payout Amount）
+    STATUS:        15,  // O: ステータス
+    NOTES:         16,  // P: 備考
+    EMAIL_ID:      17   // Q: GmailメッセージID（重複防止）
   },
 
   // ==============================

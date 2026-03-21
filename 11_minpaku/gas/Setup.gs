@@ -58,36 +58,8 @@ function setupReservationSheet_(ss) {
   }
 
   sheet = ss.insertSheet(CONFIG.SHEETS.RESERVATIONS);
-
-  const headers = [
-    '予約ID', 'プラットフォーム', '予約受付日', 'チェックイン', 'チェックアウト',
-    '宿泊数', '人数', 'ゲスト名', '売上', '手数料', '清掃費', '純売上',
-    'ステータス', '備考', 'メールID'
-  ];
-
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  styleSheet_(sheet, headers.length, {
-    headerBg:     '#34a853',
-    headerColor:  '#ffffff',
-    freeze:       1
-  });
-
-  // 列幅設定
-  sheet.setColumnWidth(1, 150);  // 予約ID
-  sheet.setColumnWidth(2, 120);  // プラットフォーム
-  sheet.setColumnWidth(3, 110);  // 予約受付日
-  sheet.setColumnWidth(4, 110);  // チェックイン
-  sheet.setColumnWidth(5, 110);  // チェックアウト
-  sheet.setColumnWidth(6, 70);   // 宿泊数
-  sheet.setColumnWidth(7, 60);   // 人数
-  sheet.setColumnWidth(8, 150);  // ゲスト名
-  sheet.setColumnWidth(9, 100);  // 売上
-  sheet.setColumnWidth(10, 90);  // 手数料
-  sheet.setColumnWidth(11, 80);  // 清掃費
-  sheet.setColumnWidth(12, 100); // 純売上
-  sheet.setColumnWidth(13, 80);  // ステータス
-  sheet.setColumnWidth(14, 200); // 備考
-  sheet.setColumnWidth(15, 180); // メールID
+  applyReservationHeaders_(sheet);
+  applyReservationColumnWidths_(sheet);
 
   Logger.log(`シート「${CONFIG.SHEETS.RESERVATIONS}」を作成しました`);
 }
@@ -234,6 +206,90 @@ function styleSheet_(sheet, numCols, options) {
              .setVerticalAlignment('middle');
   sheet.setRowHeight(1, 36);
   if (freeze) sheet.setFrozenRows(freeze);
+}
+
+/**
+ * 予約リストを旧15列から新17列構造にマイグレーションする
+ * 既存データを保持しつつヘッダーと列構造を更新する
+ * ※ 実行前に必ずスプレッドシートをバックアップしてください
+ */
+function runReservationSheetMigration() {
+  const ss    = getSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.RESERVATIONS);
+  if (!sheet) {
+    Logger.log('予約リストシートが存在しません。Setupを先に実行してください。');
+    return;
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    Logger.log('データなし。ヘッダーのみ更新します。');
+    applyReservationHeaders_(sheet);
+    return;
+  }
+
+  // 既存データを全件読み込み（旧15列想定）
+  const oldData = sheet.getRange(2, 1, lastRow - 1, 15).getValues();
+
+  // 旧列インデックス（0始まり）
+  // 旧: ID=0, Platform=1, BookedDate=2, Checkin=3, Checkout=4,
+  //     Nights=5, Guests=6, GuestName=7, Revenue=8, Commission=9,
+  //     CleaningFee=10, NetRevenue=11, Status=12, Notes=13, EmailId=14
+  const newRows = oldData.map(row => {
+    const newRow = new Array(17).fill('');
+    newRow[0]  = row[0];  // 予約ID
+    newRow[1]  = row[1];  // プラットフォーム
+    newRow[2]  = row[2];  // 予約受付日
+    newRow[3]  = row[3];  // チェックイン
+    newRow[4]  = row[4];  // チェックアウト
+    newRow[5]  = row[5];  // 宿泊数
+    newRow[6]  = row[6];  // 人数
+    newRow[7]  = row[7];  // ゲスト名
+    newRow[8]  = row[8];  // 売上（旧: Revenue → そのまま）
+    newRow[9]  = 0;       // 宿泊料（旧データなし → 0）
+    newRow[10] = row[10]; // 清掃費（旧: CleaningFee → そのまま）
+    newRow[11] = row[9];  // OTA手数料（旧: Commission → L列へ）
+    newRow[12] = 0;       // 振込手数料（旧データなし → 0）
+    newRow[13] = 0;       // 入金金額（旧データなし → 0）
+    newRow[14] = row[12]; // ステータス（旧: Status → O列へ）
+    newRow[15] = row[13]; // 備考（旧: Notes → P列へ）
+    newRow[16] = row[14]; // メールID（旧: EmailId → Q列へ）
+    return newRow;
+  });
+
+  // シートをクリアして新構造で書き直し
+  sheet.clearContents();
+  applyReservationHeaders_(sheet);
+  if (newRows.length > 0) {
+    sheet.getRange(2, 1, newRows.length, 17).setValues(newRows);
+  }
+  applyReservationColumnWidths_(sheet);
+
+  Logger.log(`マイグレーション完了: ${newRows.length}件を17列構造に変換しました`);
+
+  try {
+    SpreadsheetApp.getUi().alert(
+      `✅ マイグレーション完了\n\n${newRows.length}件のデータを新しい17列構造に変換しました。\n\n` +
+      '※ 宿泊料・振込手数料・入金金額は旧データに存在しないため0になっています。\n' +
+      '再バックフィルを実行すると正確な値が取り込まれます。'
+    );
+  } catch (e) {}
+}
+
+function applyReservationHeaders_(sheet) {
+  const headers = [
+    '予約ID', 'プラットフォーム', '予約受付日', 'チェックイン', 'チェックアウト',
+    '宿泊数', '人数', 'ゲスト名',
+    '売上', '宿泊料', '清掃費', 'OTA手数料', '振込手数料', '入金金額',
+    'ステータス', '備考', 'メールID'
+  ];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  styleSheet_(sheet, headers.length, { headerBg: '#34a853', headerColor: '#ffffff', freeze: 1 });
+}
+
+function applyReservationColumnWidths_(sheet) {
+  const widths = [150, 120, 110, 110, 110, 70, 60, 150, 100, 100, 80, 100, 90, 110, 80, 200, 180];
+  widths.forEach((w, i) => sheet.setColumnWidth(i + 1, w));
 }
 
 function removeDefaultSheets_(ss) {
