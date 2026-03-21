@@ -61,8 +61,8 @@ function parseAirbnbEmail(msg) {
                    from.includes('airbnb');
   if (!isAirbnb) return null;
 
-  // Beds24経由の場合、件名末尾でAirbnbか判定
-  if (isBeds24 && !subject.includes('- Airbnb') && !subject.includes('Airbnb')) return null;
+  // Beds24経由の場合、件名が「予約:」で始まるものだけAirbnb
+  if (isBeds24 && !subject.startsWith('予約:')) return null;
 
   // 予約確定メールか確認（キャンセル・変更は除外）
   const isCancel = CONFIG.GMAIL.SUBJECTS.CANCEL.some(s => subject.includes(s));
@@ -167,8 +167,8 @@ function parseBookingEmail(msg) {
                     from.includes('booking.com');
   if (!isBooking) return null;
 
-  // Beds24経由の場合、件名末尾でBooking.comか判定
-  if (isBeds24Booking && subject.includes('- Airbnb')) return null;
+  // Beds24経由の場合、件名が「Booking Modified:」で始まるものだけBooking.com
+  if (isBeds24Booking && !subject.startsWith('Booking Modified:')) return null;
 
   // キャンセルメールは除外
   const isCancel = CONFIG.GMAIL.SUBJECTS.CANCEL.some(s => subject.includes(s));
