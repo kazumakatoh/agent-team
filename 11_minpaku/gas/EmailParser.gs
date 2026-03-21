@@ -277,12 +277,8 @@ function parseBookingEmail(msg) {
                           body.match(/Payment Charge[：:\s]*([\d,]+)/i);
     data.transferFee = transferMatch ? parseInt(transferMatch[1].replace(/,/g, '')) : 0;
 
-    // 入金金額：Expected Payout Amount
-    const payoutMatch = body.match(/Expected Payout Amount\s+([\d,]+(?:\.\d+)?)/i) ||
-                        body.match(/Expected Payout Amount[：:\s]*([\d,]+)/i);
-    data.payoutAmount = payoutMatch ? parseInt(payoutMatch[1].replace(/,/g, '')) : 0;
-
-    Logger.log(`Booking.com予約解析成功: ${data.reservationId}`);
+    // 入金金額：売上 - OTA手数料 - 振込手数料
+    data.payoutAmount = data.revenue - data.otaFee - data.transferFee;
     return data;
 
   } catch (e) {
