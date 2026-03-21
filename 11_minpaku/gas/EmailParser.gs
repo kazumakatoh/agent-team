@@ -178,12 +178,11 @@ function parseBookingEmail(msg) {
   if (!isConfirmation) return null;
 
   try {
-    const isModified = subject.includes('Booking Modified');
     const data = {
       emailId:   msg.getId(),
       platform:  'Booking.com',
       bookedDate: msg.getDate(),
-      status:    isModified ? 'キャンセル' : '予約'
+      status:    '予約'
     };
 
     // 予約番号（Beds24形式: "予約ID: 83458884" も対応）
@@ -303,22 +302,28 @@ function parseCancellationEmail(msg) {
 
 /**
  * キャンセルメールを検索して処理する
+ * @param {Date|null} sinceDate - この日以降を対象。nullで全期間
  * @return {number} キャンセル更新件数
  */
-function processCancellationEmails() {
+function processCancellationEmails(sinceDate) {
   const processedLabel = getOrCreateLabel_(CONFIG.GMAIL.PROCESSED_LABEL);
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - CONFIG.GMAIL.SEARCH_DAYS);
-  const dateStr = Utilities.formatDate(cutoffDate, 'Asia/Tokyo', 'yyyy/MM/dd');
 
   const fromAddresses = [
     ...CONFIG.GMAIL.FROM.AIRBNB,
     ...CONFIG.GMAIL.FROM.BOOKING
-  ].filter((v, i, a) => a.indexOf(v) === i) // 重複除去
+  ].filter((v, i, a) => a.indexOf(v) === i)
    .map(f => `from:${f}`).join(' OR ');
 
-  const query = `(${fromAddresses}) after:${dateStr} -label:${CONFIG.GMAIL.PROCESSED_LABEL}`;
-  const threads = GmailApp.search(query);
+  const datePart = sinceDate
+    ? ` after:${Utilities.formatDate(sinceDate, 'Asia/Tokyo', 'yyyy/MM/dd')}`
+    : (() => {
+        const d = new Date();
+        d.setDate(d.getDate() - CONFIG.GMAIL.SEARCH_DAYS);
+        return ` after:${Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy/MM/dd')}`;
+      })();
+
+  const query = `(${fromAddresses})${datePart} -label:${CONFIG.GMAIL.PROCESSED_LABEL}`;
+  const threads = GmailApp.search(query, 0, 500);
 
   let updated = 0;
   threads.forEach(thread => {

@@ -185,6 +185,9 @@ function runBackfill() {
     const added = writeReservations(reservations);
     const skipped = reservations.length - added;
 
+    // キャンセルメールも処理
+    const cancelled = processCancellationEmails(sinceDate);
+
     const fiscalYear = KPICalculator.getCurrentFiscalYear();
     updateMonthlySheet(fiscalYear);
     updateDashboard(fiscalYear);
@@ -193,7 +196,8 @@ function runBackfill() {
       `✅ 取込完了\n\n` +
       `・解析したメール: ${reservations.length}件\n` +
       `・新規追加: ${added}件\n` +
-      `・重複スキップ: ${skipped}件\n\n` +
+      `・重複スキップ: ${skipped}件\n` +
+      `・キャンセル反映: ${cancelled}件\n\n` +
       `集計・ダッシュボードを更新しました。`
     );
 
