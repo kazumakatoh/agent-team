@@ -89,9 +89,6 @@ function getMonthlyReservationData(year, month) {
   const C    = CONFIG.RESERVATION_COLS;
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 15).getValues();
 
-  const monthStart = new Date(year, month - 1, 1);
-  const monthEnd   = new Date(year, month, 0); // 月末日
-
   let revenue     = 0;
   let commission  = 0;
   let cleaningFee = 0;
@@ -172,8 +169,6 @@ function updateMonthlySheet(fiscalYear) {
   const sheet = ss.getSheetByName(CONFIG.SHEETS.MONTHLY);
   if (!sheet) throw new Error(`シート「${CONFIG.SHEETS.MONTHLY}」が見つかりません。`);
 
-  const kpiCalculator = KPICalculator; // KPICalculator.gs から
-
   // ヘッダー設定
   const headers = [
     '年月', '問い合わせ数', '稼働日数', '利用可能日数',
@@ -181,6 +176,16 @@ function updateMonthlySheet(fiscalYear) {
     '備品・消耗品費', '水光熱費', '家賃', 'その他経費', '総経費', '利益',
     'ROI(%)', 'ADR(円)', 'RevPAR(円)', '稼働率(%)'
   ];
+
+  // 既存の問い合わせ数を保持（手動入力値を上書きしないため）
+  const existingInquiries = {};
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const existing = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    existing.forEach(row => {
+      if (row[0]) existingInquiries[String(row[0])] = Number(row[1]) || 0;
+    });
+  }
 
   sheet.clearContents();
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -212,9 +217,13 @@ function updateMonthlySheet(fiscalYear) {
 
     totalUsageDays += resData.usageDays;
 
+    // 問い合わせ数：既存の手動入力値を復元（なければ0）
+    const yearMonthKey = `${year}/${String(month).padStart(2, '0')}`;
+    const inquiries = existingInquiries[yearMonthKey] || 0;
+
     rows.push([
-      `${year}/${String(month).padStart(2, '0')}`,
-      0,                      // 問い合わせ数（手動入力）
+      yearMonthKey,
+      inquiries,              // 問い合わせ数（手動入力値を保持）
       resData.usageDays,
       daysInMonth,
       resData.bookingCount,

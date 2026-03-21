@@ -42,13 +42,14 @@ const KPICalculator = {
    */
   calcAnnualKPIs(monthlyDataArray) {
     const totals = monthlyDataArray.reduce((acc, m) => {
-      acc.revenue     += m.revenue     || 0;
-      acc.commission  += m.commission  || 0;
-      acc.usageDays   += m.usageDays   || 0;
-      acc.totalCosts  += m.totalCosts  || 0;
-      acc.daysInYear  += m.daysInMonth || 0;
+      acc.revenue      += m.revenue      || 0;
+      acc.commission   += m.commission   || 0;
+      acc.usageDays    += m.usageDays    || 0;
+      acc.totalCosts   += m.totalCosts   || 0;
+      acc.daysInYear   += m.daysInMonth  || 0;
+      acc.bookingCount += m.bookingCount || 0;
       return acc;
-    }, { revenue: 0, commission: 0, usageDays: 0, totalCosts: 0, daysInYear: 0 });
+    }, { revenue: 0, commission: 0, usageDays: 0, totalCosts: 0, daysInYear: 0, bookingCount: 0 });
 
     const netRevenue = totals.revenue - totals.commission;
     const profit     = netRevenue - totals.totalCosts;

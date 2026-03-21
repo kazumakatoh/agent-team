@@ -10,7 +10,7 @@ const CONFIG = {
   // ==============================
   // スプレッドシート設定
   // ==============================
-  SPREADSHEET_ID: '', // ← ここにスプレッドシートのIDを入力（URLの /d/XXXXXX/edit の XXXXXX 部分）
+  SPREADSHEET_ID: '1fEMhUhGdZcIDuspTsf3_TUrjXoD0z8lgxD58rWdANA8', // スプレッドシートID
 
   SHEETS: {
     RESERVATIONS: '予約リスト',   // 予約データ一覧
