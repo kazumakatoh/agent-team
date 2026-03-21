@@ -145,9 +145,9 @@ function runBackfill() {
 
   const result = ui.prompt(
     '📧 過去メール一括取込',
-    '取込開始日を入力してください（例: 2025/12/01）\n' +
+    '取込開始日を入力してください\n' +
     '空欄のままOKを押すと、Gmailの全期間を対象にします。',
-    ui.ButtonSet.OK_CANCEL
+    '2025/12/01'
   );
 
   if (result.getSelectedButton() !== ui.Button.OK) return;
@@ -312,7 +312,7 @@ function onOpen() {
     .addItem('❌ キャンセルメールを処理', 'runCancellationCheck')
     .addSeparator()
     .addItem('⚙️ 初期セットアップ', 'runSetup')
-    .addItem('🔄 列構造マイグレーション（旧15列→新17列）', 'runReservationSheetMigration')
+    .addItem('🔄 列構造マイグレーション（旧17列→新19列）', 'runReservationSheetMigration')
     .addItem('⏰ 定期実行トリガー設定', 'setupTriggers')
     .addToUi();
 }
