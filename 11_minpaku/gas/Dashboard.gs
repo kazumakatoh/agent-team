@@ -250,6 +250,7 @@ function renderMonthlyTable_(sheet, monthlyRows, startRow) {
     }
     return acc;
   }, ['合計']);
+  while (totals.length < headers.length) totals.push('');
 
   sheet.getRange(totalRow, 1, 1, headers.length)
        .setValues([totals])
