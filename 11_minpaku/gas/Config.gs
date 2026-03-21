@@ -35,7 +35,7 @@ const CONFIG = {
   // ==============================
   GMAIL: {
     PROCESSED_LABEL: '民泊_処理済み', // 処理済みメールに付けるラベル
-    SEARCH_DAYS:     7,               // 何日前までのメールを検索するか
+    SEARCH_DAYS:     180,              // 何日前までのメールを検索するか
     SUBJECTS: {
       AIRBNB: [
         '予約確定',
@@ -51,8 +51,9 @@ const CONFIG = {
       ]
     },
     FROM: {
-      AIRBNB:  ['automated@airbnb.com', 'express@airbnb.com', 'no-reply@airbnb.com'],
-      BOOKING: ['noreply@booking.com', 'customer.service@booking.com', 'noreply-partner@booking.com']
+      AIRBNB:  ['automated@airbnb.com', 'express@airbnb.com', 'no-reply@airbnb.com', 'email.master@co-reception.com'],
+      BOOKING: ['noreply@booking.com', 'customer.service@booking.com', 'noreply-partner@booking.com', 'email.master@co-reception.com'],
+      BEDS24:  ['email.master@co-reception.com']
     }
   },
 
