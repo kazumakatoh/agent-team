@@ -79,13 +79,11 @@ function parseAirbnbEmail(msg) {
       status:      '予約'
     };
 
-    // 予約ID（例: HM... または数字、Beds24形式も対応）
-    const idMatch = body.match(/予約コード[：:\s]*([A-Z0-9]+)/i) ||
+    // 予約ID: HM始まりのAirbnbコードを最優先、次にConfirmation code
+    const idMatch = subject.match(/\b(HM[A-Z0-9]{6,})\b/) ||
+                    body.match(/\b(HM[A-Z0-9]{6,})\b/) ||
                     body.match(/Confirmation code[：:\s]*([A-Z0-9]+)/i) ||
-                    body.match(/Airbnb\s+([A-Z0-9]{6,})/i) ||
-                    body.match(/([A-Z]{2}[0-9]{9})/) ||
-                    subject.match(/\b(HM[A-Z0-9]{6,})\b/) ||
-                    body.match(/\b(HM[A-Z0-9]{6,})\b/);
+                    body.match(/予約コード[：:\s]*([A-Z0-9]+)/i);
     data.reservationId = idMatch ? idMatch[1] : `AB_${msg.getId().substring(0,8)}`;
 
     // チェックイン・チェックアウト日
