@@ -61,8 +61,8 @@ function parseAirbnbEmail(msg) {
                    from.includes('airbnb');
   if (!isAirbnb) return null;
 
-  // Beds24経由の場合、件名が「予約:」で始まるものだけAirbnb
-  if (isBeds24 && !subject.startsWith('予約:')) return null;
+  // Beds24経由の場合、件名末尾が「- Airbnb」のものだけAirbnb
+  if (isBeds24 && detectPlatformFromSubject_(subject) !== 'Airbnb') return null;
 
   // 予約確定メールか確認（キャンセル・変更は除外）
   const isCancel = CONFIG.GMAIL.SUBJECTS.CANCEL.some(s => subject.includes(s));
@@ -180,8 +180,8 @@ function parseBookingEmail(msg) {
                     from.includes('booking.com');
   if (!isBooking) return null;
 
-  // Beds24経由の場合、件名が「Booking Modified:」で始まるものだけBooking.com
-  if (isBeds24Booking && !subject.startsWith('Booking Modified:')) return null;
+  // Beds24経由の場合、件名末尾が「- Booking.com」のものだけBooking.com
+  if (isBeds24Booking && detectPlatformFromSubject_(subject) !== 'Booking.com') return null;
 
   // キャンセルメールは除外
   const isCancel = CONFIG.GMAIL.SUBJECTS.CANCEL.some(s => subject.includes(s));
@@ -301,8 +301,8 @@ function parseCancellationEmail(msg) {
                    body.includes('キャンセル');
   if (!isCancel) return null;
 
-  // プラットフォームを件名から判定
-  const platform = subject.includes('- Airbnb') ? 'Airbnb' : 'Booking.com';
+  // プラットフォームを件名末尾から判定
+  const platform = detectPlatformFromSubject_(subject) || 'Booking.com';
 
   // 予約IDを抽出（AirbnbコードまたはBooking Ref）
   let reservationId = null;
@@ -417,6 +417,19 @@ function fetchReservationEmailsSince(sinceDate) {
 
   Logger.log(`遡り取込: ${reservations.length}件のメールを解析`);
   return reservations;
+}
+
+/**
+ * 件名末尾からプラットフォームを判定する
+ * 例: "予約: ... - Booking.com" → 'Booking.com'
+ *     "予約: ... - Airbnb"      → 'Airbnb'
+ * @param {string} subject
+ * @return {string|null} 'Airbnb' | 'Booking.com' | null
+ */
+function detectPlatformFromSubject_(subject) {
+  if (/- Booking\.com\s*$/i.test(subject)) return 'Booking.com';
+  if (/- Airbnb\s*$/i.test(subject))       return 'Airbnb';
+  return null;
 }
 
 function getOrCreateLabel_(labelName) {
