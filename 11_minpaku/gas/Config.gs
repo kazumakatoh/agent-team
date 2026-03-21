@@ -50,6 +50,13 @@ const CONFIG = {
         'Booking confirmation',
         '予約確認',
         '予約:'
+      ],
+      CANCEL: [
+        '予約キャンセルになりました',
+        'Booking cancelled',
+        'Reservation cancelled',
+        'has been cancelled',
+        'キャンセル:'
       ]
     },
     FROM: {

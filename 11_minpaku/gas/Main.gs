@@ -19,20 +19,21 @@ function checkNewReservations() {
     Logger.log('=== Gmail予約チェック開始 ===');
 
     const reservations = fetchNewReservationEmails();
-    if (reservations.length === 0) {
-      Logger.log('新規予約なし');
-      return;
-    }
+    const added = reservations.length > 0 ? writeReservations(reservations) : 0;
+    if (added > 0) Logger.log(`予約追加: ${added}件`);
 
-    const added = writeReservations(reservations);
-    Logger.log(`予約追加: ${added}件`);
+    // キャンセルメールも処理
+    const cancelled = processCancellationEmails();
+    if (cancelled > 0) Logger.log(`キャンセル更新: ${cancelled}件`);
 
-    // 追加があれば集計も更新
-    if (added > 0) {
+    // 変更があれば集計も更新
+    if (added > 0 || cancelled > 0) {
       const fiscalYear = KPICalculator.getCurrentFiscalYear();
       updateMonthlySheet(fiscalYear);
       updateDashboard(fiscalYear);
       Logger.log('集計・ダッシュボード更新完了');
+    } else {
+      Logger.log('新規予約・キャンセルなし');
     }
 
   } catch (e) {
@@ -69,6 +70,23 @@ function dailyAggregation() {
 function runManualEmailCheck() {
   checkNewReservations();
   SpreadsheetApp.getUi().alert('✅ メールチェック完了\n予約リストとダッシュボードを更新しました。');
+}
+
+/**
+ * キャンセルメールを手動処理する
+ */
+function runCancellationCheck() {
+  try {
+    const cancelled = processCancellationEmails();
+    const fiscalYear = KPICalculator.getCurrentFiscalYear();
+    if (cancelled > 0) {
+      updateMonthlySheet(fiscalYear);
+      updateDashboard(fiscalYear);
+    }
+    SpreadsheetApp.getUi().alert(`✅ キャンセル処理完了\n・ステータス更新: ${cancelled}件`);
+  } catch (e) {
+    SpreadsheetApp.getUi().alert(`❌ エラーが発生しました\n${e.message}`);
+  }
 }
 
 /**
@@ -259,6 +277,7 @@ function onOpen() {
     .addItem('📊 集計・ダッシュボード更新', 'runManualAggregation')
     .addSeparator()
     .addItem('✏️ 予約を手動入力', 'addReservationManually')
+    .addItem('❌ キャンセルメールを処理', 'runCancellationCheck')
     .addSeparator()
     .addItem('⚙️ 初期セットアップ', 'runSetup')
     .addItem('⏰ 定期実行トリガー設定', 'setupTriggers')

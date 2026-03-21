@@ -230,6 +230,70 @@ function parseBookingEmail(msg) {
   }
 }
 
+/**
+ * キャンセルメールを解析して予約IDを返す
+ * @param {GmailMessage} msg
+ * @return {Object|null} { reservationId, emailId, cancelDate }
+ */
+function parseCancellationEmail(msg) {
+  const subject = msg.getSubject();
+  const body    = msg.getPlainBody();
+
+  const isCancel = CONFIG.GMAIL.SUBJECTS.CANCEL.some(s => subject.includes(s)) ||
+                   body.includes('has been cancelled') ||
+                   body.includes('キャンセル');
+  if (!isCancel) return null;
+
+  // 予約IDを抽出（AirbnbコードまたはBooking Ref）
+  const idMatch = body.match(/Airbnb\s+([A-Z0-9]{6,})/i) ||
+                  body.match(/Booking Ref[：:\s]+([0-9]+)/i) ||
+                  body.match(/予約コード[：:\s]*([A-Z0-9]+)/i);
+  if (!idMatch) return null;
+
+  return {
+    reservationId: idMatch[1],
+    emailId:       msg.getId(),
+    cancelDate:    msg.getDate()
+  };
+}
+
+/**
+ * キャンセルメールを検索して処理する
+ * @return {number} キャンセル更新件数
+ */
+function processCancellationEmails() {
+  const processedLabel = getOrCreateLabel_(CONFIG.GMAIL.PROCESSED_LABEL);
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - CONFIG.GMAIL.SEARCH_DAYS);
+  const dateStr = Utilities.formatDate(cutoffDate, 'Asia/Tokyo', 'yyyy/MM/dd');
+
+  const fromAddresses = [
+    ...CONFIG.GMAIL.FROM.AIRBNB,
+    ...CONFIG.GMAIL.FROM.BOOKING
+  ].filter((v, i, a) => a.indexOf(v) === i) // 重複除去
+   .map(f => `from:${f}`).join(' OR ');
+
+  const query = `(${fromAddresses}) after:${dateStr} -label:${CONFIG.GMAIL.PROCESSED_LABEL}`;
+  const threads = GmailApp.search(query);
+
+  let updated = 0;
+  threads.forEach(thread => {
+    thread.getMessages().forEach(msg => {
+      const cancel = parseCancellationEmail(msg);
+      if (cancel) {
+        const result = updateReservationStatus(cancel.reservationId, 'キャンセル');
+        if (result) {
+          updated++;
+          msg.getThread().addLabel(processedLabel);
+          Logger.log(`キャンセル処理: ${cancel.reservationId}`);
+        }
+      }
+    });
+  });
+
+  return updated;
+}
+
 // ==============================
 // プライベート関数
 // ==============================

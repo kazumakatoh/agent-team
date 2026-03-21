@@ -76,6 +76,32 @@ function writeReservations(reservations) {
 }
 
 /**
+ * 予約IDでステータスを更新する（キャンセル処理用）
+ * @param {string} reservationId - 予約ID
+ * @param {string} newStatus - 新しいステータス（例: 'キャンセル'）
+ * @return {boolean} 更新成功した場合true
+ */
+function updateReservationStatus(reservationId, newStatus) {
+  const ss    = getSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.RESERVATIONS);
+  if (!sheet || sheet.getLastRow() <= 1) return false;
+
+  const C    = CONFIG.RESERVATION_COLS;
+  const data = sheet.getRange(2, C.ID, sheet.getLastRow() - 1, 1).getValues();
+
+  for (let i = 0; i < data.length; i++) {
+    if (String(data[i][0]) === String(reservationId)) {
+      sheet.getRange(i + 2, C.STATUS).setValue(newStatus);
+      Logger.log(`ステータス更新: ${reservationId} → ${newStatus}`);
+      return true;
+    }
+  }
+
+  Logger.log(`予約ID未発見: ${reservationId}`);
+  return false;
+}
+
+/**
  * 予約リストから月別集計データを取得する
  * @param {number} year  - 集計対象年（例: 2025）
  * @param {number} month - 集計対象月（例: 12）
