@@ -92,6 +92,72 @@ function runManualAggregation() {
 }
 
 /**
+ * 過去のメールを遡って一括取込する
+ */
+function runBackfill() {
+  const ui = SpreadsheetApp.getUi();
+
+  const result = ui.prompt(
+    '📧 過去メール一括取込',
+    '取込開始日を入力してください（例: 2025/12/01）\n' +
+    '空欄のままOKを押すと、Gmailの全期間を対象にします。',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (result.getSelectedButton() !== ui.Button.OK) return;
+
+  const input = result.getResponseText().trim();
+  let sinceDate = null;
+
+  if (input) {
+    sinceDate = new Date(input.replace(/\//g, '-'));
+    if (isNaN(sinceDate.getTime())) {
+      ui.alert('⚠️ 日付の形式が正しくありません。\n例: 2025/12/01');
+      return;
+    }
+  }
+
+  const label = sinceDate
+    ? `${input} 以降`
+    : 'Gmail全期間';
+
+  const confirm = ui.alert(
+    '確認',
+    `${label} の予約確定メールを取込みます。\n数分かかる場合があります。続行しますか？`,
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) return;
+
+  try {
+    const reservations = fetchReservationEmailsSince(sinceDate);
+
+    if (reservations.length === 0) {
+      ui.alert('ℹ️ 取込対象のメールが見つかりませんでした。\n\n送信元アドレスがConfig.gsの設定と一致しているか確認してください。');
+      return;
+    }
+
+    const added = writeReservations(reservations);
+    const skipped = reservations.length - added;
+
+    const fiscalYear = KPICalculator.getCurrentFiscalYear();
+    updateMonthlySheet(fiscalYear);
+    updateDashboard(fiscalYear);
+
+    ui.alert(
+      `✅ 取込完了\n\n` +
+      `・解析したメール: ${reservations.length}件\n` +
+      `・新規追加: ${added}件\n` +
+      `・重複スキップ: ${skipped}件\n\n` +
+      `集計・ダッシュボードを更新しました。`
+    );
+
+  } catch (e) {
+    ui.alert(`❌ エラーが発生しました\n${e.message}`);
+    notifyError_('runBackfill', e);
+  }
+}
+
+/**
  * 予約を手動で1件登録する（メールが来ない場合の手動入力）
  */
 function addReservationManually() {
@@ -189,6 +255,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('🏠 民泊管理')
     .addItem('📧 今すぐメールをチェック', 'runManualEmailCheck')
+    .addItem('📅 過去メールを一括取込', 'runBackfill')
     .addItem('📊 集計・ダッシュボード更新', 'runManualAggregation')
     .addSeparator()
     .addItem('✏️ 予約を手動入力', 'addReservationManually')

@@ -236,6 +236,47 @@ function buildGmailQuery_(platform, cutoffDate) {
   return `(${fromAddresses}) after:${dateStr} -label:${CONFIG.GMAIL.PROCESSED_LABEL}`;
 }
 
+/**
+ * 指定日以降の予約確定メールを全件取得して解析する（遡り取込用）
+ * @param {Date|null} sinceDate - この日以降のメールを対象。null の場合は全期間
+ * @return {Array} 解析済み予約データの配列
+ */
+function fetchReservationEmailsSince(sinceDate) {
+  const reservations = [];
+  const processedLabel = getOrCreateLabel_(CONFIG.GMAIL.PROCESSED_LABEL);
+
+  const buildQuery = (platform) => {
+    const fromAddresses = CONFIG.GMAIL.FROM[platform].map(f => `from:${f}`).join(' OR ');
+    const datePart = sinceDate
+      ? ` after:${Utilities.formatDate(sinceDate, 'Asia/Tokyo', 'yyyy/MM/dd')}`
+      : '';
+    // 処理済みラベルを除外しない（過去分は重複をEmailIDで防ぐ）
+    return `(${fromAddresses})${datePart}`;
+  };
+
+  [
+    { platform: 'AIRBNB',  parser: parseAirbnbEmail },
+    { platform: 'BOOKING', parser: parseBookingEmail }
+  ].forEach(({ platform, parser }) => {
+    const query   = buildQuery(platform);
+    const threads = GmailApp.search(query, 0, 500); // 最大500スレッド
+
+    threads.forEach(thread => {
+      thread.getMessages().forEach(msg => {
+        const data = parser(msg);
+        if (data) {
+          reservations.push(data);
+          // 処理済みラベルを付与（次回の通常チェックで重複しないよう）
+          thread.addLabel(processedLabel);
+        }
+      });
+    });
+  });
+
+  Logger.log(`遡り取込: ${reservations.length}件のメールを解析`);
+  return reservations;
+}
+
 function getOrCreateLabel_(labelName) {
   let label = GmailApp.getUserLabelByName(labelName);
   if (!label) {
