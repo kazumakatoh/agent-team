@@ -1,0 +1,4 @@
+# GAS以外のファイルはアップロードしない
+**/*.md
+**/*.json
+!appsscript.json
