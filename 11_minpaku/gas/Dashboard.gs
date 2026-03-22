@@ -95,10 +95,10 @@ function updateDashboard(fiscalYear) {
   renderCharts_(sheet, ss, monthlyRows, currentRow);
 
   // 列幅調整
-  sheet.setColumnWidths(1, 16, 110);
+  sheet.setColumnWidths(1, 12, 110);
   sheet.setColumnWidth(1, 100);   // 年月
-  sheet.setColumnWidth(10, 80);   // 利益率
-  sheet.setColumnWidth(13, 80);   // 稼働率
+  sheet.setColumnWidth(9, 80);    // 利益率
+  sheet.setColumnWidth(12, 80);   // 稼働率
 
   Logger.log(`ダッシュボード更新完了 (${fiscalYear}年度)`);
 }
@@ -222,7 +222,7 @@ function renderAnnualKPICards_(sheet, kpis, startRow) {
 }
 
 function renderMonthlyTable_(sheet, monthlyRows, startRow) {
-  const NUM_COLS = 15;
+  const NUM_COLS = 12;
 
   // 見出し
   sheet.getRange(startRow, 1, 1, NUM_COLS).merge()
@@ -232,12 +232,10 @@ function renderMonthlyTable_(sheet, monthlyRows, startRow) {
        .setBackground('#f1f3f4');
   startRow++;
 
-  // ヘッダー（16列）
   const headers = [
     '年月', '利用件数', '稼働日数', '人数',
     '売上', '流動費', '固定費',
-    '利益', '利益率(%)', 'ADR', 'RevPAR', '稼働率(%)',
-    '代行手数料', '清掃費', 'リネン費'
+    '利益', '利益率(%)', 'ADR', 'RevPAR', '稼働率(%)'
   ];
   sheet.getRange(startRow, 1, 1, headers.length)
        .setValues([headers])
@@ -254,42 +252,36 @@ function renderMonthlyTable_(sheet, monthlyRows, startRow) {
     r.bookingCount,
     r.usageDays,
     r.guests,
-    r.grossRevenue,   // 売上 = 宿泊料+清掃料
+    r.grossRevenue,
     r.variableCosts,
     r.fixedCosts,
     r.profit,
     r.profitRate,
     r.adr,
     r.revpar,
-    r.occupancyRate,
-    r.agencyFee,
-    r.cleaning,
-    r.linen
+    r.occupancyRate
   ]);
 
   if (rows.length > 0) {
     sheet.getRange(startRow, 1, rows.length, headers.length).setValues(rows);
 
-    // 金額・パーセント書式（15列構成）
-    sheet.getRange(startRow, 5, rows.length, 4).setNumberFormat('¥#,##0');  // 売上〜利益（COL5-8）
-    sheet.getRange(startRow, 9, rows.length, 1).setNumberFormat('0.0"%"');  // 利益率(%)
+    sheet.getRange(startRow, 5, rows.length, 4).setNumberFormat('¥#,##0');  // 売上〜利益
+    sheet.getRange(startRow, 9, rows.length, 1).setNumberFormat('0.0"%"');  // 利益率
     sheet.getRange(startRow, 10, rows.length, 2).setNumberFormat('¥#,##0'); // ADR, RevPAR
     sheet.getRange(startRow, 12, rows.length, 1).setNumberFormat('0.0"%"'); // 稼働率
-    sheet.getRange(startRow, 13, rows.length, 3).setNumberFormat('¥#,##0'); // 代行〜リネン
 
-    // 交互に色付け
     rows.forEach((row, i) => {
       const bg = i % 2 === 0 ? '#ffffff' : '#f8f9fa';
       sheet.getRange(startRow + i, 1, 1, headers.length).setBackground(bg);
-      if (row[7] < 0) { // 利益がマイナス（COL8 = 利益）
+      if (row[7] < 0) {
         sheet.getRange(startRow + i, 8).setFontColor('#d93025').setFontWeight('bold');
       }
     });
   }
 
-  // 合計行（金額列のみSUM）
+  // 合計行
   const totalRow = startRow + rows.length;
-  const sumCols  = [2, 3, 4, 5, 6, 7, 8, 10, 11, 13, 14, 15];
+  const sumCols  = [2, 3, 4, 5, 6, 7, 8, 10, 11];
   const totalData = new Array(headers.length).fill('');
   totalData[0] = '合計';
   sumCols.forEach(col => {
@@ -302,7 +294,6 @@ function renderMonthlyTable_(sheet, monthlyRows, startRow) {
        .setFontWeight('bold');
   sheet.getRange(totalRow, 5, 1, 4).setNumberFormat('¥#,##0');  // 売上〜利益
   sheet.getRange(totalRow, 10, 1, 2).setNumberFormat('¥#,##0'); // ADR, RevPAR
-  sheet.getRange(totalRow, 13, 1, 3).setNumberFormat('¥#,##0'); // 代行〜リネン
 
   return totalRow + 1;
 }
