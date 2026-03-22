@@ -76,7 +76,7 @@ function fetchAirSapoInvoices(since) {
 
           const written = writeCostToSheet_(parsed);
           if (written) {
-            Logger.log(`経費書込完了: ${parsed.yearMonth} → 代行=${parsed.agencyFee}, 清掃=${parsed.cleaning}, リネン=${parsed.linen}, 備品=${parsed.supplies}`);
+            Logger.log(`経費書込完了: ${parsed.yearMonth} → 代行=${parsed.agencyFee}, 清掃=${parsed.cleaning}, リネン=${parsed.linen}, 備品=${parsed.supplies}, その他=${parsed.others}`);
             processedCount++;
           }
         } catch (e) {
@@ -165,27 +165,27 @@ function parseInvoiceText_(text) {
   };
 
   // 代行手数料（税込）
-  // パターン例: "代行手数料 ¥12,000" / "運営代行費 12,000円" / "代行手数料 12,000"
+  // パターン例: "代行サービス料金 ¥12,000" / "代行手数料 ¥12,000" / "運営代行費 12,000円"
   const agencyFee = extractAmountWithTax_(
     text,
-    /(?:代行手数料|運営代行費)[^\d]*([\d,]{3,})/,
-    /(?:代行手数料|運営代行費).*?([0-9,]{3,})\s*円/
+    /(?:代行サービス料金|代行手数料|運営代行費)[^\d]*([\d,]{3,})/,
+    /(?:代行サービス料金|代行手数料|運営代行費).*?([0-9,]{3,})\s*円/
   );
 
   // 清掃費（税込）
-  // パターン例: "清掃費 ¥8,000" / "清掃費 8,000円"
+  // パターン例: "清掃料金 ¥8,000" / "清掃費 8,000円"
   const cleaning = extractAmountWithTax_(
     text,
-    /清掃費[^\d]*([\d,]{3,})/,
-    /清掃費.*?([0-9,]{3,})\s*円/
+    /(?:清掃料金|清掃費)[^\d]*([\d,]{3,})/,
+    /(?:清掃料金|清掃費).*?([0-9,]{3,})\s*円/
   );
 
   // リネン費（税込）
-  // パターン例: "リネン費 ¥3,000" / "リネン代 3,000円"
+  // 「リネン」を含むすべての表記を対象
   const linen = extractAmountWithTax_(
     text,
-    /(?:リネン費|リネン代|リネン)[^\d]*([\d,]{3,})/,
-    /(?:リネン費|リネン代|リネン).*?([0-9,]{3,})\s*円/
+    /リネン[^\d]*([\d,]{3,})/,
+    /リネン.*?([0-9,]{3,})\s*円/
   );
 
   // 備品・消耗品費（税込）
@@ -196,13 +196,27 @@ function parseInvoiceText_(text) {
     /(?:備品[・・]消耗品|備品費|消耗品費|備品).*?([0-9,]{3,})\s*円/
   );
 
+  // その他経費（税込）
+  // beds24利用料金 / maneKEY月額利用料金 を合算
+  const beds24 = extractAmountWithTax_(
+    text,
+    /beds24[^\d]*([\d,]{3,})/i,
+    /beds24.*?([0-9,]{3,})\s*円/i
+  );
+  const maneKey = extractAmountWithTax_(
+    text,
+    /maneKEY[^\d]*([\d,]{3,})/i,
+    /maneKEY.*?([0-9,]{3,})\s*円/i
+  );
+  const others = beds24 + maneKey;
+
   // 全項目が0の場合は解析失敗とみなす
-  if (agencyFee === 0 && cleaning === 0 && linen === 0 && supplies === 0) {
+  if (agencyFee === 0 && cleaning === 0 && linen === 0 && supplies === 0 && others === 0) {
     Logger.log(`全項目0円: yearMonth=${yearMonth}, テキスト先頭=${text.substring(0, 300)}`);
     return null;
   }
 
-  return { yearMonth, agencyFee, cleaning, linen, supplies };
+  return { yearMonth, agencyFee, cleaning, linen, supplies, others };
 }
 
 /**
@@ -292,6 +306,7 @@ function writeCostToSheet_(parsed) {
   setOrAdd(C.CLEANING,   parsed.cleaning);
   setOrAdd(C.LINEN,      parsed.linen);
   setOrAdd(C.SUPPLIES,   parsed.supplies);
+  setOrAdd(C.OTHER,      parsed.others);
 
   return true;
 }
