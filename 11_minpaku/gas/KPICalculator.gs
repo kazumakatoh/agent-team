@@ -72,8 +72,8 @@ const KPICalculator = {
       profitRate,
       roi,
       initialInvestment:  INITIAL_INVESTMENT,
-      adr:                this.calcADR(totals.revenue, totals.usageDays),
-      revpar:             this.calcRevPAR(totals.revenue, totals.daysInYear),
+      adr:                this.calcADR(totals.grossRevenue, totals.usageDays),
+      revpar:             this.calcRevPAR(totals.grossRevenue, totals.daysInYear),
       occupancyRate365:   this.calcOccupancyRate(totals.usageDays, 365),
       occupancyRate:      this.calcOccupancyRate(totals.usageDays, totals.daysInYear),
       legalOccupancyRate: this.calcOccupancyRate(totals.usageDays, CONFIG.PROPERTY.MAX_ANNUAL_DAYS)

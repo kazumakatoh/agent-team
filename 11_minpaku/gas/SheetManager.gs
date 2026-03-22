@@ -244,18 +244,18 @@ function updateMonthlySheet(fiscalYear) {
   // COL  1: 年月
   // COL  2: 問い合わせ数    COL  3: 稼働日数       COL  4: 利用可能日数
   // COL  5: 利用件数        COL  6: 利用人数
-  // COL  7: 売上            COL  8: 宿泊料         COL  9: 清掃料
+  // COL  7: OTA売上         COL  8: 宿泊料         COL  9: 清掃料
   // COL 10: OTA手数料       COL 11: 振込手数料     COL 12: 入金金額
   // COL 13: 代行手数料      COL 14: 清掃費         COL 15: リネン費
   // COL 16: 備品・消耗品費  COL 17: 水光熱費       COL 18: 家賃          COL 19: その他経費
-  // COL 20: 総売上          COL 21: 流動費         COL 22: 固定費
+  // COL 20: 売上（宿泊料＋清掃料）  COL 21: 流動費  COL 22: 固定費
   // COL 23: 利益            COL 24: 利益率(%)
   // COL 25: ADR(円)         COL 26: RevPAR(円)     COL 27: 稼働率(%)
   const headers = [
     '年月', '問い合わせ数', '稼働日数', '利用可能日数', '利用件数', '利用人数',
-    '売上', '宿泊料', '清掃料', 'OTA手数料', '振込手数料', '入金金額',
+    'OTA売上', '宿泊料', '清掃料', 'OTA手数料', '振込手数料', '入金金額',
     '代行手数料', '清掃費', 'リネン費', '備品・消耗品費', '水光熱費', '家賃', 'その他経費',
-    '総売上', '流動費', '固定費', '利益', '利益率(%)',
+    '売上', '流動費', '固定費', '利益', '利益率(%)',
     'ADR(円)', 'RevPAR(円)', '稼働率(%)'
   ];
 
@@ -273,15 +273,16 @@ function updateMonthlySheet(fiscalYear) {
     const daysInMonth = new Date(year, month, 0).getDate();
 
     // 集計値
-    const grossRevenue   = resData.revenue + resData.accommodationFee + resData.cleaningFee;
+    // 売上 = 宿泊料 + 清掃料（ゲスト実質負担）
+    const grossRevenue   = resData.accommodationFee + resData.cleaningFee;
     const variableCosts  = resData.otaFee + resData.transferFee
                          + costData.agencyFee + costData.cleaning + costData.linen + costData.supplies;
     const fixedCosts     = costData.utilities + costData.rent + costData.other;
     const profit         = grossRevenue - variableCosts - fixedCosts;
     const profitRate     = grossRevenue > 0 ? Math.round(profit / grossRevenue * 1000) / 10 : 0;
 
-    const adr           = KPICalculator.calcADR(resData.revenue, resData.usageDays);
-    const revpar        = KPICalculator.calcRevPAR(resData.revenue, daysInMonth);
+    const adr           = KPICalculator.calcADR(grossRevenue, resData.usageDays);
+    const revpar        = KPICalculator.calcRevPAR(grossRevenue, daysInMonth);
     const occupancyRate = KPICalculator.calcOccupancyRate(resData.usageDays, daysInMonth);
 
     totalUsageDays += resData.usageDays;
@@ -295,7 +296,7 @@ function updateMonthlySheet(fiscalYear) {
       daysInMonth,               // 利用可能日数
       resData.bookingCount,      // 利用件数
       resData.guests,            // 利用人数
-      resData.revenue,           // 売上
+      resData.revenue,           // OTA売上（プラットフォーム表示合計）
       resData.accommodationFee,  // 宿泊料
       resData.cleaningFee,       // 清掃料（ゲスト負担）
       resData.otaFee,            // OTA手数料

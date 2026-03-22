@@ -54,6 +54,10 @@ function dailyAggregation() {
     updateAnnualSheet(fiscalYear);
     updateDashboard(fiscalYear);
 
+    // エアサポ請求書も日次で取込
+    const invoices = fetchAirSapoInvoices();
+    if (invoices > 0) Logger.log(`エアサポ請求書取込: ${invoices}件`);
+
     Logger.log(`日次集計完了 (${fiscalYear}年度)`);
   } catch (e) {
     Logger.log(`エラー: ${e.message}`);
@@ -99,6 +103,29 @@ function fixExistingStatuses() {
 function runManualEmailCheck() {
   checkNewReservations();
   SpreadsheetApp.getUi().alert('✅ メールチェック完了\n予約リストとダッシュボードを更新しました。');
+}
+
+/**
+ * エアサポ請求書メールを手動取込する
+ */
+function runManualAirSapoCheck() {
+  try {
+    const count = fetchAirSapoInvoices();
+    const fiscalYear = KPICalculator.getCurrentFiscalYear();
+    if (count > 0) {
+      updateMonthlySheet(fiscalYear);
+      updateAnnualSheet(fiscalYear);
+      updateDashboard(fiscalYear);
+    }
+    SpreadsheetApp.getUi().alert(
+      count > 0
+        ? `✅ エアサポ請求書取込完了\n・処理した請求書: ${count}件\n・集計・ダッシュボードを更新しました。`
+        : 'ℹ️ 新しいエアサポ請求書メールは見つかりませんでした。\n（処理済みのメールはスキップされます）'
+    );
+  } catch (e) {
+    SpreadsheetApp.getUi().alert(`❌ エラーが発生しました\n${e.message}`);
+    notifyError_('runManualAirSapoCheck', e);
+  }
 }
 
 /**
@@ -334,6 +361,7 @@ function onOpen() {
     .createMenu('🏠 民泊管理')
     .addItem('📧 今すぐメールをチェック', 'runManualEmailCheck')
     .addItem('📅 過去メールを一括取込', 'runBackfill')
+    .addItem('📄 エアサポ請求書を取込', 'runManualAirSapoCheck')
     .addItem('📊 集計・ダッシュボード更新', 'runManualAggregation')
     .addSeparator()
     .addItem('✏️ 予約を手動入力', 'addReservationManually')
