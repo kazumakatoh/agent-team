@@ -198,12 +198,28 @@ function parseInvoiceText_(text, filename) {
   );
 
   // リネン費（税込）
-  // 「リネン」を含むすべての表記を対象
-  const linen = extractAmountWithTax_(
-    text,
-    /リネン[^\d]*([\d,]{3,})/,
-    /リネン.*?([0-9,]{3,})\s*円/
-  );
+  // 形式A: 「リネン補償金 ¥1,000」→ リネンの後に金額（税抜き × 1.1）
+  // 形式B: 「¥9,240 12月リネン回収クリーニング費用」→ 月別備考でリネン前に税込金額
+  const linen = (() => {
+    const mA = text.match(/リネン[^\d\n]*([\d,]{3,})/);
+    if (mA) {
+      const raw = parseInt(mA[1].replace(/,/g, '')) || 0;
+      if (raw > 0) {
+        Logger.log(`  [リネン形式A] raw=${raw} → ${Math.round(raw * 1.1)}`);
+        return Math.round(raw * 1.1);
+      }
+    }
+    // 形式B: 「9,240 12月リネン...」のように、月表記の前の数値が税込金額
+    const mB = text.match(/([\d,]{3,})\s+\d+月.*?リネン/);
+    if (mB) {
+      const raw = parseInt(mB[1].replace(/,/g, '')) || 0;
+      if (raw > 0) {
+        Logger.log(`  [リネン形式B] raw=${raw} 税込とみなす → ${raw}`);
+        return raw;
+      }
+    }
+    return 0;
+  })();
 
   // 備品・消耗品費（税込）
   // パターン例: "備品 ¥2,000" / "備品・消耗品 2,000円" / "消耗品費 2,000"
