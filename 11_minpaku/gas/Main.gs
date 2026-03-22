@@ -173,7 +173,7 @@ function runBackfill() {
       </script>
     </body>
     </html>
-  `).setWidth(420).setHeight(160);
+  `).setWidth(420).setHeight(220);
 
   SpreadsheetApp.getUi().showModalDialog(html, '📧 過去メール一括取込');
 }
