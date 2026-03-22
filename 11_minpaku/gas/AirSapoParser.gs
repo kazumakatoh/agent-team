@@ -142,6 +142,8 @@ function extractPdfText_(attachment) {
  * @return {Object|null} { yearMonth, agencyFee, cleaning, linen, supplies } または null
  */
 function parseInvoiceText_(text, filename) {
+  // Unicode正規化（CJK互換漢字・合成文字の統一）
+  text = text.normalize('NFKC');
   // 全角数字・記号を半角に正規化
   text = text.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
              .replace(/[¥￥]/g, '¥')
