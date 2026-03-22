@@ -361,7 +361,6 @@ function onOpen() {
     .createMenu('🏠 民泊管理')
     .addItem('📧 今すぐメールをチェック', 'runManualEmailCheck')
     .addItem('📅 過去メールを一括取込', 'runBackfill')
-    .addItem('📄 エアサポ請求書を取込', 'runManualAirSapoCheck')
     .addItem('📊 集計・ダッシュボード更新', 'runManualAggregation')
     .addSeparator()
     .addItem('✏️ 予約を手動入力', 'addReservationManually')
