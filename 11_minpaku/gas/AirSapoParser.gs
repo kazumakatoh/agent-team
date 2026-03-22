@@ -145,7 +145,10 @@ function parseInvoiceText_(text, filename) {
   // 全角数字・記号を半角に正規化
   text = text.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
              .replace(/[¥￥]/g, '¥')
-             .replace(/，/g, ',');
+             .replace(/，/g, ',')
+             .replace(/：/g, ':')           // 全角コロン→半角
+             .replace(/[\u200b\ufeff]/g, '') // ゼロ幅スペース・BOM除去
+             .replace(/\u00a0/g, ' ');       // ノーブレークスペース→スペース
 
   // 年月抽出: テキストから試みる → 失敗時はファイル名からフォールバック
   let ymMatch = text.match(/(\d{4})年\s*(\d{1,2})月/);
@@ -165,6 +168,9 @@ function parseInvoiceText_(text, filename) {
   for (let _i = 0; _i < Math.min(text.length, 1200); _i += 400) {
     Logger.log(`[OCR ${yearMonth} p${Math.floor(_i/400)+1}]: ${text.substring(_i, _i+400)}`);
   }
+  // デバッグ: キーワード存在確認
+  Logger.log(`[KW] 代行サービス料金=${text.includes('代行サービス料金')} 清掃料金=${text.includes('清掃料金')} リネン=${text.includes('リネン')}`);
+  Logger.log(`[KW] beds24=${text.toLowerCase().includes('beds24')} maneKEY=${text.toLowerCase().includes('manekey')}`);
 
   // 金額抽出ヘルパー: 数値文字列からカンマを除去して整数に変換
   const extractAmount = (pattern) => {
