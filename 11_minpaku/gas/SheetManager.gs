@@ -142,16 +142,25 @@ function getMonthlyReservationData(year, month) {
   let payout           = 0;
   let guests           = 0;
   let usageDays        = 0;
-  let bookingCount     = 0;  // 利用件数（キャンセル除く全予約）
+  let bookingCount     = 0;  // 当月利用問い合わせ数（チェックイン月が当月）
+  let inquiryCount     = 0;  // 当月問い合わせ数（予約受付日が当月）
 
   data.forEach(row => {
-    const checkin  = row[C.CHECKIN  - 1] ? new Date(row[C.CHECKIN  - 1]) : null;
-    const checkout = row[C.CHECKOUT - 1] ? new Date(row[C.CHECKOUT - 1]) : null;
-    const status   = row[C.STATUS   - 1];
+    const checkin    = row[C.CHECKIN     - 1] ? new Date(row[C.CHECKIN     - 1]) : null;
+    const checkout   = row[C.CHECKOUT   - 1] ? new Date(row[C.CHECKOUT   - 1]) : null;
+    const bookedDate = row[C.BOOKED_DATE - 1] ? new Date(row[C.BOOKED_DATE - 1]) : null;
+    const status     = row[C.STATUS     - 1];
 
-    if (!checkin || !checkout || status === 'キャンセル') return;
+    if (status === 'キャンセル') return;
 
-    // チェックインが当月に含まれる予約をカウント
+    // 当月問い合わせ数: 予約受付日が当月のものをカウント（利用月不問）
+    if (bookedDate && bookedDate.getFullYear() === year && bookedDate.getMonth() + 1 === month) {
+      inquiryCount++;
+    }
+
+    if (!checkin || !checkout) return;
+
+    // 当月利用問い合わせ数: チェックイン月が当月の予約で売上・稼働を集計
     const checkinMonth = checkin.getMonth() + 1;
     const checkinYear  = checkin.getFullYear();
 
@@ -172,7 +181,8 @@ function getMonthlyReservationData(year, month) {
   return {
     year,
     month,
-    bookingCount,   // 問い合わせ数 & 利用件数（同値）
+    inquiryCount,   // 当月問い合わせ数（予約受付日が当月）
+    bookingCount,   // 当月利用問い合わせ数（チェックイン月が当月）
     usageDays,      // 稼働日数（利用日数の合計）
     guests,         // 利用人数（人数の合計）
     revenue,        // 売上（OTA表示の合計額）
@@ -242,8 +252,8 @@ function updateMonthlySheet(fiscalYear) {
 
   // 新しい27列ヘッダー
   // COL  1: 年月
-  // COL  2: 問い合わせ数    COL  3: 稼働日数       COL  4: 利用可能日数
-  // COL  5: 利用件数        COL  6: 利用人数
+  // COL  2: 当月問合数（予約受付日が当月）  COL  3: 稼働日数  COL  4: 利用可能日数
+  // COL  5: 当月利用問合数（チェックイン月が当月）  COL  6: 利用人数
   // COL  7: OTA売上         COL  8: 宿泊料         COL  9: 清掃料
   // COL 10: OTA手数料       COL 11: 振込手数料     COL 12: 入金金額
   // COL 13: 代行手数料      COL 14: 清掃費         COL 15: リネン費
@@ -252,7 +262,7 @@ function updateMonthlySheet(fiscalYear) {
   // COL 23: 利益            COL 24: 利益率(%)
   // COL 25: ADR(円)         COL 26: RevPAR(円)     COL 27: 稼働率(%)
   const headers = [
-    '年月', '問い合わせ数', '稼働日数', '利用可能日数', '利用件数', '利用人数',
+    '年月', '当月問合数', '稼働日数', '利用可能日数', '当月利用問合数', '利用人数',
     'OTA売上', '宿泊料', '清掃料', 'OTA手数料', '振込手数料', '入金金額',
     '代行手数料', '清掃費', 'リネン費', '備品・消耗品費', '水光熱費', '家賃', 'その他経費',
     '売上', '流動費', '固定費', '利益', '利益率(%)',
@@ -291,10 +301,10 @@ function updateMonthlySheet(fiscalYear) {
 
     rows.push([
       yearMonthKey,
-      resData.bookingCount,      // 問い合わせ数 = 予約件数
+      resData.inquiryCount,      // 当月問合数（予約受付日が当月）
       resData.usageDays,         // 稼働日数 = 利用日数合計
       daysInMonth,               // 利用可能日数
-      resData.bookingCount,      // 利用件数
+      resData.bookingCount,      // 当月利用問合数（チェックイン月が当月）
       resData.guests,            // 利用人数
       resData.revenue,           // OTA売上（プラットフォーム表示合計）
       resData.accommodationFee,  // 宿泊料
@@ -456,7 +466,7 @@ function getFiscalYearMonths_(fiscalYear) {
 function buildEmptyMonthData_(year, month) {
   return {
     year, month,
-    bookingCount: 0, usageDays: 0, guests: 0,
+    inquiryCount: 0, bookingCount: 0, usageDays: 0, guests: 0,
     revenue: 0, accommodationFee: 0, cleaningFee: 0,
     otaFee: 0, transferFee: 0, payout: 0
   };
