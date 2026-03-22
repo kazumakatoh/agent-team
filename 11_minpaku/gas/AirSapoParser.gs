@@ -161,8 +161,10 @@ function parseInvoiceText_(text, filename) {
   const month = parseInt(ymMatch[2]);
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
 
-  // デバッグ: OCRテキスト全文を出力（金額項目の確認用）
-  Logger.log(`[OCR全文 ${yearMonth}]\n${text.substring(0, 800)}`);
+  // デバッグ: OCRテキストを分割出力（金額項目の確認用）
+  for (let _i = 0; _i < Math.min(text.length, 1200); _i += 400) {
+    Logger.log(`[OCR ${yearMonth} p${Math.floor(_i/400)+1}]: ${text.substring(_i, _i+400)}`);
+  }
 
   // 金額抽出ヘルパー: 数値文字列からカンマを除去して整数に変換
   const extractAmount = (pattern) => {
