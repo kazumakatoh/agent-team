@@ -162,9 +162,14 @@ function parseInvoiceText_(text, filename) {
     Logger.log('年月が見つかりません');
     return null;
   }
-  const year  = parseInt(ymMatch[1]);
-  const month = parseInt(ymMatch[2]);
+  const invoiceYear  = parseInt(ymMatch[1]);
+  const invoiceMonth = parseInt(ymMatch[2]);
+  // 請求書は前月分の経費のため、1ヶ月前の年月を算出（年またぎ対応）
+  const prevDate = new Date(invoiceYear, invoiceMonth - 2, 1); // month-2 = 前月の0-indexed
+  const year  = prevDate.getFullYear();
+  const month = prevDate.getMonth() + 1;
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+  Logger.log(`請求書年月: ${invoiceYear}-${String(invoiceMonth).padStart(2, '0')} → 経費年月: ${yearMonth}`);
 
   // デバッグ: OCRテキストを分割出力（金額項目の確認用）
   for (let _i = 0; _i < Math.min(text.length, 1200); _i += 400) {
