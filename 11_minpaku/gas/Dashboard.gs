@@ -22,44 +22,48 @@ function updateDashboard(fiscalYear) {
     const cost  = getMonthlyCostData(year, month);
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    const totalCleaning = res.cleaningFee + cost.cleaning;
-    const otherTotal    = cost.other + (cost.agencyFee || 0) + (cost.linen || 0);
-    const totalCosts    = totalCleaning + cost.supplies + cost.utilities + cost.rent + otherTotal;
-    const netRevenue    = res.revenue - res.commission;
-    const profit        = netRevenue - totalCosts;
+    const grossRevenue  = res.revenue + res.accommodationFee + res.cleaningFee;
+    const variableCosts = res.otaFee + res.transferFee
+                        + (cost.agencyFee || 0) + cost.cleaning + (cost.linen || 0) + cost.supplies;
+    const fixedCosts    = cost.utilities + cost.rent + cost.other;
+    const profit        = grossRevenue - variableCosts - fixedCosts;
+    const profitRate    = grossRevenue > 0 ? Math.round(profit / grossRevenue * 1000) / 10 : 0;
 
-    const kpis = KPICalculator.calcMonthlyKPIs({
-      revenue: res.revenue, commission: res.commission,
-      usageDays: res.usageDays, daysInMonth, totalCosts
-    });
+    const adr           = KPICalculator.calcADR(res.revenue, res.usageDays);
+    const revpar        = KPICalculator.calcRevPAR(res.revenue, daysInMonth);
+    const occupancyRate = KPICalculator.calcOccupancyRate(res.usageDays, daysInMonth);
 
     return {
-      label:         `${year}/${String(month).padStart(2, '0')}`,
-      bookingCount:  res.bookingCount,
-      usageDays:     res.usageDays,
-      guests:        res.guests,
-      revenue:       res.revenue,
-      commission:    res.commission,
-      cleaningFee:   totalCleaning,
-      supplies:      cost.supplies,
-      utilities:     cost.utilities,
-      rent:          cost.rent,
-      totalCosts,
+      label:            `${year}/${String(month).padStart(2, '0')}`,
+      bookingCount:     res.bookingCount,
+      usageDays:        res.usageDays,
+      guests:           res.guests,
+      revenue:          res.revenue,
+      accommodationFee: res.accommodationFee,
+      cleaningFee:      res.cleaningFee,
+      otaFee:           res.otaFee,
+      transferFee:      res.transferFee,
+      payout:           res.payout,
+      agencyFee:        cost.agencyFee || 0,
+      cleaning:         cost.cleaning,
+      linen:            cost.linen || 0,
+      supplies:         cost.supplies,
+      utilities:        cost.utilities,
+      rent:             cost.rent,
+      other:            cost.other,
+      grossRevenue,
+      variableCosts,
+      fixedCosts,
       profit,
-      roi:           kpis.roi,
-      adr:           kpis.adr,
-      revpar:        kpis.revpar,
-      occupancyRate: kpis.occupancyRate,
+      profitRate,
+      adr,
+      revpar,
+      occupancyRate,
       daysInMonth
     };
   });
 
-  const annualKPIs = KPICalculator.calcAnnualKPIs(
-    monthlyRows.map(r => ({
-      revenue: r.revenue, commission: r.commission,
-      usageDays: r.usageDays, totalCosts: r.totalCosts, daysInMonth: r.daysInMonth
-    }))
-  );
+  const annualKPIs = KPICalculator.calcAnnualKPIs(monthlyRows);
 
   sheet.clearContents();
   sheet.clearFormats();
@@ -90,8 +94,10 @@ function updateDashboard(fiscalYear) {
   renderCharts_(sheet, ss, monthlyRows, currentRow);
 
   // 列幅調整
-  sheet.setColumnWidths(1, 20, 120);
-  sheet.setColumnWidth(1, 100);
+  sheet.setColumnWidths(1, 16, 110);
+  sheet.setColumnWidth(1, 100);   // 年月
+  sheet.setColumnWidth(10, 80);   // 利益率
+  sheet.setColumnWidth(13, 80);   // 稼働率
 
   Logger.log(`ダッシュボード更新完了 (${fiscalYear}年度)`);
 }
@@ -102,7 +108,7 @@ function updateDashboard(fiscalYear) {
 
 function renderTitle_(sheet, fiscalYear, kpis, startRow) {
   const title = `🏠 ${CONFIG.PROPERTY.NAME} 民泊事業レポート ${fiscalYear}年度（${fiscalYear}/04 〜 ${fiscalYear + 1}/03）`;
-  sheet.getRange(startRow, 1, 1, 12).merge()
+  sheet.getRange(startRow, 1, 1, 16).merge()
        .setValue(title)
        .setBackground('#1a73e8')
        .setFontColor('#ffffff')
@@ -113,7 +119,7 @@ function renderTitle_(sheet, fiscalYear, kpis, startRow) {
   sheet.setRowHeight(startRow, 40);
 
   const updatedAt = `最終更新: ${Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm')}`;
-  sheet.getRange(startRow + 1, 1, 1, 12).merge()
+  sheet.getRange(startRow + 1, 1, 1, 16).merge()
        .setValue(updatedAt)
        .setFontColor('#5f6368')
        .setHorizontalAlignment('right')
@@ -123,72 +129,114 @@ function renderTitle_(sheet, fiscalYear, kpis, startRow) {
 }
 
 function renderAnnualKPICards_(sheet, kpis, startRow) {
-  // KPIカード定義
-  const cards = [
-    { label: '年間売上',         value: `¥${kpis.revenue.toLocaleString()}`,          bg: '#e8f5e9', textBg: '#1e8e3e' },
-    { label: '年間利益',         value: `¥${kpis.profit.toLocaleString()}`,            bg: kpis.profit >= 0 ? '#e8f5e9' : '#fce8e6', textBg: kpis.profit >= 0 ? '#1e8e3e' : '#d93025' },
-    { label: '稼働日数 / 180日', value: `${kpis.usageDays}日 (${kpis.legalOccupancyRate}%)`, bg: '#e3f2fd', textBg: '#1565c0' },
-    { label: '稼働率（暦日）',   value: `${kpis.occupancyRate}%`,                      bg: '#e3f2fd', textBg: '#1565c0' },
-    { label: 'ADR',              value: `¥${kpis.adr.toLocaleString()}`,               bg: '#fff3e0', textBg: '#e65100' },
-    { label: 'RevPAR',           value: `¥${kpis.revpar.toLocaleString()}`,            bg: '#fff3e0', textBg: '#e65100' },
-    { label: 'ROI',              value: `${kpis.roi}%`,                                bg: kpis.roi >= 0 ? '#e8f5e9' : '#fce8e6', textBg: kpis.roi >= 0 ? '#1e8e3e' : '#d93025' },
-    { label: '利用件数',         value: `${kpis.bookingCount || '-'}件`,               bg: '#f3e5f5', textBg: '#6a1b9a' }
-  ];
-
   // 見出し
-  sheet.getRange(startRow, 1, 1, 12).merge()
+  sheet.getRange(startRow, 1, 1, 16).merge()
        .setValue('■ 年間KPIサマリー')
        .setFontWeight('bold')
        .setFontSize(12)
        .setBackground('#f1f3f4');
   startRow++;
 
-  // カードを4列×2行で表示
-  cards.forEach((card, i) => {
-    const col = (i % 4) * 3 + 1;
-    const row = startRow + Math.floor(i / 4) * 3;
+  const grossRev   = kpis.grossRevenue || 0;
+  const varCosts   = kpis.variableCosts || 0;
+  const fixCosts   = kpis.fixedCosts || 0;
+  const profit     = kpis.profit || 0;
+  const pctOf      = (v) => grossRev > 0 ? (Math.round(v / grossRev * 1000) / 10) + '%' : '-';
 
-    // ラベル
-    sheet.getRange(row, col, 1, 3).merge()
+  // ──────────────────────────
+  // ROW A: 財務4指標（金額＋売上比率）
+  // 各カードは4列幅: COL1-4 / COL5-8 / COL9-12 / COL13-16
+  //   左3列: 金額、右1列: 比率バッジ
+  // ──────────────────────────
+  const finCards = [
+    { label: '総売上（年間）', amount: grossRev,  ratio: '100%',         bg: '#e8f5e9', fg: '#1e8e3e' },
+    { label: '流動費',         amount: varCosts,  ratio: pctOf(varCosts), bg: '#fff8e1', fg: '#f57f17' },
+    { label: '固定費',         amount: fixCosts,  ratio: pctOf(fixCosts), bg: '#fce4ec', fg: '#880e4f' },
+    { label: '利益',           amount: profit,    ratio: pctOf(profit),   bg: profit >= 0 ? '#e8f5e9' : '#fce8e6', fg: profit >= 0 ? '#1e8e3e' : '#d93025' }
+  ];
+
+  finCards.forEach((card, i) => {
+    const col = i * 4 + 1;
+    const row = startRow;
+    sheet.getRange(row, col, 1, 4).merge()
          .setValue(card.label)
-         .setBackground(card.bg)
-         .setFontColor(card.textBg)
-         .setFontSize(10)
-         .setHorizontalAlignment('center')
-         .setFontWeight('bold');
-
-    // 値
+         .setBackground(card.bg).setFontColor(card.fg)
+         .setFontSize(10).setFontWeight('bold')
+         .setHorizontalAlignment('center');
+    // 金額（左3列）
     sheet.getRange(row + 1, col, 1, 3).merge()
-         .setValue(card.value)
-         .setBackground(card.bg)
-         .setFontColor(card.textBg)
-         .setFontSize(16)
-         .setFontWeight('bold')
-         .setHorizontalAlignment('center')
-         .setVerticalAlignment('middle');
-    sheet.setRowHeight(row + 1, 40);
+         .setValue(`¥${card.amount.toLocaleString()}`)
+         .setBackground(card.bg).setFontColor(card.fg)
+         .setFontSize(15).setFontWeight('bold')
+         .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    // 比率バッジ（右1列）
+    sheet.getRange(row + 1, col + 3, 1, 1)
+         .setValue(card.ratio)
+         .setBackground(card.bg).setFontColor(card.fg)
+         .setFontSize(11).setFontWeight('bold')
+         .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sheet.setRowHeight(row + 1, 42);
+    sheet.getRange(row + 2, col, 1, 4).merge().setBackground(card.bg);
+  });
+  startRow += 3;
 
-    // 区切り線代わりのスペース
-    sheet.getRange(row + 2, col, 1, 3).merge().setBackground(card.bg);
+  // ──────────────────────────
+  // ROW B: 稼働・運営KPI（4カード × 4列）
+  // ──────────────────────────
+  const opsCards = [
+    { label: '稼働率（/365日）',  value: `${kpis.occupancyRate365}%`,      bg: '#e3f2fd', fg: '#1565c0' },
+    { label: '稼働率（/180日）',  value: `${kpis.legalOccupancyRate}%\n(${kpis.usageDays}日/180日)`, bg: '#e3f2fd', fg: '#1565c0' },
+    { label: '利用件数',          value: `${kpis.bookingCount || 0}件`,     bg: '#f3e5f5', fg: '#6a1b9a' },
+    { label: 'ADR',               value: `¥${(kpis.adr || 0).toLocaleString()}`, bg: '#fff3e0', fg: '#e65100' }
+  ];
+  const opsCards2 = [
+    { label: 'RevPAR',            value: `¥${(kpis.revpar || 0).toLocaleString()}`, bg: '#fff3e0', fg: '#e65100' },
+    { label: '初期投資額',        value: `¥${(kpis.initialInvestment || 4262824).toLocaleString()}`, bg: '#eceff1', fg: '#37474f' },
+    { label: 'ROI（初期投資回収率）', value: `${kpis.roi}%`, bg: kpis.roi >= 0 ? '#e8f5e9' : '#fce8e6', fg: kpis.roi >= 0 ? '#1e8e3e' : '#d93025' },
+    { label: '利益率',            value: `${kpis.profitRate || 0}%`,        bg: profit >= 0 ? '#e8f5e9' : '#fce8e6', fg: profit >= 0 ? '#1e8e3e' : '#d93025' }
+  ];
+
+  [opsCards, opsCards2].forEach(cardRow => {
+    cardRow.forEach((card, i) => {
+      const col = i * 4 + 1;
+      const row = startRow;
+      sheet.getRange(row, col, 1, 4).merge()
+           .setValue(card.label)
+           .setBackground(card.bg).setFontColor(card.fg)
+           .setFontSize(10).setFontWeight('bold')
+           .setHorizontalAlignment('center');
+      sheet.getRange(row + 1, col, 1, 4).merge()
+           .setValue(card.value)
+           .setBackground(card.bg).setFontColor(card.fg)
+           .setFontSize(14).setFontWeight('bold')
+           .setHorizontalAlignment('center').setVerticalAlignment('middle')
+           .setWrap(true);
+      sheet.setRowHeight(row + 1, 42);
+      sheet.getRange(row + 2, col, 1, 4).merge().setBackground(card.bg);
+    });
+    startRow += 3;
   });
 
-  return startRow + 6 + 1;
+  return startRow + 1;
 }
 
 function renderMonthlyTable_(sheet, monthlyRows, startRow) {
+  const NUM_COLS = 16;
+
   // 見出し
-  sheet.getRange(startRow, 1, 1, 19).merge()
+  sheet.getRange(startRow, 1, 1, NUM_COLS).merge()
        .setValue('■ 月別集計')
        .setFontWeight('bold')
        .setFontSize(12)
        .setBackground('#f1f3f4');
   startRow++;
 
-  // ヘッダー
+  // ヘッダー（16列）
   const headers = [
     '年月', '利用件数', '稼働日数', '人数',
-    '売上', '手数料', '清掃費', '備品・消耗品', '水光熱費', '家賃',
-    '総経費', '利益', 'ROI(%)', 'ADR', 'RevPAR', '稼働率(%)'
+    '売上', '総売上', '流動費', '固定費',
+    '利益', '利益率(%)', 'ADR', 'RevPAR', '稼働率(%)',
+    '代行手数料', '清掃費', 'リネン費'
   ];
   sheet.getRange(startRow, 1, 1, headers.length)
        .setValues([headers])
@@ -206,57 +254,55 @@ function renderMonthlyTable_(sheet, monthlyRows, startRow) {
     r.usageDays,
     r.guests,
     r.revenue,
-    r.commission,
-    r.cleaningFee,
-    r.supplies,
-    r.utilities,
-    r.rent,
-    r.totalCosts,
+    r.grossRevenue,
+    r.variableCosts,
+    r.fixedCosts,
     r.profit,
-    r.roi,
+    r.profitRate,
     r.adr,
     r.revpar,
-    r.occupancyRate
+    r.occupancyRate,
+    r.agencyFee,
+    r.cleaning,
+    r.linen
   ]);
 
   if (rows.length > 0) {
     sheet.getRange(startRow, 1, rows.length, headers.length).setValues(rows);
 
-    // フォーマット
-    const moneyRange = sheet.getRange(startRow, 5, rows.length, 8); // 売上〜利益
-    moneyRange.setNumberFormat('¥#,##0');
-
-    sheet.getRange(startRow, 13, rows.length, 1).setNumberFormat('0.0"%"'); // ROI
-    sheet.getRange(startRow, 14, rows.length, 1).setNumberFormat('¥#,##0'); // ADR
-    sheet.getRange(startRow, 15, rows.length, 1).setNumberFormat('¥#,##0'); // RevPAR
-    sheet.getRange(startRow, 16, rows.length, 1).setNumberFormat('0.0"%"'); // 稼働率
+    // 金額列 (COL5〜9, 11〜12, 14〜16)
+    sheet.getRange(startRow, 5, rows.length, 5).setNumberFormat('¥#,##0');  // 売上〜利益
+    sheet.getRange(startRow, 10, rows.length, 1).setNumberFormat('0.0"%"'); // 利益率
+    sheet.getRange(startRow, 11, rows.length, 2).setNumberFormat('¥#,##0'); // ADR, RevPAR
+    sheet.getRange(startRow, 13, rows.length, 1).setNumberFormat('0.0"%"'); // 稼働率
+    sheet.getRange(startRow, 14, rows.length, 3).setNumberFormat('¥#,##0'); // 代行〜リネン
 
     // 交互に色付け
-    rows.forEach((_, i) => {
+    rows.forEach((row, i) => {
       const bg = i % 2 === 0 ? '#ffffff' : '#f8f9fa';
       sheet.getRange(startRow + i, 1, 1, headers.length).setBackground(bg);
-
-      // 利益がマイナスの場合は赤にハイライト
-      if (rows[i][11] < 0) {
-        sheet.getRange(startRow + i, 12).setFontColor('#d93025').setFontWeight('bold');
+      if (row[8] < 0) { // 利益がマイナス
+        sheet.getRange(startRow + i, 9).setFontColor('#d93025').setFontWeight('bold');
       }
     });
   }
 
-  // 合計行
+  // 合計行（金額列のみSUM）
   const totalRow = startRow + rows.length;
-  const totals   = rows.reduce((acc, r) => {
-    for (let c = 1; c < r.length - 4; c++) { // KPI列は除く
-      acc[c] = (acc[c] || 0) + (Number(r[c]) || 0);
-    }
-    return acc;
-  }, ['合計']);
-  while (totals.length < headers.length) totals.push('');
+  const sumCols  = [2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 16];
+  const totalData = new Array(headers.length).fill('');
+  totalData[0] = '合計';
+  sumCols.forEach(col => {
+    totalData[col - 1] = rows.reduce((s, r) => s + (Number(r[col - 1]) || 0), 0);
+  });
 
   sheet.getRange(totalRow, 1, 1, headers.length)
-       .setValues([totals])
+       .setValues([totalData])
        .setBackground('#fce8e6')
        .setFontWeight('bold');
+  sheet.getRange(totalRow, 5, 1, 5).setNumberFormat('¥#,##0');
+  sheet.getRange(totalRow, 11, 1, 2).setNumberFormat('¥#,##0');
+  sheet.getRange(totalRow, 14, 1, 3).setNumberFormat('¥#,##0');
 
   return totalRow + 1;
 }

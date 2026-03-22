@@ -134,14 +134,15 @@ function getMonthlyReservationData(year, month) {
   const C    = CONFIG.RESERVATION_COLS;
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 19).getValues();
 
-  let revenue      = 0;
-  let otaFee       = 0;
-  let transferFee  = 0;
-  let payout       = 0;
-  let cleaningFee  = 0;
-  let guests       = 0;
-  let usageDays    = 0;
-  let bookingCount = 0;
+  let revenue          = 0;
+  let accommodationFee = 0;
+  let cleaningFee      = 0;  // ゲスト負担の清掃料（売上側）
+  let otaFee           = 0;
+  let transferFee      = 0;
+  let payout           = 0;
+  let guests           = 0;
+  let usageDays        = 0;
+  let bookingCount     = 0;  // 利用件数（キャンセル除く全予約）
 
   data.forEach(row => {
     const checkin  = row[C.CHECKIN  - 1] ? new Date(row[C.CHECKIN  - 1]) : null;
@@ -157,26 +158,29 @@ function getMonthlyReservationData(year, month) {
     if (checkinYear !== year || checkinMonth !== month) return;
 
     bookingCount++;
-    revenue     += Number(row[C.REVENUE      - 1]) || 0;
-    otaFee      += Number(row[C.OTA_FEE      - 1]) || 0;
-    transferFee += Number(row[C.TRANSFER_FEE - 1]) || 0;
-    payout      += Number(row[C.PAYOUT       - 1]) || 0;
-    cleaningFee += Number(row[C.CLEANING_FEE - 1]) || 0;
-    guests      += Number(row[C.GUESTS       - 1]) || 0;
-    usageDays   += Number(row[C.NIGHTS       - 1]) || 0;
+    revenue          += Number(row[C.REVENUE       - 1]) || 0;
+    accommodationFee += Number(row[C.ACCOMMODATION - 1]) || 0;
+    cleaningFee      += Number(row[C.CLEANING_FEE  - 1]) || 0;
+    otaFee           += Number(row[C.OTA_FEE       - 1]) || 0;
+    transferFee      += Number(row[C.TRANSFER_FEE  - 1]) || 0;
+    payout           += Number(row[C.PAYOUT        - 1]) || 0;
+    guests           += Number(row[C.GUESTS        - 1]) || 0;
+    // 稼働日数 = 利用日数（USAGE_DAYS列）の合計
+    usageDays        += Number(row[C.USAGE_DAYS    - 1]) || 0;
   });
 
   return {
     year,
     month,
-    bookingCount,
-    usageDays,
-    guests,
-    revenue,
-    otaFee,
-    transferFee,
-    payout,
-    cleaningFee  // ゲスト負担分（参考値。費用は経費入力シートで管理）
+    bookingCount,   // 問い合わせ数 & 利用件数（同値）
+    usageDays,      // 稼働日数（利用日数の合計）
+    guests,         // 利用人数（人数の合計）
+    revenue,        // 売上（OTA表示の合計額）
+    accommodationFee,  // 宿泊料
+    cleaningFee,       // 清掃料（ゲスト負担・売上側）
+    otaFee,         // OTA手数料
+    transferFee,    // 振込手数料
+    payout          // 入金金額
   };
 }
 
@@ -222,80 +226,82 @@ function updateMonthlySheet(fiscalYear) {
   const sheet = ss.getSheetByName(CONFIG.SHEETS.MONTHLY);
   if (!sheet) throw new Error(`シート「${CONFIG.SHEETS.MONTHLY}」が見つかりません。`);
 
-  // ヘッダー設定
+  // 新しい27列ヘッダー
+  // COL  1: 年月
+  // COL  2: 問い合わせ数    COL  3: 稼働日数       COL  4: 利用可能日数
+  // COL  5: 利用件数        COL  6: 利用人数
+  // COL  7: 売上            COL  8: 宿泊料         COL  9: 清掃料
+  // COL 10: OTA手数料       COL 11: 振込手数料     COL 12: 入金金額
+  // COL 13: 代行手数料      COL 14: 清掃費         COL 15: リネン費
+  // COL 16: 備品・消耗品費  COL 17: 水光熱費       COL 18: 家賃          COL 19: その他経費
+  // COL 20: 総売上          COL 21: 流動費         COL 22: 固定費
+  // COL 23: 利益            COL 24: 利益率(%)
+  // COL 25: ADR(円)         COL 26: RevPAR(円)     COL 27: 稼働率(%)
   const headers = [
-    '年月', '問い合わせ数', '稼働日数', '利用可能日数',
-    '利用件数', '利用人数', '売上', '手数料', '清掃費',
-    '備品・消耗品費', '水光熱費', '家賃', 'その他経費', '総経費', '利益',
-    'ROI(%)', 'ADR(円)', 'RevPAR(円)', '稼働率(%)'
+    '年月', '問い合わせ数', '稼働日数', '利用可能日数', '利用件数', '利用人数',
+    '売上', '宿泊料', '清掃料', 'OTA手数料', '振込手数料', '入金金額',
+    '代行手数料', '清掃費', 'リネン費', '備品・消耗品費', '水光熱費', '家賃', 'その他経費',
+    '総売上', '流動費', '固定費', '利益', '利益率(%)',
+    'ADR(円)', 'RevPAR(円)', '稼働率(%)'
   ];
-
-  // 既存の問い合わせ数を保持（手動入力値を上書きしないため）
-  const existingInquiries = {};
-  const lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    const existing = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-    existing.forEach(row => {
-      if (row[0]) existingInquiries[String(row[0])] = Number(row[1]) || 0;
-    });
-  }
 
   sheet.clearContents();
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   styleHeaderRow_(sheet, headers.length);
 
-  // 4月〜翌3月の12ヶ月
   const months = getFiscalYearMonths_(fiscalYear);
   let totalUsageDays = 0;
   const rows = [];
 
   months.forEach(({ year, month }) => {
-    const resData  = getMonthlyReservationData(year, month);
-    const costData = getMonthlyCostData(year, month);
+    const resData     = getMonthlyReservationData(year, month);
+    const costData    = getMonthlyCostData(year, month);
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    // 清掃費（経費）は経費入力シートの値のみ（予約リストの清掃費はゲスト負担の売上）
-    const totalCleaning = costData.cleaning;
-    // 代行手数料・リネン費は月別集計の「その他経費」列に合算して表示
-    const otherTotal    = costData.other + costData.agencyFee + costData.linen;
-    const totalCosts    = totalCleaning + costData.supplies + costData.utilities + costData.rent + otherTotal;
-    const netRevenue    = resData.payout || (resData.revenue - resData.otaFee - resData.transferFee);
-    const profit        = netRevenue - totalCosts;
+    // 集計値
+    const grossRevenue   = resData.revenue + resData.accommodationFee + resData.cleaningFee;
+    const variableCosts  = resData.otaFee + resData.transferFee
+                         + costData.agencyFee + costData.cleaning + costData.linen + costData.supplies;
+    const fixedCosts     = costData.utilities + costData.rent + costData.other;
+    const profit         = grossRevenue - variableCosts - fixedCosts;
+    const profitRate     = grossRevenue > 0 ? Math.round(profit / grossRevenue * 1000) / 10 : 0;
 
-    const kpis = KPICalculator.calcMonthlyKPIs({
-      revenue:    resData.revenue,
-      commission: resData.otaFee,
-      usageDays:  resData.usageDays,
-      daysInMonth,
-      totalCosts
-    });
+    const adr           = KPICalculator.calcADR(resData.revenue, resData.usageDays);
+    const revpar        = KPICalculator.calcRevPAR(resData.revenue, daysInMonth);
+    const occupancyRate = KPICalculator.calcOccupancyRate(resData.usageDays, daysInMonth);
 
     totalUsageDays += resData.usageDays;
 
-    // 問い合わせ数：既存の手動入力値を復元（なければ0）
     const yearMonthKey = `${year}/${String(month).padStart(2, '0')}`;
-    const inquiries = existingInquiries[yearMonthKey] || 0;
 
     rows.push([
       yearMonthKey,
-      inquiries,              // 問い合わせ数（手動入力値を保持）
-      resData.usageDays,
-      daysInMonth,
-      resData.bookingCount,
-      resData.guests,
-      resData.revenue,
-      resData.otaFee,
-      totalCleaning,
-      costData.supplies,
-      costData.utilities,
-      costData.rent,
-      otherTotal,
-      totalCosts,
-      profit,
-      kpis.roi,
-      kpis.adr,
-      kpis.revpar,
-      kpis.occupancyRate
+      resData.bookingCount,      // 問い合わせ数 = 予約件数
+      resData.usageDays,         // 稼働日数 = 利用日数合計
+      daysInMonth,               // 利用可能日数
+      resData.bookingCount,      // 利用件数
+      resData.guests,            // 利用人数
+      resData.revenue,           // 売上
+      resData.accommodationFee,  // 宿泊料
+      resData.cleaningFee,       // 清掃料（ゲスト負担）
+      resData.otaFee,            // OTA手数料
+      resData.transferFee,       // 振込手数料
+      resData.payout,            // 入金金額
+      costData.agencyFee,        // 代行手数料
+      costData.cleaning,         // 清掃費（業者への支払い）
+      costData.linen,            // リネン費
+      costData.supplies,         // 備品・消耗品費
+      costData.utilities,        // 水光熱費
+      costData.rent,             // 家賃
+      costData.other,            // その他経費
+      grossRevenue,              // 総売上
+      variableCosts,             // 流動費
+      fixedCosts,                // 固定費
+      profit,                    // 利益
+      profitRate,                // 利益率(%)
+      adr,                       // ADR
+      revpar,                    // RevPAR
+      occupancyRate              // 稼働率(%)
     ]);
   });
 
@@ -304,10 +310,115 @@ function updateMonthlySheet(fiscalYear) {
     formatMonthlySheet_(sheet, rows.length, headers.length);
   }
 
-  // 合計行
   appendMonthlyTotalRow_(sheet, rows.length, headers.length, totalUsageDays, fiscalYear);
 
   Logger.log(`月別集計シート更新完了 (${fiscalYear}年度)`);
+}
+
+/**
+ * 年間集計シートを更新する
+ * @param {number} fiscalYear
+ */
+function updateAnnualSheet(fiscalYear) {
+  const ss    = getSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.ANNUAL);
+  if (!sheet) throw new Error(`シート「${CONFIG.SHEETS.ANNUAL}」が見つかりません。`);
+
+  const headers = [
+    '事業年度', '稼働日数', '年間上限日数', '利用可能日数', '利用件数', '利用人数',
+    '売上', '宿泊料', '清掃料', 'OTA手数料', '振込手数料', '入金金額',
+    '代行手数料', '清掃費', 'リネン費', '備品・消耗品費', '水光熱費', '家賃', 'その他経費',
+    '総売上', '流動費', '固定費', '利益', '利益率(%)',
+    'ADR(円)', 'RevPAR(円)', '稼働率(%)', '法定稼働率(%)'
+  ];
+
+  // 既存の年度データを保持
+  const existing = {};
+  if (sheet.getLastRow() > 1) {
+    const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
+    rows.forEach(r => { if (r[0]) existing[String(r[0])] = r; });
+  }
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  styleHeaderRow_(sheet, headers.length);
+  sheet.getRange(1, 1, 1, headers.length)
+       .setBackground('#7b1fa2').setFontColor('#ffffff');
+
+  // 集計
+  const months = getFiscalYearMonths_(fiscalYear);
+  let totals = {
+    usageDays: 0, bookingCount: 0, guests: 0,
+    revenue: 0, accommodationFee: 0, cleaningFee: 0,
+    otaFee: 0, transferFee: 0, payout: 0,
+    agencyFee: 0, cleaning: 0, linen: 0, supplies: 0, utilities: 0, rent: 0, other: 0,
+    daysInYear: 0
+  };
+
+  months.forEach(({ year, month }) => {
+    const res  = getMonthlyReservationData(year, month);
+    const cost = getMonthlyCostData(year, month);
+    const dim  = new Date(year, month, 0).getDate();
+    totals.usageDays      += res.usageDays;
+    totals.bookingCount   += res.bookingCount;
+    totals.guests         += res.guests;
+    totals.revenue        += res.revenue;
+    totals.accommodationFee += res.accommodationFee;
+    totals.cleaningFee    += res.cleaningFee;
+    totals.otaFee         += res.otaFee;
+    totals.transferFee    += res.transferFee;
+    totals.payout         += res.payout;
+    totals.agencyFee      += cost.agencyFee;
+    totals.cleaning       += cost.cleaning;
+    totals.linen          += cost.linen;
+    totals.supplies       += cost.supplies;
+    totals.utilities      += cost.utilities;
+    totals.rent           += cost.rent;
+    totals.other          += cost.other;
+    totals.daysInYear     += dim;
+  });
+
+  const grossRevenue  = totals.revenue + totals.accommodationFee + totals.cleaningFee;
+  const variableCosts = totals.otaFee + totals.transferFee + totals.agencyFee
+                      + totals.cleaning + totals.linen + totals.supplies;
+  const fixedCosts    = totals.utilities + totals.rent + totals.other;
+  const profit        = grossRevenue - variableCosts - fixedCosts;
+  const profitRate    = grossRevenue > 0 ? Math.round(profit / grossRevenue * 1000) / 10 : 0;
+  const adr           = KPICalculator.calcADR(totals.revenue, totals.usageDays);
+  const revpar        = KPICalculator.calcRevPAR(totals.revenue, totals.daysInYear);
+  const occupancy     = KPICalculator.calcOccupancyRate(totals.usageDays, totals.daysInYear);
+  const legalOccupancy = KPICalculator.calcOccupancyRate(totals.usageDays, CONFIG.PROPERTY.MAX_ANNUAL_DAYS);
+
+  const row = [
+    `${fiscalYear}年度`,
+    totals.usageDays, CONFIG.PROPERTY.MAX_ANNUAL_DAYS, totals.daysInYear,
+    totals.bookingCount, totals.guests,
+    totals.revenue, totals.accommodationFee, totals.cleaningFee,
+    totals.otaFee, totals.transferFee, totals.payout,
+    totals.agencyFee, totals.cleaning, totals.linen, totals.supplies,
+    totals.utilities, totals.rent, totals.other,
+    grossRevenue, variableCosts, fixedCosts, profit, profitRate,
+    adr, revpar, occupancy, legalOccupancy
+  ];
+
+  // 既存行があれば上書き、なければ追加
+  const existingKey = `${fiscalYear}年度`;
+  let targetRow = 2;
+  if (sheet.getLastRow() >= 2) {
+    const ids = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+    const idx = ids.findIndex(r => String(r[0]) === existingKey);
+    if (idx >= 0) targetRow = idx + 2;
+    else targetRow = sheet.getLastRow() + 1;
+  }
+  sheet.getRange(targetRow, 1, 1, headers.length).setValues([row]);
+
+  // 書式
+  sheet.getRange(targetRow, 7, 1, 17).setNumberFormat('¥#,##0');  // 売上〜利益
+  sheet.getRange(targetRow, 24, 1, 1).setNumberFormat('0.0"%"'); // 利益率
+  sheet.getRange(targetRow, 25, 1, 2).setNumberFormat('¥#,##0'); // ADR, RevPAR
+  sheet.getRange(targetRow, 27, 1, 2).setNumberFormat('0.0"%"'); // 稼働率, 法定稼働率
+
+  Logger.log(`年間集計シート更新完了 (${fiscalYear}年度)`);
 }
 
 // ==============================
@@ -371,17 +482,17 @@ function formatReservationSheet_(sheet) {
 function formatMonthlySheet_(sheet, numDataRows, numCols) {
   if (numDataRows < 1) return;
 
-  // 金額列のフォーマット
-  const moneyStartCol = 7; // G列（売上）から
-  const moneyEndCol   = 15; // O列（利益）まで
-  sheet.getRange(2, moneyStartCol, numDataRows, moneyEndCol - moneyStartCol + 1)
-       .setNumberFormat('¥#,##0');
+  // 金額列: COL7〜COL23（売上〜利益）
+  sheet.getRange(2, 7, numDataRows, 17).setNumberFormat('¥#,##0');
 
-  // KPI列
-  sheet.getRange(2, 16, numDataRows, 1).setNumberFormat('0.0"%"'); // ROI
-  sheet.getRange(2, 17, numDataRows, 1).setNumberFormat('¥#,##0'); // ADR
-  sheet.getRange(2, 18, numDataRows, 1).setNumberFormat('¥#,##0'); // RevPAR
-  sheet.getRange(2, 19, numDataRows, 1).setNumberFormat('0.0"%"'); // 稼働率
+  // 利益率(%) COL24
+  sheet.getRange(2, 24, numDataRows, 1).setNumberFormat('0.0"%"');
+
+  // ADR COL25, RevPAR COL26
+  sheet.getRange(2, 25, numDataRows, 2).setNumberFormat('¥#,##0');
+
+  // 稼働率(%) COL27
+  sheet.getRange(2, 27, numDataRows, 1).setNumberFormat('0.0"%"');
 
   // 交互に色付け
   for (let i = 2; i <= numDataRows + 1; i++) {
@@ -397,8 +508,8 @@ function appendMonthlyTotalRow_(sheet, numDataRows, numCols, totalUsageDays, fis
        .setBackground('#fce8e6')
        .setFontWeight('bold');
 
-  // SUM式 for 数値列
-  const sumCols = [3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]; // 稼働日数〜利益
+  // SUM式（稼働日数〜その他経費, 総売上〜利益）
+  const sumCols = [3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
   sumCols.forEach(col => {
     const colLetter = columnToLetter_(col);
     sheet.getRange(totalRow, col)
@@ -407,8 +518,8 @@ function appendMonthlyTotalRow_(sheet, numDataRows, numCols, totalUsageDays, fis
 
   // 年間稼働率（180日制限に対する割合）
   const annualOccupancy = (totalUsageDays / CONFIG.PROPERTY.MAX_ANNUAL_DAYS * 100).toFixed(1);
-  sheet.getRange(totalRow, numCols).setValue(Number(annualOccupancy));
-  sheet.getRange(totalRow, numCols).setNote(`年間${CONFIG.PROPERTY.MAX_ANNUAL_DAYS}日上限に対する稼働率`);
+  sheet.getRange(totalRow, 27).setValue(Number(annualOccupancy));
+  sheet.getRange(totalRow, 27).setNote(`年間${CONFIG.PROPERTY.MAX_ANNUAL_DAYS}日上限に対する稼働率`);
 }
 
 function columnToLetter_(column) {

@@ -37,30 +37,44 @@ const KPICalculator = {
 
   /**
    * 年次KPIを計算する
-   * @param {Array<Object>} monthlyDataArray - 12ヶ月分の集計データ
+   * @param {Array<Object>} monthlyDataArray - 月別集計データ（updateDashboardが渡す）
+   *   各要素: { revenue, accommodationFee, cleaningFee, otaFee, transferFee, payout,
+   *             agencyFee, cleaning, linen, supplies, utilities, rent, other,
+   *             grossRevenue, variableCosts, fixedCosts, profit,
+   *             usageDays, bookingCount, guests, daysInMonth }
    * @return {Object}
    */
   calcAnnualKPIs(monthlyDataArray) {
     const totals = monthlyDataArray.reduce((acc, m) => {
-      acc.revenue      += m.revenue      || 0;
-      acc.commission   += m.commission   || 0;
-      acc.usageDays    += m.usageDays    || 0;
-      acc.totalCosts   += m.totalCosts   || 0;
-      acc.daysInYear   += m.daysInMonth  || 0;
-      acc.bookingCount += m.bookingCount || 0;
+      acc.revenue          += m.revenue          || 0;
+      acc.grossRevenue     += m.grossRevenue     || 0;
+      acc.variableCosts    += m.variableCosts    || 0;
+      acc.fixedCosts       += m.fixedCosts       || 0;
+      acc.profit           += m.profit           || 0;
+      acc.usageDays        += m.usageDays        || 0;
+      acc.daysInYear       += m.daysInMonth      || 0;
+      acc.bookingCount     += m.bookingCount     || 0;
+      acc.guests           += m.guests           || 0;
       return acc;
-    }, { revenue: 0, commission: 0, usageDays: 0, totalCosts: 0, daysInYear: 0, bookingCount: 0 });
+    }, {
+      revenue: 0, grossRevenue: 0, variableCosts: 0, fixedCosts: 0, profit: 0,
+      usageDays: 0, daysInYear: 0, bookingCount: 0, guests: 0
+    });
 
-    const netRevenue = totals.revenue - totals.commission;
-    const profit     = netRevenue - totals.totalCosts;
+    const INITIAL_INVESTMENT = 4262824; // 初期投資額（固定）
+    const profitRate = totals.grossRevenue > 0
+      ? Math.round(totals.profit / totals.grossRevenue * 1000) / 10 : 0;
+    // 初期投資回収率 ROI = 累積利益 / 初期投資額 × 100
+    const roi = Math.round(totals.profit / INITIAL_INVESTMENT * 1000) / 10;
 
     return {
       ...totals,
-      netRevenue,
-      profit,
-      roi:                this.calcROI(profit, totals.totalCosts),
+      profitRate,
+      roi,
+      initialInvestment:  INITIAL_INVESTMENT,
       adr:                this.calcADR(totals.revenue, totals.usageDays),
       revpar:             this.calcRevPAR(totals.revenue, totals.daysInYear),
+      occupancyRate365:   this.calcOccupancyRate(totals.usageDays, 365),
       occupancyRate:      this.calcOccupancyRate(totals.usageDays, totals.daysInYear),
       legalOccupancyRate: this.calcOccupancyRate(totals.usageDays, CONFIG.PROPERTY.MAX_ANNUAL_DAYS)
     };

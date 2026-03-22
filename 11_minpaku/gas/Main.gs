@@ -51,6 +51,7 @@ function dailyAggregation() {
 
     const fiscalYear = KPICalculator.getCurrentFiscalYear();
     updateMonthlySheet(fiscalYear);
+    updateAnnualSheet(fiscalYear);
     updateDashboard(fiscalYear);
 
     Logger.log(`日次集計完了 (${fiscalYear}年度)`);
@@ -133,6 +134,7 @@ function runManualAggregation() {
 
   const inputYear = parseInt(result.getResponseText()) || year;
   updateMonthlySheet(inputYear);
+  updateAnnualSheet(inputYear);
   updateDashboard(inputYear);
   ui.alert(`✅ ${inputYear}年度の集計・ダッシュボードを更新しました。`);
 }
