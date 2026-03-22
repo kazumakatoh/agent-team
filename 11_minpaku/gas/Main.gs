@@ -145,9 +145,9 @@ function runBackfill() {
 
   const result = ui.prompt(
     '📧 過去メール一括取込',
-    '取込開始日を入力してください\n' +
-    '空欄のままOKを押すと、Gmailの全期間を対象にします。',
-    '2025/12/01'
+    '取込開始日を入力してください（例: 2025/12/01）\n' +
+    '空欄のままOKを押すと 2025/12/01 以降を対象にします。',
+    ui.ButtonSet.OK_CANCEL
   );
 
   if (result.getSelectedButton() !== ui.Button.OK) return;
@@ -155,17 +155,14 @@ function runBackfill() {
   const input = result.getResponseText().trim();
   let sinceDate = null;
 
-  if (input) {
-    sinceDate = new Date(input.replace(/\//g, '-'));
-    if (isNaN(sinceDate.getTime())) {
-      ui.alert('⚠️ 日付の形式が正しくありません。\n例: 2025/12/01');
-      return;
-    }
+  const dateStr = input || '2025/12/01';
+  sinceDate = new Date(dateStr.replace(/\//g, '-'));
+  if (isNaN(sinceDate.getTime())) {
+    ui.alert('⚠️ 日付の形式が正しくありません。\n例: 2025/12/01');
+    return;
   }
 
-  const label = sinceDate
-    ? `${input} 以降`
-    : 'Gmail全期間';
+  const label = `${dateStr} 以降`;
 
   const confirm = ui.alert(
     '確認',
