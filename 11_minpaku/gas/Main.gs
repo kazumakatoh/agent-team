@@ -138,38 +138,58 @@ function runManualAggregation() {
 }
 
 /**
- * 過去のメールを遡って一括取込する
+ * 過去のメールを遡って一括取込する（HTMLダイアログでデフォルト日付を表示）
  */
 function runBackfill() {
+  const html = HtmlService.createHtmlOutput(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <base target="_top">
+      <style>
+        body { font-family: Arial, sans-serif; padding: 16px; font-size: 13px; }
+        p { margin: 0 0 10px; color: #444; }
+        input { width: 100%; padding: 8px; box-sizing: border-box; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }
+        .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+        button { padding: 8px 20px; cursor: pointer; border-radius: 4px; font-size: 13px; }
+        .ok { background: #1a73e8; color: white; border: none; }
+        .cancel { background: white; border: 1px solid #ccc; }
+      </style>
+    </head>
+    <body>
+      <p>取込開始日を入力してください（例: 2025/12/01）<br>空欄のままOKを押すと 2025/12/01 以降を対象にします。</p>
+      <input type="text" id="d" value="2025/12/01">
+      <div class="buttons">
+        <button class="cancel" onclick="google.script.host.close()">キャンセル</button>
+        <button class="ok" onclick="submit()">OK</button>
+      </div>
+      <script>
+        document.getElementById('d').select();
+        function submit() {
+          google.script.run.withSuccessHandler(function() {
+            google.script.host.close();
+          }).continueBackfill(document.getElementById('d').value);
+        }
+      </script>
+    </body>
+    </html>
+  `).setWidth(420).setHeight(160);
+
+  SpreadsheetApp.getUi().showModalDialog(html, '📧 過去メール一括取込');
+}
+
+/**
+ * runBackfill() のHTMLダイアログから呼ばれる実処理
+ */
+function continueBackfill(input) {
   const ui = SpreadsheetApp.getUi();
+  const dateStr = (input || '').trim() || '2025/12/01';
+  const sinceDate = new Date(dateStr.replace(/\//g, '-'));
 
-  const result = ui.prompt(
-    '📧 過去メール一括取込',
-    '取込開始日を入力してください（例: 2025/12/01）\n' +
-    '空欄のままOKを押すと 2025/12/01 以降を対象にします。',
-    ui.ButtonSet.OK_CANCEL
-  );
-
-  if (result.getSelectedButton() !== ui.Button.OK) return;
-
-  const input = result.getResponseText().trim();
-  let sinceDate = null;
-
-  const dateStr = input || '2025/12/01';
-  sinceDate = new Date(dateStr.replace(/\//g, '-'));
   if (isNaN(sinceDate.getTime())) {
     ui.alert('⚠️ 日付の形式が正しくありません。\n例: 2025/12/01');
     return;
   }
-
-  const label = `${dateStr} 以降`;
-
-  const confirm = ui.alert(
-    '確認',
-    `${label} の予約確定メールを取込みます。\n数分かかる場合があります。続行しますか？`,
-    ui.ButtonSet.YES_NO
-  );
-  if (confirm !== ui.Button.YES) return;
 
   try {
     const reservations = fetchReservationEmailsSince(sinceDate);
