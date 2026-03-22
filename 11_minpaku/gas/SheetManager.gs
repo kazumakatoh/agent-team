@@ -151,12 +151,12 @@ function getMonthlyReservationData(year, month) {
     const bookedDate = row[C.BOOKED_DATE - 1] ? new Date(row[C.BOOKED_DATE - 1]) : null;
     const status     = row[C.STATUS     - 1];
 
-    if (status === 'キャンセル') return;
-
-    // 当月問い合わせ数: 予約受付日が当月のものをカウント（利用月不問）
+    // 当月問い合わせ数: 予約受付日が当月のものをカウント（キャンセル含む・利用月不問）
     if (bookedDate && bookedDate.getFullYear() === year && bookedDate.getMonth() + 1 === month) {
       inquiryCount++;
     }
+
+    if (status === 'キャンセル') return;
 
     if (!checkin || !checkout) return;
 
