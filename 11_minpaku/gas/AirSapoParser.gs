@@ -307,3 +307,32 @@ function getOrCreateLabel_(name) {
   }
   return label;
 }
+
+// ==============================
+// デバッグ用：メール検索確認
+// ==============================
+/**
+ * エアサポ関連メールをさまざまなクエリで検索してログに出力する
+ * GASエディタで直接実行して差出人・件名を確認する
+ */
+function debugSearchAirSapoMail() {
+  const queries = [
+    'from:support@air-sapo.com',
+    'from:air-sapo.com',
+    'subject:請求書',
+    'subject:ご請求',
+    'エアサポ',
+    'air-sapo'
+  ];
+
+  queries.forEach(q => {
+    const threads = GmailApp.search(q, 0, 5);
+    Logger.log(`【${q}】→ ${threads.length}件`);
+    threads.forEach(t => {
+      const msg = t.getMessages()[0];
+      Logger.log(`  差出人: ${msg.getFrom()}`);
+      Logger.log(`  件名: ${msg.getSubject()}`);
+      Logger.log(`  日時: ${msg.getDate()}`);
+    });
+  });
+}
