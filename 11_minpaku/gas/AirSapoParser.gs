@@ -329,6 +329,25 @@ function getOrCreateLabel_(name) {
 }
 
 // ==============================
+// デバッグ用：処理済みラベルのリセット
+// ==============================
+
+/**
+ * エアサポ処理済みラベルをすべてのメールから外す
+ * 再取得・再解析したい場合にGASエディタから直接実行する
+ */
+function resetAirSapoLabels() {
+  const label = GmailApp.getUserLabelByName('民泊_エアサポ処理済み');
+  if (!label) {
+    Logger.log('ラベル「民泊_エアサポ処理済み」が存在しません（すでにクリーン状態）');
+    return;
+  }
+  const threads = label.getThreads();
+  threads.forEach(t => t.removeLabel(label));
+  Logger.log(`処理済みラベルを ${threads.length} スレッドから削除しました`);
+}
+
+// ==============================
 // デバッグ用：メール検索確認
 // ==============================
 /**
