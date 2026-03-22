@@ -6,7 +6,7 @@
  *
  * ■ 前提条件
  *   - Google Apps Script で「Drive API」Advanced Service を有効化すること
- *     (GASエディタ: サービス追加 → Drive API v2)
+ *     (GASエディタ: サービス追加 → Drive API v3)
  *
  * ■ 請求書フォーマット（OCRテキスト解析）
  *   - タイトル: "YYYY年M月 御請求書" → 対象年月を抽出
@@ -104,19 +104,19 @@ function fetchAirSapoInvoices(since) {
 function extractPdfText_(attachment) {
   let fileId = null;
   try {
-    // Blob を Drive にアップロード（OCR付き）
+    // Blob を Drive にアップロード（Drive API v3 + OCR）
+    // mimeType を Google Doc に指定することで自動OCR変換される
     const blob = attachment.copyBlob().setContentType('application/pdf');
     const resource = {
-      title: `airsapo_ocr_${Date.now()}.pdf`,
-      mimeType: 'application/pdf'
+      name: `airsapo_ocr_${Date.now()}.pdf`,
+      mimeType: 'application/vnd.google-apps.document'
     };
     const options = {
-      ocr: true,
       ocrLanguage: 'ja',
-      convert: true
+      fields: 'id'
     };
 
-    const file = Drive.Files.insert(resource, blob, options);
+    const file = Drive.Files.create(resource, blob, options);
     fileId = file.id;
 
     // Google Doc として取得してテキストを読む
@@ -125,7 +125,7 @@ function extractPdfText_(attachment) {
     return text;
 
   } finally {
-    // 一時ファイルを削除
+    // 一時ファイルを削除（Drive API v3）
     if (fileId) {
       try { Drive.Files.remove(fileId); } catch (e) { /* 無視 */ }
     }
