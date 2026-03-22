@@ -365,11 +365,8 @@ function onOpen() {
     .addItem('📊 集計・ダッシュボード更新', 'runManualAggregation')
     .addSeparator()
     .addItem('✏️ 予約を手動入力', 'addReservationManually')
-    .addItem('❌ キャンセルメールを処理', 'runCancellationCheck')
     .addSeparator()
     .addItem('⚙️ 初期セットアップ', 'runSetup')
-    .addItem('🔄 列構造マイグレーション（旧17列→新19列）', 'runReservationSheetMigration')
-    .addItem('💴 経費入力シートを更新（列追加・60ヶ月入力）', 'migrateCostSheet')
     .addItem('⏰ 定期実行トリガー設定', 'setupTriggers')
     .addToUi();
 }
