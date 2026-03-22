@@ -233,12 +233,14 @@ function extractAmountWithTax_(text, ...patterns) {
       const raw = parseInt(m[1].replace(/,/g, '')) || 0;
       if (raw === 0) continue;
 
-      // 金額直後に "税込" の記載があるか確認（前後20文字）
+      // 金額直後に "税込" の記載があるか確認（前後40文字）
       const idx = text.indexOf(m[0]);
-      const context = text.substring(Math.max(0, idx - 10), idx + m[0].length + 30);
+      const context = text.substring(Math.max(0, idx - 10), idx + m[0].length + 40);
       const isTaxIncluded = /税込/.test(context);
 
-      return isTaxIncluded ? raw : Math.round(raw * 1.1);
+      const result = isTaxIncluded ? raw : Math.round(raw * 1.1);
+      Logger.log(`  [金額抽出] pattern=${pat} matched="${m[0]}" raw=${raw} 税込=${isTaxIncluded} → ${result}`);
+      return result;
     }
   }
   return 0;
@@ -295,18 +297,12 @@ function writeCostToSheet_(parsed) {
 
   const C = CONFIG.COST_COLS;
 
-  // 既存値と比較し、0（未入力）の場合のみ上書き・既入力は加算
-  const setOrAdd = (col, newVal) => {
-    if (newVal === 0) return;
-    const existing = Number(sheet.getRange(targetRow, col).getValue()) || 0;
-    sheet.getRange(targetRow, col).setValue(existing + newVal);
-  };
-
-  setOrAdd(C.AGENCY_FEE, parsed.agencyFee);
-  setOrAdd(C.CLEANING,   parsed.cleaning);
-  setOrAdd(C.LINEN,      parsed.linen);
-  setOrAdd(C.SUPPLIES,   parsed.supplies);
-  setOrAdd(C.OTHER,      parsed.others);
+  // 請求書から取得した値で上書き（加算しない）
+  sheet.getRange(targetRow, C.AGENCY_FEE).setValue(parsed.agencyFee);
+  sheet.getRange(targetRow, C.CLEANING).setValue(parsed.cleaning);
+  sheet.getRange(targetRow, C.LINEN).setValue(parsed.linen);
+  sheet.getRange(targetRow, C.SUPPLIES).setValue(parsed.supplies);
+  sheet.getRange(targetRow, C.OTHER).setValue(parsed.others);
 
   return true;
 }
