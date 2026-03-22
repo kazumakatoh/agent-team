@@ -27,5 +27,5 @@ jobs:
         run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
 
       - name: Push to GAS
-        working-directory: 11_minpaku
+        working-directory: 11_minpaku/gas
         run: clasp push --force
