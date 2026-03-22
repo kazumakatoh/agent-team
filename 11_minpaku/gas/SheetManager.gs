@@ -194,14 +194,28 @@ function getMonthlyCostData(year, month) {
   const ss    = getSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEETS.COSTS);
   if (!sheet || sheet.getLastRow() <= 1) {
-    return { cleaning: 0, supplies: 0, utilities: 0, rent: 0, other: 0 };
+    return { agencyFee: 0, cleaning: 0, linen: 0, supplies: 0, utilities: 0, rent: 0, other: 0 };
+  }
+
+  // 列数チェック：旧7列のままなら空を返す（migrateCostSheet()未実行検知）
+  if (sheet.getLastColumn() < 8) {
+    Logger.log(`⚠️ 経費入力シートの列数が不足(${sheet.getLastColumn()}列)。メニュー「経費入力シートを更新」を実行してください。`);
+    return { agencyFee: 0, cleaning: 0, linen: 0, supplies: 0, utilities: 0, rent: 0, other: 0 };
   }
 
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
   const C = CONFIG.COST_COLS;
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues();
+  const numCols = sheet.getLastColumn();
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
 
-  const row = data.find(r => String(r[C.YEAR_MONTH - 1]).startsWith(yearMonth));
+  // 年月列を文字列で照合（日付オブジェクトに変換された場合も対応）
+  const row = data.find(r => {
+    const cell = r[C.YEAR_MONTH - 1];
+    const cellStr = (cell instanceof Date)
+      ? `${cell.getFullYear()}-${String(cell.getMonth() + 1).padStart(2, '0')}`
+      : String(cell).trim();
+    return cellStr.startsWith(yearMonth);
+  });
   if (!row) {
     return { agencyFee: 0, cleaning: 0, linen: 0, supplies: 0, utilities: 0, rent: 0, other: 0 };
   }
@@ -442,7 +456,8 @@ function buildEmptyMonthData_(year, month) {
   return {
     year, month,
     bookingCount: 0, usageDays: 0, guests: 0,
-    revenue: 0, commission: 0, cleaningFee: 0
+    revenue: 0, accommodationFee: 0, cleaningFee: 0,
+    otaFee: 0, transferFee: 0, payout: 0
   };
 }
 
