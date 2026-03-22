@@ -197,18 +197,11 @@ function parseInvoiceText_(text) {
   );
 
   // その他経費（税込）
-  // beds24利用料金 / maneKEY月額利用料金 を合算
-  const beds24 = extractAmountWithTax_(
-    text,
-    /beds24[^\d]*([\d,]{3,})/i,
-    /beds24.*?([0-9,]{3,})\s*円/i
-  );
-  const maneKey = extractAmountWithTax_(
-    text,
-    /maneKEY[^\d]*([\d,]{3,})/i,
-    /maneKEY.*?([0-9,]{3,})\s*円/i
-  );
-  const others = beds24 + maneKey;
+  // beds24 / maneKEY は請求書内に複数行ある場合があるため matchAll で全行合算
+  const others = extractAllAmountsWithTax_(text, [
+    /beds24[^\d]*([\d,]{3,})/ig,
+    /maneKEY[^\d]*([\d,]{3,})/ig
+  ]);
 
   // 全項目が0の場合は解析失敗とみなす
   if (agencyFee === 0 && cleaning === 0 && linen === 0 && supplies === 0 && others === 0) {
@@ -244,6 +237,30 @@ function extractAmountWithTax_(text, ...patterns) {
     }
   }
   return 0;
+}
+
+/**
+ * 複数パターン・複数マッチを全行合算して返す（beds24/maneKEY等の複数行対応）
+ * @param {string} text
+ * @param {RegExp[]} patterns - グローバルフラグ付き正規表現の配列
+ * @return {number} 税込合計金額
+ */
+function extractAllAmountsWithTax_(text, patterns) {
+  let total = 0;
+  patterns.forEach(pat => {
+    for (const m of text.matchAll(pat)) {
+      const raw = parseInt(m[1].replace(/,/g, '')) || 0;
+      if (raw === 0) continue;
+      const idx = text.indexOf(m[0]);
+      const context = text.substring(Math.max(0, idx - 10), idx + m[0].length + 40);
+      const isTaxIncluded = /税込/.test(context);
+      const val = isTaxIncluded ? raw : Math.round(raw * 1.1);
+      Logger.log(`  [その他抽出] matched="${m[0]}" raw=${raw} 税込=${isTaxIncluded} → ${val}`);
+      total += val;
+    }
+  });
+  Logger.log(`  [その他合計] ${total}`);
+  return total;
 }
 
 // ==============================
