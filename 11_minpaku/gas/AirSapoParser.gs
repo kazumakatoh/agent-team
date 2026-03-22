@@ -142,6 +142,11 @@ function extractPdfText_(attachment) {
  * @return {Object|null} { yearMonth, agencyFee, cleaning, linen, supplies } または null
  */
 function parseInvoiceText_(text) {
+  // 全角数字・記号を半角に正規化
+  text = text.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+             .replace(/[¥￥]/g, '¥')
+             .replace(/，/g, ',');
+
   // 年月抽出: "2026年3月 御請求書" / "2026年03月ご請求書" など
   const ymMatch = text.match(/(\d{4})年\s*(\d{1,2})月/);
   if (!ymMatch) {
@@ -163,32 +168,32 @@ function parseInvoiceText_(text) {
   // パターン例: "代行手数料 ¥12,000" / "運営代行費 12,000円" / "代行手数料 12,000"
   const agencyFee = extractAmountWithTax_(
     text,
-    /(?:代行手数料|運営代行費)[^\d]*([\d,]+)/,
-    /(?:代行手数料|運営代行費).*?([0-9,]+)\s*円/
+    /(?:代行手数料|運営代行費)[^\d]*([\d,]{3,})/,
+    /(?:代行手数料|運営代行費).*?([0-9,]{3,})\s*円/
   );
 
   // 清掃費（税込）
   // パターン例: "清掃費 ¥8,000" / "清掃費 8,000円"
   const cleaning = extractAmountWithTax_(
     text,
-    /清掃費[^\d]*([\d,]+)/,
-    /清掃費.*?([0-9,]+)\s*円/
+    /清掃費[^\d]*([\d,]{3,})/,
+    /清掃費.*?([0-9,]{3,})\s*円/
   );
 
   // リネン費（税込）
   // パターン例: "リネン費 ¥3,000" / "リネン代 3,000円"
   const linen = extractAmountWithTax_(
     text,
-    /(?:リネン費|リネン代|リネン)[^\d]*([\d,]+)/,
-    /(?:リネン費|リネン代|リネン).*?([0-9,]+)\s*円/
+    /(?:リネン費|リネン代|リネン)[^\d]*([\d,]{3,})/,
+    /(?:リネン費|リネン代|リネン).*?([0-9,]{3,})\s*円/
   );
 
   // 備品・消耗品費（税込）
   // パターン例: "備品 ¥2,000" / "備品・消耗品 2,000円" / "消耗品費 2,000"
   const supplies = extractAmountWithTax_(
     text,
-    /(?:備品[・・]消耗品|備品費|消耗品費|備品)[^\d]*([\d,]+)/,
-    /(?:備品[・・]消耗品|備品費|消耗品費|備品).*?([0-9,]+)\s*円/
+    /(?:備品[・・]消耗品|備品費|消耗品費|備品)[^\d]*([\d,]{3,})/,
+    /(?:備品[・・]消耗品|備品費|消耗品費|備品).*?([0-9,]{3,})\s*円/
   );
 
   // 全項目が0の場合は解析失敗とみなす
