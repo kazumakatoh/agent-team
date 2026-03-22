@@ -119,6 +119,92 @@ function setupCostSheet_(ss) {
   Logger.log(`シート「${CONFIG.SHEETS.COSTS}」を作成しました`);
 }
 
+/**
+ * 経費入力シートを新列構造に移行する（既存データを保持しつつ列を追加）
+ * メニュー「経費入力シートを更新」から実行
+ */
+function migrateCostSheet() {
+  const ss    = getSpreadsheet();
+  const ui    = SpreadsheetApp.getUi();
+  let sheet   = ss.getSheetByName(CONFIG.SHEETS.COSTS);
+
+  // 既存データ（年月・金額）を退避
+  const existing = {};
+  if (sheet && sheet.getLastRow() > 1) {
+    const oldData = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+    oldData.forEach(row => {
+      const ym = String(row[0]).trim();
+      if (!ym || ym.startsWith('例:')) return;
+      // 旧列順: 年月(0) 清掃費(1) 備品(2) 水光熱(3) 家賃(4) その他(5) 備考(6)
+      existing[ym] = {
+        cleaning:   Number(row[1]) || 0,
+        supplies:   Number(row[2]) || 0,
+        utilities:  Number(row[3]) || 0,
+        rent:       Number(row[4]) || 0,
+        other:      Number(row[5]) || 0,
+        notes:      row[6] || ''
+      };
+    });
+  }
+
+  // シートを完全クリアまたは新規作成
+  if (sheet) {
+    sheet.clearContents();
+    sheet.clearFormats();
+    sheet.clearNotes();
+  } else {
+    sheet = ss.insertSheet(CONFIG.SHEETS.COSTS);
+  }
+
+  // 新ヘッダー
+  const headers = ['年月', '代行手数料', '清掃費', 'リネン費', '備品・消耗品費', '水光熱費', '家賃', 'その他経費', '備考'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  styleSheet_(sheet, headers.length, { headerBg: '#ff6d00', headerColor: '#ffffff', freeze: 1 });
+
+  // 2025/04〜2030/03 の60ヶ月分を生成（既存値を引き継ぎ、なければデフォルト値）
+  const rows = [];
+  const d = new Date(2025, 3, 1);
+  const endDate = new Date(2030, 2, 1);
+  while (d <= endDate) {
+    const ym  = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const old = existing[ym] || {};
+    rows.push([
+      ym,
+      0,                                           // 代行手数料（新項目）
+      old.cleaning  != null ? old.cleaning  : 0,  // 清掃費
+      0,                                           // リネン費（新項目）
+      old.supplies  != null ? old.supplies  : 0,  // 備品・消耗品費
+      old.utilities != null ? old.utilities : 10000,  // 水光熱費
+      old.rent      != null ? old.rent      : 115500, // 家賃
+      old.other     != null ? old.other     : 0,  // その他経費
+      old.notes     || ''                          // 備考
+    ]);
+    d.setMonth(d.getMonth() + 1);
+  }
+  sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+
+  // 書式
+  sheet.getRange('B:H').setNumberFormat('¥#,##0');
+  sheet.setColumnWidth(1, 100);
+  sheet.setColumnWidth(2, 110);
+  sheet.setColumnWidth(3, 90);
+  sheet.setColumnWidth(4, 90);
+  sheet.setColumnWidth(5, 120);
+  sheet.setColumnWidth(6, 100);
+  sheet.setColumnWidth(7, 100);
+  sheet.setColumnWidth(8, 110);
+  sheet.setColumnWidth(9, 200);
+  sheet.getRange(1, 1).setNote('年月はYYYY-MM形式で入力\n例: 2025-12');
+  sheet.getRange(1, 2).setNote('運営代行会社への報酬（月額）');
+  sheet.getRange(1, 3).setNote('清掃会社への支払いなど');
+  sheet.getRange(1, 4).setNote('リネン・タオル等のレンタル費用');
+
+  ui.alert('✅ 経費入力シートを更新しました\n\n' +
+    '・列追加: 代行手数料（B列）、リネン費（D列）\n' +
+    '・既存の清掃費・備品・水光熱費・家賃・その他は引き継ぎました\n' +
+    '・2025/04〜2030/03 の60ヶ月分を入力済み');
+}
+
 function setupMonthlySheet_(ss) {
   let sheet = ss.getSheetByName(CONFIG.SHEETS.MONTHLY);
   if (sheet) {
