@@ -23,7 +23,8 @@ function updateDashboard(fiscalYear) {
     const daysInMonth = new Date(year, month, 0).getDate();
 
     const totalCleaning = res.cleaningFee + cost.cleaning;
-    const totalCosts    = totalCleaning + cost.supplies + cost.utilities + cost.rent + cost.other;
+    const otherTotal    = cost.other + (cost.agencyFee || 0) + (cost.linen || 0);
+    const totalCosts    = totalCleaning + cost.supplies + cost.utilities + cost.rent + otherTotal;
     const netRevenue    = res.revenue - res.commission;
     const profit        = netRevenue - totalCosts;
 

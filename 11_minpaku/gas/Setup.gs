@@ -73,7 +73,8 @@ function setupCostSheet_(ss) {
 
   sheet = ss.insertSheet(CONFIG.SHEETS.COSTS);
 
-  const headers = ['年月', '清掃費', '備品・消耗品費', '水光熱費', '家賃', 'その他経費', '備考'];
+  // 列: A年月 B代行手数料 C清掃費 Dリネン費 E備品・消耗品費 F水光熱費 G家賃 Hその他経費 I備考
+  const headers = ['年月', '代行手数料', '清掃費', 'リネン費', '備品・消耗品費', '水光熱費', '家賃', 'その他経費', '備考'];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   styleSheet_(sheet, headers.length, {
     headerBg:    '#ff6d00',
@@ -81,27 +82,39 @@ function setupCostSheet_(ss) {
     freeze:       1
   });
 
-  // サンプルデータ（説明用）
-  const note = [
-    ['例: 2025-12', 5000, 2000, 8000, 80000, 0, '清掃会社（ゲスト1人×2回）、水道・電気代']
-  ];
-  sheet.getRange(2, 1, note.length, headers.length).setValues(note);
-  sheet.getRange(2, 1, note.length, headers.length).setFontColor('#9aa0a6'); // グレー（説明文）
+  // 2025/04〜2030/03 の60ヶ月分をデフォルト値で事前入力
+  // デフォルト: 家賃115,500円、水光熱費10,000円、その他0円
+  const rows = [];
+  const startDate = new Date(2025, 3, 1); // 2025年4月
+  const endDate   = new Date(2030, 2, 1); // 2030年3月
+  const d = new Date(startDate);
+  while (d <= endDate) {
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    // [年月, 代行手数料, 清掃費, リネン費, 備品・消耗品費, 水光熱費, 家賃, その他経費, 備考]
+    rows.push([ym, 0, 0, 0, 0, 10000, 115500, 0, '']);
+    d.setMonth(d.getMonth() + 1);
+  }
+  sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
 
-  // 金額列のフォーマット
-  sheet.getRange('B:F').setNumberFormat('¥#,##0');
+  // 金額列のフォーマット（B〜H列）
+  sheet.getRange('B:H').setNumberFormat('¥#,##0');
 
   // 列幅
   sheet.setColumnWidth(1, 100);  // 年月
-  sheet.setColumnWidth(7, 200);  // 備考
+  sheet.setColumnWidth(2, 110);  // 代行手数料
+  sheet.setColumnWidth(3, 90);   // 清掃費
+  sheet.setColumnWidth(4, 90);   // リネン費
+  sheet.setColumnWidth(5, 120);  // 備品・消耗品費
+  sheet.setColumnWidth(6, 100);  // 水光熱費
+  sheet.setColumnWidth(7, 100);  // 家賃
+  sheet.setColumnWidth(8, 110);  // その他経費
+  sheet.setColumnWidth(9, 200);  // 備考
 
   // 入力ガイドのメモ
-  sheet.getRange(1, 1).setNote(
-    '年月はYYYY-MM形式で入力してください\n例: 2025-12'
-  );
-  sheet.getRange(1, 2).setNote(
-    '自動集計される清掃費（予約リストより）に加算されます。\n清掃会社への支払いなど、予約外の清掃費を入力してください。'
-  );
+  sheet.getRange(1, 1).setNote('年月はYYYY-MM形式で入力\n例: 2025-12');
+  sheet.getRange(1, 2).setNote('運営代行会社への報酬（月額）');
+  sheet.getRange(1, 3).setNote('清掃会社への支払いなど');
+  sheet.getRange(1, 4).setNote('リネン・タオル等のレンタル費用');
 
   Logger.log(`シート「${CONFIG.SHEETS.COSTS}」を作成しました`);
 }

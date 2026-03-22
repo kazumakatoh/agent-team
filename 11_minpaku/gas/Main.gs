@@ -154,21 +154,30 @@ function runBackfill() {
         button { padding: 8px 20px; cursor: pointer; border-radius: 4px; font-size: 13px; }
         .ok { background: #1a73e8; color: white; border: none; }
         .cancel { background: white; border: 1px solid #ccc; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #status { display: none; margin-top: 12px; color: #1a73e8; font-size: 12px; }
       </style>
     </head>
     <body>
       <p>取込開始日を入力してください（例: 2025/12/01）<br>空欄のままOKを押すと 2025/12/01 以降を対象にします。</p>
       <input type="text" id="d" value="2025/12/01">
       <div class="buttons">
-        <button class="cancel" onclick="google.script.host.close()">キャンセル</button>
-        <button class="ok" onclick="submit()">OK</button>
+        <button class="cancel" id="cancelBtn" onclick="google.script.host.close()">キャンセル</button>
+        <button class="ok" id="okBtn" onclick="submit()">OK</button>
       </div>
+      <div id="status">⏳ メールを取込中です。完了まで数分かかる場合があります…</div>
       <script>
         document.getElementById('d').select();
         function submit() {
-          google.script.run.withSuccessHandler(function() {
-            google.script.host.close();
-          }).continueBackfill(document.getElementById('d').value);
+          document.getElementById('okBtn').disabled = true;
+          document.getElementById('cancelBtn').disabled = true;
+          document.getElementById('status').style.display = 'block';
+          google.script.run
+            .withSuccessHandler(function() { google.script.host.close(); })
+            .withFailureHandler(function(e) {
+              document.getElementById('status').textContent = '❌ エラー: ' + e.message;
+            })
+            .continueBackfill(document.getElementById('d').value);
         }
       </script>
     </body>

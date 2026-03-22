@@ -195,15 +195,17 @@ function getMonthlyCostData(year, month) {
 
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
   const C = CONFIG.COST_COLS;
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 9).getValues();
 
   const row = data.find(r => String(r[C.YEAR_MONTH - 1]).startsWith(yearMonth));
   if (!row) {
-    return { cleaning: 0, supplies: 0, utilities: 0, rent: 0, other: 0 };
+    return { agencyFee: 0, cleaning: 0, linen: 0, supplies: 0, utilities: 0, rent: 0, other: 0 };
   }
 
   return {
+    agencyFee: Number(row[C.AGENCY_FEE - 1]) || 0,
     cleaning:  Number(row[C.CLEANING   - 1]) || 0,
+    linen:     Number(row[C.LINEN      - 1]) || 0,
     supplies:  Number(row[C.SUPPLIES   - 1]) || 0,
     utilities: Number(row[C.UTILITIES  - 1]) || 0,
     rent:      Number(row[C.RENT       - 1]) || 0,
@@ -254,7 +256,9 @@ function updateMonthlySheet(fiscalYear) {
 
     // 清掃費（経費）は経費入力シートの値のみ（予約リストの清掃費はゲスト負担の売上）
     const totalCleaning = costData.cleaning;
-    const totalCosts    = totalCleaning + costData.supplies + costData.utilities + costData.rent + costData.other;
+    // 代行手数料・リネン費は月別集計の「その他経費」列に合算して表示
+    const otherTotal    = costData.other + costData.agencyFee + costData.linen;
+    const totalCosts    = totalCleaning + costData.supplies + costData.utilities + costData.rent + otherTotal;
     const netRevenue    = resData.payout || (resData.revenue - resData.otaFee - resData.transferFee);
     const profit        = netRevenue - totalCosts;
 
@@ -285,7 +289,7 @@ function updateMonthlySheet(fiscalYear) {
       costData.supplies,
       costData.utilities,
       costData.rent,
-      costData.other,
+      otherTotal,
       totalCosts,
       profit,
       kpis.roi,

@@ -97,11 +97,13 @@ const CONFIG = {
   // ==============================
   COST_COLS: {
     YEAR_MONTH:    1, // A: 年月（YYYY-MM）
-    CLEANING:      2, // B: 清掃費合計
-    SUPPLIES:      3, // C: 備品・消耗品費
-    UTILITIES:     4, // D: 水光熱費
-    RENT:          5, // E: 家賃
-    OTHER:         6, // F: その他経費
-    NOTES:         7  // G: 備考
+    AGENCY_FEE:    2, // B: 代行手数料（運営代行会社への報酬）
+    CLEANING:      3, // C: 清掃費合計
+    LINEN:         4, // D: リネン費
+    SUPPLIES:      5, // E: 備品・消耗品費
+    UTILITIES:     6, // F: 水光熱費
+    RENT:          7, // G: 家賃
+    OTHER:         8, // H: その他経費
+    NOTES:         9  // I: 備考
   }
 };

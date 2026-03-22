@@ -4,6 +4,60 @@
  */
 
 /**
+ * メール本文からチェックイン・チェックアウト日を抽出する共通ヘルパー
+ * 「チェックイン」「チェックアウト」キーワードの後に来る日付を優先使用し、
+ * 見つからない場合はメール本文中の全日付から最初の2件を使用する
+ * @param {string} body メール本文
+ * @return {{checkin: Date|null, checkout: Date|null}}
+ */
+function extractDatesFromBody_(body) {
+  function parseDate_(s) {
+    let m;
+    m = s.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+    if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+    m = s.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+    m = s.match(/(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i);
+    if (m) { const d = new Date(`${m[2]} ${m[1]}, ${m[3]}`); if (!isNaN(d)) return d; }
+    m = s.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(\d{4})/i);
+    if (m) { const d = new Date(`${m[1]} ${m[2]}, ${m[3]}`); if (!isNaN(d)) return d; }
+    return null;
+  }
+
+  // キーワードの後（同行 + 次行）から日付を取得
+  function findAfterKeyword_(keywords) {
+    for (const kw of keywords) {
+      const re = new RegExp(kw + '[^\\n]{0,50}(?:\\n[^\\n]{0,50})?', 'i');
+      const m = body.match(re);
+      if (m) {
+        const d = parseDate_(m[0]);
+        if (d && !isNaN(d)) return d;
+      }
+    }
+    return null;
+  }
+
+  const checkin  = findAfterKeyword_(['チェックイン',  'Check-?in']);
+  const checkout = findAfterKeyword_(['チェックアウト', 'Check-?out']);
+  if (checkin && checkout) return { checkin, checkout };
+
+  // フォールバック: 全日付を集めて昇順ソート後、最初の2つ
+  const dates = [];
+  let m;
+  const p1 = /(\d{4})年(\d{1,2})月(\d{1,2})日/g;
+  while ((m = p1.exec(body)) !== null) dates.push(new Date(+m[1], +m[2]-1, +m[3]));
+  const p2 = /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/gi;
+  while ((m = p2.exec(body)) !== null) { const d = new Date(`${m[1]} ${m[2]}, ${m[3]}`); if (!isNaN(d)) dates.push(d); }
+  const p3 = /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{4})/gi;
+  while ((m = p3.exec(body)) !== null) { const d = new Date(`${m[2]} ${m[1]}, ${m[3]}`); if (!isNaN(d)) dates.push(d); }
+
+  const unique = [...new Set(dates.filter(d => !isNaN(d)).map(d => d.getTime()))]
+    .sort((a, b) => a - b).map(t => new Date(t));
+
+  return { checkin: checkin || unique[0] || null, checkout: checkout || unique[1] || null };
+}
+
+/**
  * メール本文から宿泊人数を抽出する共通ヘルパー
  * 以下のキーワードの後に続く数字を合算して返す:
  *   People / Adults / Children / 大人 / 子供 / 人
@@ -120,35 +174,10 @@ function parseAirbnbEmail(msg) {
     data.reservationId = idMatch ? idMatch[1] : `AB_${msg.getId().substring(0,8)}`;
 
     // チェックイン・チェックアウト日
-    // 日本語形式: 2025年12月25日
-    const jpDatePattern = /(\d{4})年(\d{1,2})月(\d{1,2})日/g;
-    const jpDates = [];
-    let m;
-    while ((m = jpDatePattern.exec(body)) !== null) {
-      jpDates.push(new Date(m[1], m[2] - 1, m[3]));
-    }
-
-    // 英語形式: December 25, 2025 または 25 Dec 2025
-    const enDatePattern1 = /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/gi;
-    const enDatePattern2 = /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{4})/gi;
-    const enDates = [];
-    while ((m = enDatePattern1.exec(body)) !== null) {
-      enDates.push(new Date(`${m[1]} ${m[2]}, ${m[3]}`));
-    }
-    while ((m = enDatePattern2.exec(body)) !== null) {
-      enDates.push(new Date(`${m[2]} ${m[1]}, ${m[3]}`));
-    }
-
-    const allDates = [...jpDates, ...enDates].filter(d => !isNaN(d));
-    if (allDates.length >= 2) {
-      // 重複除去・ソートして最初の2つをチェックイン・チェックアウトに
-      const uniqueDates = [...new Set(allDates.map(d => d.getTime()))]
-        .sort((a, b) => a - b)
-        .map(t => new Date(t));
-      data.checkin  = uniqueDates[0];
-      data.checkout = uniqueDates[1];
-      data.nights   = Math.round((uniqueDates[1] - uniqueDates[0]) / (1000 * 60 * 60 * 24));
-    }
+    const { checkin: ci, checkout: co } = extractDatesFromBody_(body);
+    data.checkin  = ci;
+    data.checkout = co;
+    data.nights   = (ci && co) ? Math.round((co - ci) / (1000 * 60 * 60 * 24)) : 0;
 
     // 宿泊人数
     data.guests = extractGuestsFromBody_(body);
@@ -239,33 +268,11 @@ function parseBookingEmail(msg) {
                     body.match(/予約ID[：:\s]*(\d{8})/);
     data.reservationId = idMatch ? idMatch[1] : `BC_${msg.getId().substring(0,8)}`;
 
-    // チェックイン・チェックアウト（英語日付形式: "Fri 13 Mar 2026" も対応）
-    const enDate2 = /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{4})/i;
-    const checkinLine  = body.match(/チェックイン[^\n]*\n?([^\n]+)/) || body.match(/チェックイン\s+\S+\s+(\d.+)/);
-    const checkoutLine = body.match(/チェックアウト[^\n]*\n?([^\n]+)/) || body.match(/チェックアウト\s+\S+\s+(\d.+)/);
-
-    const checkinMatch = body.match(/チェックイン[：:\s]*(\d{4})[年\/\-](\d{1,2})[月\/\-](\d{1,2})/) ||
-                         body.match(/チェックイン\s+\w+\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})/i) ||
-                         body.match(/Check-?in[：:\s]*(\w+)\s+(\d{1,2}),?\s+(\d{4})/i);
-    const checkoutMatch = body.match(/チェックアウト[：:\s]*(\d{4})[年\/\-](\d{1,2})[月\/\-](\d{1,2})/) ||
-                          body.match(/チェックアウト\s+\w+\s+(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})/i) ||
-                          body.match(/Check-?out[：:\s]*(\w+)\s+(\d{1,2}),?\s+(\d{4})/i);
-
-    if (checkinMatch && checkoutMatch) {
-      if (/^\d{4}$/.test(checkinMatch[1])) {
-        // 日本語形式: 年/月/日
-        data.checkin  = new Date(checkinMatch[1], checkinMatch[2] - 1, checkinMatch[3]);
-        data.checkout = new Date(checkoutMatch[1], checkoutMatch[2] - 1, checkoutMatch[3]);
-      } else if (/^\d{1,2}$/.test(checkinMatch[1])) {
-        // 英語形式: DD Mon YYYY
-        data.checkin  = new Date(`${checkinMatch[2]} ${checkinMatch[1]}, ${checkinMatch[3]}`);
-        data.checkout = new Date(`${checkoutMatch[2]} ${checkoutMatch[1]}, ${checkoutMatch[3]}`);
-      } else {
-        data.checkin  = new Date(`${checkinMatch[1]} ${checkinMatch[2]}, ${checkinMatch[3]}`);
-        data.checkout = new Date(`${checkoutMatch[1]} ${checkoutMatch[2]}, ${checkoutMatch[3]}`);
-      }
-      data.nights = Math.round((data.checkout - data.checkin) / (1000 * 60 * 60 * 24));
-    }
+    // チェックイン・チェックアウト日
+    const { checkin: ci2, checkout: co2 } = extractDatesFromBody_(body);
+    data.checkin  = ci2;
+    data.checkout = co2;
+    data.nights   = (ci2 && co2) ? Math.round((co2 - ci2) / (1000 * 60 * 60 * 24)) : 0;
 
     // 宿泊人数
     data.guests = extractGuestsFromBody_(body);
