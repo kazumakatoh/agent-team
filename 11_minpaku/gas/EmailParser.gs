@@ -4,6 +4,40 @@
  */
 
 /**
+ * メール本文から宿泊人数を抽出する共通ヘルパー
+ * 以下のキーワードの後に続く数字を合算して返す:
+ *   People / Adults / Children / 大人 / 子供 / 人
+ * @param {string} body メール本文
+ * @return {number} 宿泊人数（最低1）
+ */
+function extractGuestsFromBody_(body) {
+  // Adults + Children の合算（英語形式）
+  const adultsMatch   = body.match(/Adults?\s*[：:＝=]?\s*(\d+)/i);
+  const childrenMatch = body.match(/Children?\s*[：:＝=]?\s*(\d+)/i);
+  if (adultsMatch) {
+    return parseInt(adultsMatch[1]) + (childrenMatch ? parseInt(childrenMatch[1]) : 0);
+  }
+
+  // People（既に合計人数）
+  const peopleMatch = body.match(/People\s*[：:＝=]?\s*(\d+)/i);
+  if (peopleMatch) return parseInt(peopleMatch[1]);
+
+  // 大人 + 子供（日本語形式）
+  const daijinMatch = body.match(/大人\s*[：:＝=]?\s*(\d+)/);
+  const kodomMatch  = body.match(/子供\s*[：:＝=]?\s*(\d+)/);
+  if (daijinMatch) {
+    return parseInt(daijinMatch[1]) + (kodomMatch ? parseInt(kodomMatch[1]) : 0);
+  }
+
+  // 人・名・ゲスト・guests（汎用パターン）
+  const generalMatch = body.match(/[人名]\s*[：:＝=]?\s*(\d+)/) ||
+                       body.match(/(\d+)\s*(?:名|人|ゲスト|guests?)/i);
+  if (generalMatch) return parseInt(generalMatch[1]);
+
+  return 1;
+}
+
+/**
  * 未処理の予約確定メールを全件取得して解析する
  * @return {Array} 解析済み予約データの配列
  */
@@ -116,10 +150,8 @@ function parseAirbnbEmail(msg) {
       data.nights   = Math.round((uniqueDates[1] - uniqueDates[0]) / (1000 * 60 * 60 * 24));
     }
 
-    // 宿泊人数（Beds24形式: "People 2" も対応）
-    const guestMatch = body.match(/(\d+)\s*(名|人|ゲスト|guests?)/i) ||
-                       body.match(/^People\s+(\d+)/im);
-    data.guests = guestMatch ? parseInt(guestMatch[1]) : 1;
+    // 宿泊人数
+    data.guests = extractGuestsFromBody_(body);
 
     // ゲスト名（Beds24形式: "Name Rene Kolenkovic" も対応）
     const guestNameMatch = body.match(/ゲスト[：:\s]+([^\n\r]+)/) ||
@@ -235,15 +267,8 @@ function parseBookingEmail(msg) {
       data.nights = Math.round((data.checkout - data.checkin) / (1000 * 60 * 60 * 24));
     }
 
-    // 宿泊人数（大人+子供の合計、Beds24形式対応）
-    const adultMatch = body.match(/大人\s*(\d+)/);
-    const childMatch = body.match(/子供\s*(\d+)/);
-    if (adultMatch) {
-      data.guests = parseInt(adultMatch[1]) + (childMatch ? parseInt(childMatch[1]) : 0);
-    } else {
-      const guestMatch = body.match(/(\d+)\s*(名|人|guests?|adults?)/i);
-      data.guests = guestMatch ? parseInt(guestMatch[1]) : 1;
-    }
+    // 宿泊人数
+    data.guests = extractGuestsFromBody_(body);
 
     // ゲスト名（Beds24形式: "名前 CZARINA CATAMBING" も対応）
     const nameMatch = body.match(/^名前\s+(.+)$/im) ||
