@@ -161,6 +161,9 @@ function parseInvoiceText_(text, filename) {
   const month = parseInt(ymMatch[2]);
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
 
+  // デバッグ: OCRテキスト全文を出力（金額項目の確認用）
+  Logger.log(`[OCR全文 ${yearMonth}]\n${text.substring(0, 800)}`);
+
   // 金額抽出ヘルパー: 数値文字列からカンマを除去して整数に変換
   const extractAmount = (pattern) => {
     const m = text.match(pattern);
