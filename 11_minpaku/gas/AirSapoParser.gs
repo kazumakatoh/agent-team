@@ -68,7 +68,7 @@ function fetchAirSapoInvoices(since) {
             return;
           }
 
-          const parsed = parseInvoiceText_(text);
+          const parsed = parseInvoiceText_(text, name);
           if (!parsed) {
             Logger.log(`請求書解析失敗: ${name}\n本文: ${text.substring(0, 200)}`);
             return;
@@ -141,14 +141,18 @@ function extractPdfText_(attachment) {
  * @param {string} text - OCR結果のテキスト
  * @return {Object|null} { yearMonth, agencyFee, cleaning, linen, supplies } または null
  */
-function parseInvoiceText_(text) {
+function parseInvoiceText_(text, filename) {
   // 全角数字・記号を半角に正規化
   text = text.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
              .replace(/[¥￥]/g, '¥')
              .replace(/，/g, ',');
 
-  // 年月抽出: "2026年3月 御請求書" / "2026年03月ご請求書" など
-  const ymMatch = text.match(/(\d{4})年\s*(\d{1,2})月/);
+  // 年月抽出: テキストから試みる → 失敗時はファイル名からフォールバック
+  let ymMatch = text.match(/(\d{4})年\s*(\d{1,2})月/);
+  if (!ymMatch && filename) {
+    ymMatch = filename.match(/(\d{4})年(\d{1,2})月/);
+    if (ymMatch) Logger.log(`年月をファイル名から取得: ${filename}`);
+  }
   if (!ymMatch) {
     Logger.log('年月が見つかりません');
     return null;
