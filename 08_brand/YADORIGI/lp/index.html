@@ -79,6 +79,16 @@
       z-index: 1;
       margin-bottom: 40px;
     }
+    /* SVGロゴ */
+    .logo-svg-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .logo-svg-wrap svg {
+      width: clamp(260px, 50vw, 440px);
+      height: auto;
+    }
     .logo-en {
       font-family: 'Georgia', serif;
       font-size: clamp(52px, 12vw, 100px);
@@ -563,13 +573,46 @@
   </div>
 
   <div class="logo-wrap">
-    <p class="logo-en en">YADORIGI</p>
-    <span class="logo-jp">宿　木</span>
+    <div class="logo-svg-wrap" role="img" aria-label="YADORIGI ロゴ">
+      <!-- ロゴ: 木目等高線アイコン + YA DO RI GI スタック -->
+      <svg viewBox="0 0 440 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- ── アイコン部分: 木目等高線 ── -->
+        <rect x="0" y="0" width="160" height="200" rx="3" fill="#1a1a1a"/>
+        <!-- 外周ライン -->
+        <path d="M8,18 Q40,14 80,17 Q120,20 152,16" stroke="white" stroke-width="1.4" fill="none"/>
+        <path d="M6,30 Q35,25 80,29 Q125,33 154,28" stroke="white" stroke-width="1.2" fill="none"/>
+        <path d="M5,42 Q30,36 80,41 Q130,46 155,40" stroke="white" stroke-width="1.3" fill="none"/>
+        <path d="M5,54 Q28,47 60,50 Q75,52 80,53 Q85,54 100,52 Q130,48 155,52" stroke="white" stroke-width="1.2" fill="none"/>
+        <!-- 閉じた等高線（内側の島1） -->
+        <path d="M30,64 Q55,56 80,59 Q105,62 120,58 Q148,54 155,62" stroke="white" stroke-width="1.3" fill="none"/>
+        <path d="M18,76 Q45,66 80,70 Q115,74 138,68 Q152,64 156,72" stroke="white" stroke-width="1.2" fill="none"/>
+        <path d="M10,88 Q42,78 80,82 Q118,86 145,80 Q154,77 157,85" stroke="white" stroke-width="1.4" fill="none"/>
+        <!-- 閉じた等高線（島の輪郭） -->
+        <path d="M22,100 Q50,90 80,94 Q105,98 125,93 Q148,88 157,97" stroke="white" stroke-width="1.3" fill="none"/>
+        <path d="M28,112 Q52,102 75,106 Q98,110 118,105 Q140,100 155,108" stroke="white" stroke-width="1.2" fill="none"/>
+        <!-- 内側の閉じた楕円（木心をイメージ） -->
+        <ellipse cx="78" cy="116" rx="28" ry="9" stroke="white" stroke-width="1.2" fill="none"/>
+        <ellipse cx="78" cy="116" rx="14" ry="5" stroke="white" stroke-width="1.0" fill="none"/>
+        <path d="M32,124 Q56,115 75,118 Q92,121 114,116 Q138,111 155,119" stroke="white" stroke-width="1.3" fill="none"/>
+        <path d="M20,136 Q48,127 80,131 Q112,135 138,129 Q152,126 157,133" stroke="white" stroke-width="1.2" fill="none"/>
+        <path d="M12,148 Q44,139 80,143 Q116,147 142,141 Q154,138 158,146" stroke="white" stroke-width="1.3" fill="none"/>
+        <path d="M8,160 Q40,151 80,155 Q120,159 148,153 Q156,151 158,158" stroke="white" stroke-width="1.2" fill="none"/>
+        <path d="M6,172 Q38,163 80,167 Q122,171 152,165" stroke="white" stroke-width="1.3" fill="none"/>
+        <path d="M7,184 Q42,176 80,179 Q118,182 150,177" stroke="white" stroke-width="1.2" fill="none"/>
+        <path d="M10,194 Q50,188 80,190 Q120,192 148,188" stroke="white" stroke-width="1.0" fill="none"/>
+
+        <!-- ── テキスト部分: YA DO RI GI スタック ── -->
+        <text x="190" y="56"  font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="400" fill="#f5f0e8" letter-spacing="2">YA</text>
+        <text x="190" y="104" font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="400" fill="#f5f0e8" letter-spacing="2">DO</text>
+        <text x="190" y="152" font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="400" fill="#f5f0e8" letter-spacing="2">RI</text>
+        <text x="190" y="196" font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="400" fill="#f5f0e8" letter-spacing="2">GI</text>
+      </svg>
+    </div>
   </div>
 
   <div class="hero-divider"></div>
 
-  <p class="hero-catch">「日本の森を、一献に宿す。」</p>
+  <p class="hero-catch">日本の森を、一献に宿す。</p>
   <p class="hero-sub en">JAPANESE MEIBOKU STICK &amp; BARREL AGING BOTTLE</p>
 
   <div class="hero-scroll">SCROLL</div>
@@ -823,10 +866,71 @@
 <!-- ━━━━━━━━━━━━━━━━ COMING SOON ━━━━━━━━━━━━━━━━ -->
 <section id="cta">
   <p class="cta-label en">COMING SOON</p>
-  <h2 class="cta-title en">YADORIGI</h2>
+  <!-- ロゴ（商標申請用・CTAセクションにも明示掲載） -->
+  <div style="display:flex; justify-content:center; margin-bottom:48px; position:relative; z-index:1;" role="img" aria-label="YADORIGI ロゴ">
+    <svg viewBox="0 0 440 200" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:clamp(220px,40vw,360px); height:auto; opacity:0.9;">
+      <rect x="0" y="0" width="160" height="200" rx="3" fill="#2a2a2a"/>
+      <path d="M8,18 Q40,14 80,17 Q120,20 152,16" stroke="white" stroke-width="1.4" fill="none"/>
+      <path d="M6,30 Q35,25 80,29 Q125,33 154,28" stroke="white" stroke-width="1.2" fill="none"/>
+      <path d="M5,42 Q30,36 80,41 Q130,46 155,40" stroke="white" stroke-width="1.3" fill="none"/>
+      <path d="M5,54 Q28,47 60,50 Q75,52 80,53 Q85,54 100,52 Q130,48 155,52" stroke="white" stroke-width="1.2" fill="none"/>
+      <path d="M30,64 Q55,56 80,59 Q105,62 120,58 Q148,54 155,62" stroke="white" stroke-width="1.3" fill="none"/>
+      <path d="M18,76 Q45,66 80,70 Q115,74 138,68 Q152,64 156,72" stroke="white" stroke-width="1.2" fill="none"/>
+      <path d="M10,88 Q42,78 80,82 Q118,86 145,80 Q154,77 157,85" stroke="white" stroke-width="1.4" fill="none"/>
+      <path d="M22,100 Q50,90 80,94 Q105,98 125,93 Q148,88 157,97" stroke="white" stroke-width="1.3" fill="none"/>
+      <path d="M28,112 Q52,102 75,106 Q98,110 118,105 Q140,100 155,108" stroke="white" stroke-width="1.2" fill="none"/>
+      <ellipse cx="78" cy="116" rx="28" ry="9" stroke="white" stroke-width="1.2" fill="none"/>
+      <ellipse cx="78" cy="116" rx="14" ry="5" stroke="white" stroke-width="1.0" fill="none"/>
+      <path d="M32,124 Q56,115 75,118 Q92,121 114,116 Q138,111 155,119" stroke="white" stroke-width="1.3" fill="none"/>
+      <path d="M20,136 Q48,127 80,131 Q112,135 138,129 Q152,126 157,133" stroke="white" stroke-width="1.2" fill="none"/>
+      <path d="M12,148 Q44,139 80,143 Q116,147 142,141 Q154,138 158,146" stroke="white" stroke-width="1.3" fill="none"/>
+      <path d="M8,160 Q40,151 80,155 Q120,159 148,153 Q156,151 158,158" stroke="white" stroke-width="1.2" fill="none"/>
+      <path d="M6,172 Q38,163 80,167 Q122,171 152,165" stroke="white" stroke-width="1.3" fill="none"/>
+      <path d="M7,184 Q42,176 80,179 Q118,182 150,177" stroke="white" stroke-width="1.2" fill="none"/>
+      <path d="M10,194 Q50,188 80,190 Q120,192 148,188" stroke="white" stroke-width="1.0" fill="none"/>
+      <text x="190" y="56"  font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="400" fill="#f5f0e8" letter-spacing="2">YA</text>
+      <text x="190" y="104" font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="400" fill="#f5f0e8" letter-spacing="2">DO</text>
+      <text x="190" y="152" font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="400" fill="#f5f0e8" letter-spacing="2">RI</text>
+      <text x="190" y="196" font-family="Georgia, 'Times New Roman', serif" font-size="46" font-weight="400" fill="#f5f0e8" letter-spacing="2">GI</text>
+    </svg>
+  </div>
   <p class="cta-sub">2026年8月、Makuakeにてクラウドファンディング開始予定</p>
   <p class="cta-date en">August 2026</p>
   <p class="cta-platform en">MAKUAKE CROWDFUNDING</p>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ COMPANY INFO ━━━━━━━━━━━━━━━━ -->
+<section id="company" style="background:#111; padding:80px 24px; border-top:1px solid #222;">
+  <div style="max-width:700px; margin:0 auto;">
+    <span style="font-family:'Helvetica Neue',Arial,sans-serif; font-size:10px; letter-spacing:0.35em; text-transform:uppercase; color:#b8934f; display:block; margin-bottom:32px; text-align:center;">Company</span>
+    <h2 style="font-size:20px; letter-spacing:0.15em; text-align:center; margin-bottom:48px; color:#f5f0e8;">会社概要</h2>
+
+    <table style="width:100%; border-collapse:collapse; font-size:14px; line-height:2;">
+      <tbody>
+        <tr style="border-bottom:1px solid #2a2a2a;">
+          <th style="width:140px; padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">企業名</th>
+          <td style="padding:16px 0; color:#c8c0b0;">株式会社LEVEL1</td>
+        </tr>
+        <tr style="border-bottom:1px solid #2a2a2a;">
+          <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">所在地</th>
+          <td style="padding:16px 0; color:#c8c0b0;">東京都杉並区阿佐谷南3-45-9</td>
+        </tr>
+        <tr style="border-bottom:1px solid #2a2a2a;">
+          <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">URL</th>
+          <td style="padding:16px 0;"><a href="https://level1.biz/" target="_blank" rel="noopener" style="color:#b8934f; text-decoration:none; letter-spacing:0.05em;">https://level1.biz/</a></td>
+        </tr>
+        <tr style="border-bottom:1px solid #2a2a2a;">
+          <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">TEL</th>
+          <td style="padding:16px 0; color:#c8c0b0;"><a href="tel:0345009872" style="color:inherit; text-decoration:none;">03-4500-9872</a></td>
+        </tr>
+        <tr>
+          <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">Mail</th>
+          <td style="padding:16px 0;"><a href="mailto:contact@level1.biz" style="color:#b8934f; text-decoration:none;">contact@level1.biz</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
 
@@ -834,8 +938,7 @@
 <footer>
   <p class="footer-logo en">YADORIGI</p>
   <p class="footer-jp">宿　木</p>
-  <p>&copy; 2026 株式会社LEVEL1. All Rights Reserved.</p>
-  <p style="margin-top:8px;">Produced by LEVEL1 Inc. — Meiboku Stick &amp; Barrel Aging Bottle Brand</p>
+  <p style="margin-top:8px;">&copy; 2026 株式会社LEVEL1. All Rights Reserved.</p>
 </footer>
 
 </body>
