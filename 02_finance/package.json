@@ -1,0 +1,12 @@
+{
+  "name": "finance-pl-report",
+  "description": "MF会計連携 PLレポート自動化システム",
+  "scripts": {
+    "deploy": "clasp push",
+    "open": "clasp open",
+    "login": "clasp login"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2"
+  }
+}
