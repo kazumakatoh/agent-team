@@ -121,13 +121,30 @@ const PLFormatter = {
   },
 
   /**
+   * 今日以前に開始している月（過去・当月）のみ返す
+   * 未来月はAPIから取得しても意味がなく、シートの手入力予測値を守るためスキップする
+   *
+   * @param {Array} months - getFiscalMonths() の結果
+   * @return {Array} 更新対象月リスト
+   */
+  getUpdatableMonths(months) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return months.filter(m => {
+      const monthStart = new Date(m.startDate);
+      return today >= monthStart;
+    });
+  },
+
+  /**
    * 全部門の月別PLデータを取得・集計する
    *
-   * @param {number} fiscalYear - 事業年度開始年
+   * @param {number} fiscalYear    - 事業年度開始年
+   * @param {Array}  monthsToFetch - 取得する月リスト（省略時は全12ヶ月）
    * @return {Object} { deptName: { monthLabel: [PLrows], ... }, '全体': { ... } }
    */
-  fetchAllDepartmentsPL(fiscalYear) {
-    const months = getFiscalMonths(fiscalYear);
+  fetchAllDepartmentsPL(fiscalYear, monthsToFetch) {
+    const months = monthsToFetch || getFiscalMonths(fiscalYear);
     const result = {};
 
     // 部門別PL取得
@@ -142,7 +159,7 @@ const PLFormatter = {
           Logger.log(`  ${m.label}: ${items.length}件取得`);
         } catch (e) {
           Logger.log(`  ${m.label}: エラー - ${e.message}`);
-          result[dept.name][m.label] = PLFormatter.buildPLRows([]); // 空データ
+          result[dept.name][m.label] = PLFormatter.buildPLRows([]);
         }
         Utilities.sleep(500); // API負荷軽減
       });

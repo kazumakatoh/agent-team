@@ -1,10 +1,33 @@
 /**
- * 財務レポート自動化システム - スプレッドシート管理
+ * 財務レポート自動化システム - スプレッドシート管理 v1.1
  *
- * PLデータをスプレッドシートに書き込み・フォーマットする
+ * PLシート列構成（28列）:
+ *   A:    勘定科目
+ *   B,D,F,…,X (col 2,4,…,24): 各月 金額（3月〜2月）
+ *   C,E,G,…,Y (col 3,5,…,25): 各月 売上比（数式）
+ *   Z (col 26): 決算整理 金額（手入力）
+ *   AA(col 27): 合計 金額（数式）
+ *   AB(col 28): 合計 売上比（数式）
+ *
+ * 更新ルール:
+ *   - 初回: 全列にヘッダー・ラベル・数式を書き込む
+ *   - 2回目以降: 過去・当月の「金額列」のみ上書き。数式列・未来月は一切触らない
  */
 
 const SheetManager = {
+
+  // ── 列インデックス定数 ──────────────────────────
+  COL: {
+    LABEL:   1,   // A: 勘定科目
+    // 月金額: 2,4,6,...,24  (monthIdx * 2 + 2)
+    // 月比率: 3,5,7,...,25  (monthIdx * 2 + 3)
+    ADJ:     26,  // Z: 決算整理
+    TOTAL:   27,  // AA: 合計
+    TOTAL_R: 28,  // AB: 合計売上比
+    NUM_COLS: 28, // 総列数
+  },
+
+  DATA_START_ROW: 3, // データ開始行（1=タイトル, 2=ヘッダー）
 
   // ==============================
   // スプレッドシート取得
@@ -14,11 +37,6 @@ const SheetManager = {
     return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   },
 
-  /**
-   * シートを取得または作成する
-   * @param {string} sheetName
-   * @return {Sheet}
-   */
   getOrCreateSheet(sheetName) {
     const ss    = SheetManager.getSpreadsheet();
     let   sheet = ss.getSheetByName(sheetName);
@@ -30,62 +48,132 @@ const SheetManager = {
   },
 
   // ==============================
-  // PL月別推移シート書き込み
+  // PLシート書き込み（メイン）
   // ==============================
 
   /**
    * 部門別PLシートを書き込む
+   *
    * @param {number} fiscalYear
-   * @param {string} deptName  - '共通' | '物販' | 'ブランド' | '民泊' | '全体'
-   * @param {Object} monthlyRows - { monthLabel: [PLrows], ... }
+   * @param {string} deptName       - '共通' | '物販' | 'ブランド' | '民泊' | '全体'
+   * @param {Object} monthlyRows    - { monthLabel: [PLrows], ... }（更新対象月のみ）
+   * @param {Array}  monthsToUpdate - 更新対象月リスト（getFiscalMonths()の部分集合）
    */
-  writePLSheet(fiscalYear, deptName, monthlyRows) {
+  writePLSheet(fiscalYear, deptName, monthlyRows, monthsToUpdate) {
     const isConsolidated = (deptName === '全体');
     const sheetName = isConsolidated
       ? buildSheetName(fiscalYear, 'PL_CONSOLIDATED')
       : buildSheetName(fiscalYear, 'PL_PREFIX', deptName);
 
-    const sheet  = SheetManager.getOrCreateSheet(sheetName);
-    sheet.clearContents();
-    sheet.clearFormats();
+    const sheet    = SheetManager.getOrCreateSheet(sheetName);
+    const allMonths = getFiscalMonths(fiscalYear);
+    const isNew    = (sheet.getLastRow() <= 1);
 
-    const months = getFiscalMonths(fiscalYear);
-    const { headers, rows } = PLFormatter.buildMonthlyMatrix(monthlyRows, months);
-    const periodLabel = getFiscalPeriodLabel(fiscalYear);
+    if (isNew) {
+      // ── 初回: 全体を初期化 ──
+      Logger.log(`初期化: ${sheetName}`);
+      SheetManager._initPLSheet(sheet, fiscalYear, deptName, allMonths);
+    }
 
-    // ── ヘッダー行 ──────────────────────────────
-    // 行1: タイトル
-    sheet.getRange(1, 1).setValue(`${periodLabel} 損益計算書_月次推移_${deptName}`);
-    sheet.getRange(1, 1).setFontSize(12).setFontWeight('bold');
+    // ── 金額列のみ更新（過去・当月分） ──
+    monthsToUpdate.forEach(m => {
+      const monthIdx = allMonths.findIndex(am => am.label === m.label);
+      if (monthIdx < 0) return;
 
-    // 行2: 列ヘッダー（勘定科目 | 3月 | 4月 | ... | 2月 | 決算整理 | 合計）
-    sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
-    SheetManager._styleHeaderRow(sheet, 2, headers.length);
-
-    // ── データ行 ──────────────────────────────
-    const dataStartRow = 3;
-    rows.forEach((row, i) => {
-      const rowNum = dataStartRow + i;
-      const numCols = headers.length;
-
-      // 勘定科目名（インデント付き）
-      sheet.getRange(rowNum, 1).setValue(row.labelCell);
-
-      // 数値データ（ヘッダー行はスキップ）
-      if (!row.isHeader) {
-        const values = row.values.map(v => v || 0);
-        sheet.getRange(rowNum, 2, 1, values.length).setValues([values]);
-      }
-
-      // スタイル適用
-      SheetManager._styleDataRow(sheet, rowNum, numCols, row);
+      const plRows = monthlyRows[m.label] || PLFormatter.buildPLRows([]);
+      SheetManager._writeAmountColumn(sheet, monthIdx, plRows);
     });
 
-    // ── 列幅・フォーマット ──────────────────────────────
-    SheetManager._applyColumnFormats(sheet, headers.length, dataStartRow, dataStartRow + rows.length - 1);
-
-    Logger.log(`PLシート書き込み完了: ${sheetName}`);
+    Logger.log(`PLシート更新完了: ${sheetName}（${monthsToUpdate.length}ヶ月）`);
     return sheet;
+  },
+
+  /**
+   * PLシートを初期化する（初回のみ）
+   * ヘッダー・ラベル・売上比数式・合計数式を書き込む
+   */
+  _initPLSheet(sheet, fiscalYear, deptName, allMonths) {
+    const C           = SheetManager.COL;
+    const dataStart   = SheetManager.DATA_START_ROW;
+    const periodLabel = getFiscalPeriodLabel(fiscalYear);
+    const numItems    = CONFIG.PL_STRUCTURE.length;
+    const revenueRow  = dataStart + CONFIG.PL_STRUCTURE.findIndex(i => i.label === '売上高合計');
+
+    // タイトル行
+    sheet.getRange(1, 1).setValue(`${periodLabel} 損益計算書_月次推移_${deptName}`)
+         .setFontSize(12).setFontWeight('bold');
+
+    // ヘッダー行（行2）
+    const headers = SheetManager._buildHeaders(allMonths);
+    sheet.getRange(2, 1, 1, C.NUM_COLS).setValues([headers]);
+    SheetManager._styleHeaderRow(sheet, 2, C.NUM_COLS);
+
+    // ラベル列（A列）
+    const labels = CONFIG.PL_STRUCTURE.map(item =>
+      '　'.repeat(item.indent || 0) + item.label
+    );
+    sheet.getRange(dataStart, 1, numItems, 1).setValues(labels.map(l => [l]));
+
+    // 売上比・合計 数式を書き込む（非ヘッダー行のみ）
+    CONFIG.PL_STRUCTURE.forEach((item, i) => {
+      const rowNum = dataStart + i;
+      if (item.category === 'header') return; // ヘッダー行はスキップ
+
+      // 各月の売上比数式（比率列）
+      allMonths.forEach((_, monthIdx) => {
+        const amtCol   = 2 + monthIdx * 2;
+        const ratioCol = 3 + monthIdx * 2;
+        const amtLtr   = SheetManager._colLetter(amtCol);
+        sheet.getRange(rowNum, ratioCol).setFormula(
+          `=IFERROR(IF(${amtLtr}$${revenueRow}=0,"",${amtLtr}${rowNum}/${amtLtr}$${revenueRow}),"")`
+        );
+      });
+
+      // 合計数式（AA列）
+      const amtCols  = Array.from({length: 12}, (_, mi) => SheetManager._colLetter(2 + mi * 2));
+      const adjLtr   = SheetManager._colLetter(C.ADJ);
+      const totalLtr = SheetManager._colLetter(C.TOTAL);
+      sheet.getRange(rowNum, C.TOTAL).setFormula(
+        `=${amtCols.map(c => `${c}${rowNum}`).join('+')}+${adjLtr}${rowNum}`
+      );
+
+      // 合計売上比数式（AB列）
+      sheet.getRange(rowNum, C.TOTAL_R).setFormula(
+        `=IFERROR(IF(${totalLtr}$${revenueRow}=0,"",${totalLtr}${rowNum}/${totalLtr}$${revenueRow}),"")`
+      );
+    });
+
+    // スタイル適用
+    CONFIG.PL_STRUCTURE.forEach((item, i) => {
+      SheetManager._styleDataRow(sheet, dataStart + i, C.NUM_COLS, {
+        isHeader:  item.category === 'header',
+        isSubtotal: item.category === 'subtotal',
+        isBold:    item.isBold || false,
+        isBorderTop: item.isBorderTop || false,
+      });
+    });
+
+    // 列幅・フォント・固定
+    SheetManager._applyColumnFormats(sheet, numItems, dataStart, revenueRow);
+  },
+
+  /**
+   * 特定月の金額列（奇数列）にデータを書き込む
+   * @param {Sheet}  sheet
+   * @param {number} monthIdx - 0=3月, 1=4月, ..., 11=2月
+   * @param {Array}  plRows   - PLFormatter.buildPLRows() の結果
+   */
+  _writeAmountColumn(sheet, monthIdx, plRows) {
+    const dataStart = SheetManager.DATA_START_ROW;
+    const amtCol    = 2 + monthIdx * 2;
+
+    const values = CONFIG.PL_STRUCTURE.map((item, i) => {
+      const plRow = plRows[i];
+      if (!plRow || item.category === 'header') return [''];
+      return [plRow.amount !== null ? (plRow.amount || 0) : 0];
+    });
+
+    sheet.getRange(dataStart, amtCol, values.length, 1).setValues(values);
   },
 
   // ==============================
@@ -93,62 +181,62 @@ const SheetManager = {
   // ==============================
 
   /**
-   * 年度別×部門別推移表を書き込む
-   * 構成: 縦=PL項目, 横=部門×月 または 部門×年度
+   * 部門別推移表を書き込む
+   * 縦=PL項目, 横=部門×[月金額, 月売上比, 部門合計]
    *
    * @param {number} fiscalYear
-   * @param {Object} allDeptData - { deptName: { monthLabel: [PLrows] } }
+   * @param {Object} allDeptData   - { deptName: { monthLabel: [PLrows] } }
+   * @param {Array}  monthsToUpdate - 更新対象月リスト
    */
-  writeTrendByDeptSheet(fiscalYear, allDeptData) {
+  writeTrendByDeptSheet(fiscalYear, allDeptData, monthsToUpdate) {
     const sheetName = buildSheetName(fiscalYear, 'TREND_DEPT');
     const sheet     = SheetManager.getOrCreateSheet(sheetName);
+    // 推移表は全データ再生成（部分更新しない）
     sheet.clearContents();
     sheet.clearFormats();
 
-    const months      = getFiscalMonths(fiscalYear);
-    const periodLabel = getFiscalPeriodLabel(fiscalYear);
+    const allMonths   = getFiscalMonths(fiscalYear);
     const depts       = CONFIG.DEPARTMENTS.map(d => d.name);
+    const periodLabel = getFiscalPeriodLabel(fiscalYear);
+    const dataStart   = 4; // 行1=タイトル, 行2=部門名, 行3=列名
 
-    // タイトル
-    sheet.getRange(1, 1).setValue(`${periodLabel} 部門別推移表`);
-    sheet.getRange(1, 1).setFontSize(12).setFontWeight('bold');
+    sheet.getRange(1, 1).setValue(`${periodLabel} 部門別推移表（月別金額・売上比）`)
+         .setFontSize(12).setFontWeight('bold');
 
-    // ヘッダー行2: 部門名（各部門が月数分スパン）
-    // 行3: 月名
-    let col = 2;
-    const headerRow2 = ['勘定科目'];
-    const headerRow3 = ['勘定科目'];
+    // ヘッダー行2: 部門名（各部門が「月×2+合計」列分スパン）
+    // ヘッダー行3: [月金額, 月比, ...合計]
+    const colsPerDept = allMonths.length * 2 + 1; // 各月の金額・比率 + 部門合計
+    const headerRow2  = ['勘定科目'];
+    const headerRow3  = ['勘定科目'];
 
     depts.forEach(dept => {
       headerRow2.push(dept);
-      months.forEach((m, mi) => {
-        if (mi > 0) headerRow2.push(''); // 結合のため空白
-        headerRow3.push(m.label);
+      Array.from({length: colsPerDept - 1}, () => headerRow2.push(''));
+      allMonths.forEach(m => {
+        headerRow3.push(m.label, m.label + '比');
       });
-      headerRow2.push(''); headerRow3.push('合計'); // 合計列
-      col += months.length + 1;
+      headerRow3.push('合計');
     });
 
-    sheet.getRange(2, 1, 1, headerRow2.length).setValues([headerRow2]);
-    sheet.getRange(3, 1, 1, headerRow3.length).setValues([headerRow3]);
+    const totalCols = 1 + depts.length * colsPerDept;
+    sheet.getRange(2, 1, 1, totalCols).setValues([headerRow2]);
+    sheet.getRange(3, 1, 1, totalCols).setValues([headerRow3]);
 
-    // 部門名の結合
-    let mergeStartCol = 2;
-    depts.forEach(dept => {
-      if (months.length + 1 > 1) {
-        sheet.getRange(2, mergeStartCol, 1, months.length + 1).merge();
-      }
-      sheet.getRange(2, mergeStartCol).setHorizontalAlignment('center').setFontWeight('bold');
-      mergeStartCol += months.length + 1;
+    // 部門名セルを結合・スタイル
+    let mergeCol = 2;
+    depts.forEach(() => {
+      sheet.getRange(2, mergeCol, 1, colsPerDept).merge()
+           .setHorizontalAlignment('center').setFontWeight('bold');
+      mergeCol += colsPerDept;
     });
-
-    SheetManager._styleHeaderRow(sheet, 2, headerRow2.length);
-    SheetManager._styleHeaderRow(sheet, 3, headerRow3.length);
+    SheetManager._styleHeaderRow(sheet, 2, totalCols);
+    SheetManager._styleHeaderRow(sheet, 3, totalCols);
 
     // データ行
-    const dataStartRow = 4;
+    const updatableLabels = new Set(monthsToUpdate.map(m => m.label));
+
     CONFIG.PL_STRUCTURE.forEach((item, i) => {
-      const rowNum    = dataStartRow + i;
+      const rowNum    = dataStart + i;
       const labelCell = '　'.repeat(item.indent || 0) + item.label;
       sheet.getRange(rowNum, 1).setValue(labelCell);
 
@@ -157,98 +245,179 @@ const SheetManager = {
         const monthlyRows = allDeptData[dept] || {};
         let deptTotal = 0;
 
-        months.forEach(m => {
-          const plRows = monthlyRows[m.label] || [];
-          const plRow  = plRows.find(r => r.label === item.label);
-          const val    = (plRow && plRow.amount !== null && !plRow.isHeader) ? (plRow.amount || 0) : '';
+        allMonths.forEach(m => {
+          const isUpdatable = updatableLabels.has(m.label);
+          const plRows      = monthlyRows[m.label] || [];
+          const plRow       = plRows[i];
+          const val = (plRow && item.category !== 'header' && plRow.amount !== null)
+            ? (plRow.amount || 0) : '';
 
-          if (typeof val === 'number') {
+          if (isUpdatable && typeof val === 'number') {
             sheet.getRange(rowNum, dataCol).setValue(val);
             deptTotal += val;
           }
-          dataCol++;
+          dataCol++; // 金額列
+
+          // 売上比: 対象月・非ヘッダー行のみ数式
+          if (isUpdatable && item.category !== 'header') {
+            const amtLtr = SheetManager._colLetter(dataCol - 1);
+            // 部門ごとの売上高合計行を特定
+            const revIdx    = CONFIG.PL_STRUCTURE.findIndex(it => it.label === '売上高合計');
+            const revRowNum = dataStart + revIdx;
+            sheet.getRange(rowNum, dataCol).setFormula(
+              `=IFERROR(IF(${amtLtr}$${revRowNum}=0,"",${amtLtr}${rowNum}/${amtLtr}$${revRowNum}),"")`
+            );
+          }
+          dataCol++; // 比率列
         });
 
         // 部門合計
         if (item.category !== 'header') {
-          sheet.getRange(rowNum, dataCol).setValue(deptTotal);
+          sheet.getRange(rowNum, dataCol).setValue(deptTotal || 0);
         }
         dataCol++;
       });
 
-      // 行スタイル
-      const rowObj = { isBold: item.isBold, isBorderTop: item.isBorderTop, isHeader: item.category === 'header', isSubtotal: item.category === 'subtotal' };
-      SheetManager._styleDataRow(sheet, rowNum, headerRow2.length, rowObj);
+      SheetManager._styleDataRow(sheet, rowNum, totalCols, {
+        isHeader: item.category === 'header',
+        isSubtotal: item.category === 'subtotal',
+        isBold: item.isBold || false,
+        isBorderTop: item.isBorderTop || false,
+      });
     });
 
-    SheetManager._applyColumnFormats(sheet, headerRow2.length, dataStartRow, dataStartRow + CONFIG.PL_STRUCTURE.length - 1);
+    sheet.setColumnWidth(1, 200);
+    for (let c = 2; c <= totalCols; c++) {
+      sheet.setColumnWidth(c, c % 2 === 0 ? 90 : 65); // 金額列 広め、比率列 狭め
+    }
+    sheet.getRange(dataStart, 2, CONFIG.PL_STRUCTURE.length, totalCols - 1)
+         .setNumberFormat('#,##0;[RED]-#,##0;"-"');
+    // 比率列を%フォーマット
+    for (let mi = 0; mi < allMonths.length; mi++) {
+      depts.forEach((_, di) => {
+        const ratioCol = 2 + di * colsPerDept + mi * 2 + 1;
+        sheet.getRange(dataStart, ratioCol, CONFIG.PL_STRUCTURE.length, 1)
+             .setNumberFormat('0.0%');
+      });
+    }
+    sheet.setFrozenRows(3);
+    sheet.setFrozenColumns(1);
     Logger.log(`部門別推移表書き込み完了: ${sheetName}`);
   },
 
   /**
-   * 年度別×全体推移表を書き込む
-   * 金額と前年比（%）を並べて表示
+   * 全体推移表を書き込む（月別金額 + 月別売上比）
+   * 全月のデータを通年で表示し、未来月は空欄
    *
    * @param {number} fiscalYear
-   * @param {Object} allDeptData - { deptName: { monthLabel: [PLrows] } }
+   * @param {Object} allDeptData   - { '全体': { monthLabel: [PLrows] } }
+   * @param {Array}  monthsToUpdate - 更新対象月リスト
    */
-  writeTrendConsolidatedSheet(fiscalYear, allDeptData) {
-    const sheetName   = buildSheetName(fiscalYear, 'TREND_TOTAL');
-    const sheet       = SheetManager.getOrCreateSheet(sheetName);
-    sheet.clearContents();
-    sheet.clearFormats();
-
-    const months      = getFiscalMonths(fiscalYear);
+  writeTrendConsolidatedSheet(fiscalYear, allDeptData, monthsToUpdate) {
+    const sheetName = buildSheetName(fiscalYear, 'TREND_TOTAL');
+    const sheet     = SheetManager.getOrCreateSheet(sheetName);
+    const isNew     = (sheet.getLastRow() <= 1);
+    const C         = SheetManager.COL;
+    const dataStart = SheetManager.DATA_START_ROW;
+    const allMonths = getFiscalMonths(fiscalYear);
     const periodLabel = getFiscalPeriodLabel(fiscalYear);
 
-    // タイトル
-    sheet.getRange(1, 1).setValue(`${periodLabel} 全体推移表（月別・金額・構成比）`);
-    sheet.getRange(1, 1).setFontSize(12).setFontWeight('bold');
+    if (isNew) {
+      // 初回: ヘッダー・ラベル・数式を初期化
+      const headers = SheetManager._buildHeaders(allMonths);
+      sheet.getRange(1, 1).setValue(`${periodLabel} 全体推移表（月別金額・売上比）`)
+           .setFontSize(12).setFontWeight('bold');
+      sheet.getRange(2, 1, 1, C.NUM_COLS).setValues([headers]);
+      SheetManager._styleHeaderRow(sheet, 2, C.NUM_COLS);
 
-    // ヘッダー
-    const headers = ['勘定科目', ...months.map(m => m.label), '決算整理', '合計', '売上比'];
-    sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
-    SheetManager._styleHeaderRow(sheet, 2, headers.length);
+      const labels = CONFIG.PL_STRUCTURE.map(item =>
+        '　'.repeat(item.indent || 0) + item.label
+      );
+      sheet.getRange(dataStart, 1, labels.length, 1).setValues(labels.map(l => [l]));
 
+      const revenueRow = dataStart + CONFIG.PL_STRUCTURE.findIndex(i => i.label === '売上高合計');
+      CONFIG.PL_STRUCTURE.forEach((item, i) => {
+        const rowNum = dataStart + i;
+        if (item.category === 'header') return;
+
+        allMonths.forEach((_, monthIdx) => {
+          const amtCol   = 2 + monthIdx * 2;
+          const ratioCol = 3 + monthIdx * 2;
+          const amtLtr   = SheetManager._colLetter(amtCol);
+          sheet.getRange(rowNum, ratioCol).setFormula(
+            `=IFERROR(IF(${amtLtr}$${revenueRow}=0,"",${amtLtr}${rowNum}/${amtLtr}$${revenueRow}),"")`
+          );
+        });
+
+        const amtCols  = Array.from({length: 12}, (_, mi) => SheetManager._colLetter(2 + mi * 2));
+        const adjLtr   = SheetManager._colLetter(C.ADJ);
+        const totalLtr = SheetManager._colLetter(C.TOTAL);
+        sheet.getRange(rowNum, C.TOTAL).setFormula(
+          `=${amtCols.map(c => `${c}${rowNum}`).join('+')}+${adjLtr}${rowNum}`
+        );
+        sheet.getRange(rowNum, C.TOTAL_R).setFormula(
+          `=IFERROR(IF(${totalLtr}$${revenueRow}=0,"",${totalLtr}${rowNum}/${totalLtr}$${revenueRow}),"")`
+        );
+      });
+
+      CONFIG.PL_STRUCTURE.forEach((item, i) => {
+        SheetManager._styleDataRow(sheet, dataStart + i, C.NUM_COLS, {
+          isHeader: item.category === 'header',
+          isSubtotal: item.category === 'subtotal',
+          isBold: item.isBold || false,
+          isBorderTop: item.isBorderTop || false,
+        });
+      });
+
+      const revenueRowIdx = CONFIG.PL_STRUCTURE.findIndex(i => i.label === '売上高合計');
+      SheetManager._applyColumnFormats(sheet, CONFIG.PL_STRUCTURE.length, dataStart, dataStart + revenueRowIdx);
+    }
+
+    // 金額列のみ更新（過去・当月分）
     const monthlyRows = allDeptData['全体'] || {};
-    const { rows }    = PLFormatter.buildMonthlyMatrix(monthlyRows, months);
-
-    // 売上高合計の値を取得（構成比計算用）
-    const revenueRow  = rows.find(r => r.label === '売上高合計');
-    const totalRevenue = revenueRow ? revenueRow.values[revenueRow.values.length - 1] : 0;
-
-    const dataStartRow = 3;
-    rows.forEach((row, i) => {
-      const rowNum = dataStartRow + i;
-      sheet.getRange(rowNum, 1).setValue(row.labelCell);
-
-      if (!row.isHeader) {
-        const values = row.values.map(v => v || 0);
-        sheet.getRange(rowNum, 2, 1, values.length).setValues([values]);
-
-        // 売上比（合計÷売上高合計）
-        const total = values[values.length - 1];
-        if (totalRevenue !== 0 && !row.isSubtotal) {
-          const ratio = total / totalRevenue;
-          sheet.getRange(rowNum, 2 + values.length).setValue(ratio).setNumberFormat('0.0%');
-        }
-      }
-
-      SheetManager._styleDataRow(sheet, rowNum, headers.length, row);
+    monthsToUpdate.forEach(m => {
+      const monthIdx = allMonths.findIndex(am => am.label === m.label);
+      if (monthIdx < 0) return;
+      const plRows = monthlyRows[m.label] || PLFormatter.buildPLRows([]);
+      SheetManager._writeAmountColumn(sheet, monthIdx, plRows);
     });
 
-    SheetManager._applyColumnFormats(sheet, headers.length - 1, dataStartRow, dataStartRow + rows.length - 1);
-    // 売上比列は%フォーマット済みなのでスキップ
-    Logger.log(`全体推移表書き込み完了: ${sheetName}`);
+    Logger.log(`全体推移表更新完了: ${sheetName}`);
   },
 
   // ==============================
-  // スタイルユーティリティ
+  // ユーティリティ
   // ==============================
 
+  /**
+   * 列ヘッダー配列を生成する
+   * [勘定科目, 3月, 3月比, 4月, 4月比, ..., 2月, 2月比, 決算整理, 合計, 合計比]
+   */
+  _buildHeaders(allMonths) {
+    const headers = ['勘定科目'];
+    allMonths.forEach(m => {
+      headers.push(m.label, m.label + '比');
+    });
+    headers.push('決算整理', '合計', '合計比');
+    return headers;
+  },
+
+  /**
+   * 列番号（1始まり）→列アルファベット（A, B, ..., Z, AA, ...）
+   */
+  _colLetter(n) {
+    let result = '';
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      result = String.fromCharCode(65 + rem) + result;
+      n = Math.floor((n - 1) / 26);
+    }
+    return result;
+  },
+
   _styleHeaderRow(sheet, rowNum, numCols) {
-    const range = sheet.getRange(rowNum, 1, 1, numCols);
-    range.setBackground('#1a1a2e')
+    sheet.getRange(rowNum, 1, 1, numCols)
+         .setBackground('#1a1a2e')
          .setFontColor('#ffffff')
          .setFontWeight('bold')
          .setHorizontalAlignment('center');
@@ -256,51 +425,51 @@ const SheetManager = {
 
   _styleDataRow(sheet, rowNum, numCols, row) {
     const range = sheet.getRange(rowNum, 1, 1, numCols);
-
     if (row.isHeader) {
-      // カテゴリヘッダー（売上高、売上原価 など）
       range.setBackground('#e8eaf6').setFontWeight('bold');
-      sheet.getRange(rowNum, 1).setFontWeight('bold');
     } else if (row.isBold && row.isSubtotal) {
-      // 小計行（売上高合計、営業利益 など）
       range.setBackground('#c5cae9').setFontWeight('bold');
     } else if (row.isBold) {
-      // 利益行（売上総利益、経常利益 など）
       range.setBackground('#bbdefb').setFontWeight('bold');
     }
-
-    // 上線
     if (row.isBorderTop) {
       range.setBorder(true, null, null, null, null, null, '#000000', SpreadsheetApp.BorderStyle.SOLID);
     }
   },
 
-  _applyColumnFormats(sheet, numCols, dataStartRow, dataEndRow) {
-    if (dataEndRow < dataStartRow) return;
-
-    // A列: 勘定科目名の幅
+  _applyColumnFormats(sheet, numDataRows, dataStart, revenueRow) {
+    const C = SheetManager.COL;
     sheet.setColumnWidth(1, 200);
-
-    // B列以降: 数値列の幅・フォーマット
-    for (let c = 2; c <= numCols; c++) {
-      sheet.setColumnWidth(c, 100);
+    // 金額列（偶数列）: 広め
+    for (let mi = 0; mi < 12; mi++) {
+      const amtCol   = 2 + mi * 2;
+      const ratioCol = 3 + mi * 2;
+      sheet.setColumnWidth(amtCol, 90);
+      sheet.setColumnWidth(ratioCol, 60);
     }
+    sheet.setColumnWidth(C.ADJ,     90);
+    sheet.setColumnWidth(C.TOTAL,   100);
+    sheet.setColumnWidth(C.TOTAL_R, 65);
 
-    // 数値フォーマット（カンマ区切り）
-    if (numCols >= 2) {
-      sheet.getRange(dataStartRow, 2, dataEndRow - dataStartRow + 1, numCols - 1)
+    // 数値フォーマット: 金額列
+    for (let mi = 0; mi < 12; mi++) {
+      sheet.getRange(dataStart, 2 + mi * 2, numDataRows, 1)
            .setNumberFormat('#,##0;[RED]-#,##0;"-"');
     }
+    sheet.getRange(dataStart, C.ADJ,   numDataRows, 1).setNumberFormat('#,##0;[RED]-#,##0;"-"');
+    sheet.getRange(dataStart, C.TOTAL, numDataRows, 1).setNumberFormat('#,##0;[RED]-#,##0;"-"');
 
-    // 行ヘッダー列を固定
+    // %フォーマット: 比率列
+    for (let mi = 0; mi < 12; mi++) {
+      sheet.getRange(dataStart, 3 + mi * 2, numDataRows, 1).setNumberFormat('0.0%');
+    }
+    sheet.getRange(dataStart, C.TOTAL_R, numDataRows, 1).setNumberFormat('0.0%');
+
     sheet.setFrozenRows(2);
     sheet.setFrozenColumns(1);
   },
 };
 
-/**
- * スプレッドシートを取得するグローバルヘルパー（他ファイルから呼ばれる）
- */
 function getSpreadsheet() {
   return SheetManager.getSpreadsheet();
 }

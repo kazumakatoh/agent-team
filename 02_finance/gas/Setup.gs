@@ -141,29 +141,31 @@ function clearAuth() {
 // ==============================
 
 /**
- * 月次自動更新トリガーを設定する
- * 毎月1日 AM6:00 に monthlyPLUpdate() を実行
+ * 日次自動更新トリガーを設定する
+ * 毎日 AM6:00 に dailyPLUpdate() を実行
+ * → 当月を含む過去月のデータのみ更新（未来月の手入力予測値は保持）
  */
 function setupTriggers() {
-  // 既存の月次トリガーを削除
+  // 既存の日次トリガーを削除
   ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'monthlyPLUpdate')
+    .filter(t => t.getHandlerFunction() === 'dailyPLUpdate' || t.getHandlerFunction() === 'monthlyPLUpdate')
     .forEach(t => ScriptApp.deleteTrigger(t));
 
-  // 毎月1日 AM6:00 実行
-  ScriptApp.newTrigger('monthlyPLUpdate')
+  // 毎日 AM6:00 実行
+  ScriptApp.newTrigger('dailyPLUpdate')
     .timeBased()
-    .onMonthDay(1)
+    .everyDays(1)
     .atHour(6)
     .inTimezone('Asia/Tokyo')
     .create();
 
   SpreadsheetApp.getUi().alert(
     '✅ トリガー設定完了\n\n' +
-    '毎月1日 AM6:00 に当期PLレポートを自動更新します。\n\n' +
-    '手動で今すぐ実行したい場合は\n「🔄 当期PLを更新」を選択してください。'
+    '毎日 AM6:00 に当期PLレポートを自動更新します。\n' +
+    '（当月を含む過去月のみ更新。未来月の予測値は保持されます）\n\n' +
+    '手動で今すぐ実行したい場合は\n「🔄 当期PLを更新（過去・当月のみ）」を選択してください。'
   );
-  Logger.log('月次トリガー設定完了');
+  Logger.log('日次トリガー設定完了');
 }
 
 /**
@@ -173,14 +175,14 @@ function removeTriggers() {
   const ui      = SpreadsheetApp.getUi();
   const confirm = ui.alert(
     '確認',
-    '月次自動更新トリガーを削除します。\n自動更新が停止されますがよろしいですか？',
+    '日次自動更新トリガーを削除します。\n自動更新が停止されますがよろしいですか？',
     ui.ButtonSet.OK_CANCEL
   );
   if (confirm !== ui.Button.OK) return;
 
   let count = 0;
   ScriptApp.getProjectTriggers()
-    .filter(t => t.getHandlerFunction() === 'monthlyPLUpdate')
+    .filter(t => t.getHandlerFunction() === 'dailyPLUpdate' || t.getHandlerFunction() === 'monthlyPLUpdate')
     .forEach(t => { ScriptApp.deleteTrigger(t); count++; });
 
   ui.alert(`✅ ${count}件のトリガーを削除しました。\n再設定するには「月次トリガーを設定」を実行してください。`);
