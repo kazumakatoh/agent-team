@@ -181,50 +181,65 @@ function exportRawApiResponse() {
       return;
     }
 
-    // 全社（部門なし）で最新月のデータを取得
-    const items = MFApiClient.getTrialBalance(thisMonth.startDate, thisMonth.endDate);
+    // _request を直接呼び出して生レスポンス（キー抽出前）を取得
+    const rawResponse = MFApiClient._request(
+      'GET', '/api/v3/reports/trial_balance_pl',
+      { start_date: thisMonth.startDate, end_date: thisMonth.endDate }
+    );
 
     const ss = SheetManager.getSpreadsheet();
     let sheet = ss.getSheetByName('_API生データ確認');
     if (!sheet) sheet = ss.insertSheet('_API生データ確認');
     sheet.clearContents();
 
+    // レスポンスのトップレベルキー一覧
+    const topKeys = Object.keys(rawResponse);
+
     sheet.getRange(1, 1).setValue(
-      `MF会計 試算表API 生データ（${thisMonth.label}・全社）\n` +
+      `MF会計 試算表API 生レスポンス（${thisMonth.label}・全社）\n` +
       `取得日時: ${new Date().toLocaleString('ja-JP')}\n` +
-      `取得件数: ${items.length}件\n\n` +
-      '↓ 下の表でフィールド名・値を確認して Config.gs / PLFormatter.gs を調整してください'
+      `トップレベルキー: ${topKeys.join(', ')}`
     );
+    sheet.getRange(1, 1).setWrap(true);
+    sheet.setRowHeight(1, 80);
 
-    // JSON全体を1セルに出力（最初の3件）
-    const sample = items.slice(0, 3);
-    sheet.getRange(6, 1).setValue('【サンプル JSON（最初の3件）】');
-    sheet.getRange(7, 1).setValue(JSON.stringify(sample, null, 2));
-    sheet.getRange(7, 1).setWrap(true);
-    sheet.setColumnWidth(1, 600);
-    sheet.setRowHeight(7, 400);
+    // レスポンス全体JSON（先頭5000文字）
+    const fullJson = JSON.stringify(rawResponse, null, 2);
+    sheet.getRange(4, 1).setValue('【レスポンス全体 JSON（先頭5000文字）】');
+    sheet.getRange(5, 1).setValue(fullJson.substring(0, 5000));
+    sheet.getRange(5, 1).setWrap(true);
+    sheet.setColumnWidth(1, 700);
+    sheet.setRowHeight(5, 600);
 
-    // フラット形式でも出力
-    if (items.length > 0) {
-      const keys = Object.keys(items[0]).concat(
-        items[0].account_item ? Object.keys(items[0].account_item).map(k => `account_item.${k}`) : []
-      );
-      sheet.getRange(12, 1, 1, keys.length).setValues([keys]);
-      const rows = items.slice(0, 20).map(item => keys.map(k => {
-        if (k.startsWith('account_item.')) {
-          return (item.account_item && item.account_item[k.replace('account_item.', '')]) || '';
-        }
-        return item[k] !== undefined ? String(item[k]) : '';
-      }));
-      if (rows.length) sheet.getRange(13, 1, rows.length, keys.length).setValues(rows);
+    // 各トップレベルキーの型・長さを確認
+    sheet.getRange(20, 1).setValue('【キー別サマリー】');
+    sheet.getRange(21, 1, 1, 3).setValues([['キー名', '型', '内容（先頭100文字）']]);
+    const summaryRows = topKeys.map(k => {
+      const val = rawResponse[k];
+      const type = Array.isArray(val) ? `Array(${val.length})` : typeof val;
+      const preview = JSON.stringify(val).substring(0, 100);
+      return [k, type, preview];
+    });
+    if (summaryRows.length) sheet.getRange(22, 1, summaryRows.length, 3).setValues(summaryRows);
+
+    // 配列キーがあれば最初の要素のフィールドも表示
+    const arrayKey = topKeys.find(k => Array.isArray(rawResponse[k]) && rawResponse[k].length > 0);
+    if (arrayKey) {
+      const firstItem = rawResponse[arrayKey][0];
+      const itemKeys = Object.keys(firstItem);
+      const startRow = 22 + summaryRows.length + 2;
+      sheet.getRange(startRow, 1).setValue(`【${arrayKey}[0] のフィールド一覧】`);
+      sheet.getRange(startRow + 1, 1, 1, 2).setValues([['フィールド名', '値']]);
+      const fieldRows = itemKeys.map(k => [k, JSON.stringify(firstItem[k]).substring(0, 200)]);
+      sheet.getRange(startRow + 2, 1, fieldRows.length, 2).setValues(fieldRows);
     }
 
+    const extractedItems = MFApiClient.getTrialBalance(thisMonth.startDate, thisMonth.endDate);
     ui.alert(
       `✅ API生データを "_API生データ確認" シートに出力しました。\n` +
-      `${items.length}件取得 / ${thisMonth.label}\n\n` +
-      `シートを確認してフィールド名を把握したら:\n` +
-      `・PLFormatter.gs の _buildAccountMap を調整\n` +
-      `・Config.gs の SEGMENT_PARAM を調整`
+      `トップレベルキー: ${topKeys.join(', ')}\n` +
+      `getTrialBalance()で抽出: ${extractedItems.length}件\n\n` +
+      `シートで「キー別サマリー」を確認し、\n配列キーの名前をエンジニアに伝えてください。`
     );
   } catch (e) {
     ui.alert(`❌ エラー: ${e.message}\n\nまず「🔑 MF会計 認証を開始」から認証してください。`);

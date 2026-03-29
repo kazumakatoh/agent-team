@@ -42,11 +42,19 @@ const MFApiClient = {
 
     const response = MFApiClient._request('GET', '/api/v3/reports/trial_balance_pl', params);
 
-    // ★ レスポンスのキー名はドキュメントで確認（items / account_items / data など）
-    return response.items
+    // MF会計 API v3 試算表レスポンス構造:
+    // { rows: [...], columns: [...] } または { items: [...] } など
+    // 生データ確認は exportRawApiResponse() を参照
+    const items = response.rows
+      || response.items
       || response.account_items
+      || (response.trial_balance_pl && response.trial_balance_pl.rows)
+      || (response.trial_balance_pl && response.trial_balance_pl.items)
       || (response.trial_balance && response.trial_balance.items)
       || [];
+
+    Logger.log(`試算表レスポンスキー: ${Object.keys(response).join(', ')} → ${items.length}件`);
+    return items;
   },
 
   /**
