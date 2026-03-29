@@ -1,84 +1,158 @@
 /**
  * 財務レポート自動化システム - マネーフォワード クラウド会計 APIクライアント
  *
- * ■ エンドポイント仕様（developers.api-accounting.moneyforward.com 準拠）
- *   BASE_URL: https://api-accounting.moneyforward.com
- *   PL試算表:  GET /api/v3/reports/trial_balance_pl
- *   BS試算表:  GET /api/v3/reports/trial_balance_bs
- *   部門一覧:  GET /api/v3/segments  （★ドキュメントで要確認）
- *   勘定科目:  GET /api/v3/account_items
+ * ■ 確認済みエンドポイント
+ *   PL試算表（全社）: GET /api/v3/reports/trial_balance_pl?start_date=&end_date=
+ *     → 部門フィルタ非対応（department_id は unsupported_query_parameter）
+ *   仕訳一覧:         GET /api/v3/journals?start_date=&end_date=&page=&per_page=
+ *     → 各branch の creditor/debtor に department_id(URL-encoded) が付与される
+ *   部門一覧:         GET /api/v3/departments
  *
- * ■ OAuth2 仕様（developers.biz.moneyforward.com 準拠）
- *   Authorization Code Flow / Bearer Token
- *   認証基盤: MFビジネスプラットフォーム (accounts.biz.moneyforward.com)
+ * ■ 部門別PL取得方式
+ *   trial_balance_pl は部門フィルタ不可のため、仕訳APIで全仕訳を取得し
+ *   department_id でアプリ側フィルタ → 勘定科目ごとに credit/debit を集計する
  *
- * ★ 実際のエンドポイント名・パラメータ名はドキュメントで最終確認してください
+ * ■ 仕訳レスポンス構造
+ *   journals[].branches[].creditor/debtor = {
+ *     account_id, account_name, department_id(URL-encoded or null), value, ...
+ *   }
+ *   department_id は URL-encoded base64 (例: "s4afNgEETQf7VyrB0IqZ1Q%3D%3D")
  */
 
 const MFApiClient = {
+
+  // 実行中の仕訳キャッシュ（同一月を複数部門で処理する際の重複API呼び出しを防ぐ）
+  _journalCache: {},
 
   // ==============================
   // 公開メソッド
   // ==============================
 
   /**
-   * PL試算表を取得する
+   * PL試算表を取得する（PLFormatter から呼ばれる）
    *
-   * @param {string} startDate    - 'YYYY-MM-DD'（期間開始日）
-   * @param {string} endDate      - 'YYYY-MM-DD'（期間終了日）
-   * @param {string} [segmentId]  - 部門/セグメントID（省略時は全社）
-   * @return {Array} 試算表アイテム配列
-   *
-   * ★ パラメータ名はドキュメントで確認：
-   *   start_date / end_date の名称、部門フィルタのキー名（segment_id? department_id?）
+   * @param {string} startDate   - 'YYYY-MM-DD'
+   * @param {string} endDate     - 'YYYY-MM-DD'
+   * @param {string} [segmentId] - 部門ID（Config.DEPARTMENTS[].id の値）。空/nullなら全社
+   * @return {Array} PLFormatter._buildAccountMap() に渡せる配列
+   *   - segmentId なし: trial_balance_pl の rows 配列（ネスト構造）
+   *   - segmentId あり: 仕訳から集計したフラット配列 [{name, type:'account', values:[...]}]
    */
   getTrialBalance(startDate, endDate, segmentId) {
-    const params = {
+    if (segmentId) {
+      // 部門あり → 仕訳API経由で集計
+      return MFApiClient._getTrialBalanceFromJournals(startDate, endDate, segmentId);
+    }
+
+    // 全社 → trial_balance_pl API（高速・ネスト構造で返る）
+    const response = MFApiClient._request('GET', '/api/v3/reports/trial_balance_pl', {
       start_date: startDate,
       end_date:   endDate,
-    };
-    // 部門フィルタ: ★ドキュメントでパラメータ名を確認（segment_id / department_id など）
-    if (segmentId) params[CONFIG.MF_API.SEGMENT_PARAM] = segmentId;
+    });
+    const rows = response.rows || [];
+    Logger.log(`試算表（全社）: ${startDate}〜${endDate} → ${rows.length}カテゴリ`);
+    return rows;
+  },
 
-    const response = MFApiClient._request('GET', '/api/v3/reports/trial_balance_pl', params);
+  /**
+   * 仕訳APIで全仕訳を取得し、部門でフィルタして勘定科目別残高を返す
+   * @private
+   */
+  _getTrialBalanceFromJournals(startDate, endDate, segmentId) {
+    // Config の segmentId は decoded base64 (例: "s4afNgEETQf7VyrB0IqZ1Q==")
+    // API の department_id は URL-encoded (例: "s4afNgEETQf7VyrB0IqZ1Q%3D%3D")
+    const encodedDeptId = encodeURIComponent(segmentId);
 
-    // MF会計 API v3 試算表レスポンス構造:
-    // { rows: [...], columns: [...] } または { items: [...] } など
-    // 生データ確認は exportRawApiResponse() を参照
-    const items = response.rows
-      || response.items
-      || response.account_items
-      || (response.trial_balance_pl && response.trial_balance_pl.rows)
-      || (response.trial_balance_pl && response.trial_balance_pl.items)
-      || (response.trial_balance && response.trial_balance.items)
-      || [];
+    const allJournals = MFApiClient._getAllJournals(startDate, endDate);
+    Logger.log(`部門別試算表: ${segmentId} / ${startDate}〜${endDate} / 全仕訳${allJournals.length}件から集計`);
 
-    Logger.log(`試算表レスポンスキー: ${Object.keys(response).join(', ')} → ${items.length}件`);
-    return items;
+    // 勘定科目ごとに credit・debit を集計
+    const accountData = {}; // { accountName: { credit: 0, debit: 0 } }
+
+    allJournals.forEach(journal => {
+      (journal.branches || []).forEach(branch => {
+        const cr = branch.creditor;
+        const dr = branch.debtor;
+
+        // creditor（貸方）が指定部門に属する場合
+        if (cr && cr.department_id === encodedDeptId && cr.account_name) {
+          if (!accountData[cr.account_name]) accountData[cr.account_name] = { credit: 0, debit: 0 };
+          accountData[cr.account_name].credit += (cr.value || 0);
+        }
+
+        // debtor（借方）が指定部門に属する場合
+        if (dr && dr.department_id === encodedDeptId && dr.account_name) {
+          if (!accountData[dr.account_name]) accountData[dr.account_name] = { credit: 0, debit: 0 };
+          accountData[dr.account_name].debit += (dr.value || 0);
+        }
+      });
+    });
+
+    const accountCount = Object.keys(accountData).length;
+    Logger.log(`  → 部門付き勘定科目: ${accountCount}件 (${Object.keys(accountData).slice(0, 5).join(', ')}...)`);
+
+    // PLFormatter._buildAccountMap が期待する形式（type:'account', values[3]=closing_balance）に変換
+    // closing_balance = credit - debit
+    //   収益科目: credit > debit → 正値 (収益)
+    //   費用科目: debit > credit → 負値 → Math.abs で費用額
+    return Object.entries(accountData).map(([name, { credit, debit }]) => ({
+      name,
+      type:   'account',
+      values: [0, debit, credit, credit - debit, 0], // [opening, debit, credit, closing, ratio]
+      rows:   null,
+    }));
+  },
+
+  /**
+   * 指定期間の全仕訳を取得する（ページネーション対応・実行内キャッシュ）
+   * @private
+   */
+  _getAllJournals(startDate, endDate) {
+    const cacheKey = `${startDate}_${endDate}`;
+    if (MFApiClient._journalCache[cacheKey]) {
+      return MFApiClient._journalCache[cacheKey];
+    }
+
+    const allJournals = [];
+    let page    = 1;
+    const perPage = 100;
+    const MAX_PAGES = 50; // 安全上限（月5000件まで対応）
+
+    while (page <= MAX_PAGES) {
+      const response = MFApiClient._request('GET', '/api/v3/journals', {
+        start_date: startDate,
+        end_date:   endDate,
+        page:       page,
+        per_page:   perPage,
+      });
+      const journals = response.journals || [];
+      allJournals.push(...journals);
+      Logger.log(`  仕訳取得: page=${page}, ${journals.length}件 (累計 ${allJournals.length}件)`);
+
+      if (journals.length < perPage) break; // 最終ページ
+      page++;
+    }
+
+    MFApiClient._journalCache[cacheKey] = allJournals;
+    return allJournals;
   },
 
   /**
    * BS試算表を取得する（将来のBS対応用に準備）
    */
-  getBalanceSheet(startDate, endDate, segmentId) {
-    const params = { start_date: startDate, end_date: endDate };
-    if (segmentId) params[CONFIG.MF_API.SEGMENT_PARAM] = segmentId;
-    const response = MFApiClient._request('GET', '/api/v3/reports/trial_balance_bs', params);
-    return response.items || response.account_items || [];
+  getBalanceSheet(startDate, endDate) {
+    const response = MFApiClient._request('GET', '/api/v3/reports/trial_balance_bs', {
+      start_date: startDate,
+      end_date:   endDate,
+    });
+    return response.rows || response.items || response.account_items || [];
   },
 
   /**
    * 部門一覧を取得する
-   * スコープ: mfc/accounting/departments.read
-   * エンドポイント候補: /api/v3/departments（ドキュメントで確認済みのスコープ名から推定）
    */
   getDepartments() {
-    // 確認済みスコープ名 "departments" から推定する候補を順に試す
-    const candidates = [
-      '/api/v3/departments',
-      '/api/v3/segments',
-    ];
-
+    const candidates = ['/api/v3/departments', '/api/v3/segments'];
     for (const endpoint of candidates) {
       try {
         const response = MFApiClient._request('GET', endpoint, {});
@@ -95,20 +169,18 @@ const MFApiClient = {
   },
 
   /**
-   * 勘定科目一覧を取得する（マッピング確認用）
-   * ★ エンドポイント名をドキュメントで確認
+   * 勘定科目一覧を取得する
+   * 確認済み: /api/v3/accounts が正しいエンドポイント（account_items ではない）
    */
   getAccountItems() {
-    const response = MFApiClient._request('GET', '/api/v3/account_items', {});
-    return response.account_items || response.items || [];
+    const response = MFApiClient._request('GET', '/api/v3/accounts', {});
+    return response.accounts || response.account_items || response.items || [];
   },
 
   /**
-   * 接続テスト用：ユーザー・事業所情報を取得する
-   * ★ エンドポイント名をドキュメントで確認
+   * 接続テスト用
    */
   getMe() {
-    // 事業所情報取得の候補エンドポイント
     const candidates = ['/api/v3/me', '/api/v3/user', '/api/v3/office'];
     for (const endpoint of candidates) {
       try {
@@ -117,7 +189,7 @@ const MFApiClient = {
         Logger.log(`${endpoint} → ${e.message}`);
       }
     }
-    throw new Error('ユーザー情報の取得に失敗しました。ドキュメントでエンドポイントを確認してください。');
+    throw new Error('ユーザー情報の取得に失敗しました。');
   },
 
   // ==============================
@@ -125,7 +197,7 @@ const MFApiClient = {
   // ==============================
 
   /**
-   * APIリクエストを実行する（トークンを自動管理）
+   * APIリクエストを実行する（トークン自動管理）
    */
   _request(method, endpoint, params) {
     const token   = MFApiClient._getAccessToken();
@@ -202,6 +274,7 @@ const MFApiClient = {
 
   /**
    * リフレッシュトークンを使ってアクセストークンを更新する
+   * MFビジネスプラットフォームは CLIENT_SECRET_BASIC 方式
    */
   _refreshAccessToken() {
     const props        = PropertiesService.getScriptProperties();
@@ -211,13 +284,15 @@ const MFApiClient = {
       throw new Error('リフレッシュトークンがありません。再認証が必要です。');
     }
 
+    const credentials = Utilities.base64Encode(
+      CONFIG.MF_API.CLIENT_ID + ':' + CONFIG.MF_API.CLIENT_SECRET
+    );
     const response = UrlFetchApp.fetch(CONFIG.MF_API.TOKEN_URL, {
       method: 'post',
+      headers: { 'Authorization': 'Basic ' + credentials },
       payload: {
         grant_type:    'refresh_token',
         refresh_token: refreshToken,
-        client_id:     CONFIG.MF_API.CLIENT_ID,
-        client_secret: CONFIG.MF_API.CLIENT_SECRET,
       },
       muteHttpExceptions: true,
     });
@@ -232,16 +307,19 @@ const MFApiClient = {
 
   /**
    * 認証コードをトークンと交換する（Setup.gsから呼ばれる）
+   * CLIENT_SECRET_BASIC 方式（Authorizationヘッダに認証情報）
    */
   exchangeCodeForTokens(code) {
+    const credentials = Utilities.base64Encode(
+      CONFIG.MF_API.CLIENT_ID + ':' + CONFIG.MF_API.CLIENT_SECRET
+    );
     const response = UrlFetchApp.fetch(CONFIG.MF_API.TOKEN_URL, {
       method: 'post',
+      headers: { 'Authorization': 'Basic ' + credentials },
       payload: {
-        grant_type:    'authorization_code',
-        code:          code,
-        client_id:     CONFIG.MF_API.CLIENT_ID,
-        client_secret: CONFIG.MF_API.CLIENT_SECRET,
-        redirect_uri:  CONFIG.MF_API.REDIRECT_URI,
+        grant_type:   'authorization_code',
+        code:         code,
+        redirect_uri: CONFIG.MF_API.REDIRECT_URI,
       },
       muteHttpExceptions: true,
     });
