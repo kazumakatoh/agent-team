@@ -21,9 +21,12 @@ const CONFIG = {
     AUTH_URL:      'https://moneyforward.com/oauth/authorize',
     TOKEN_URL:     'https://moneyforward.com/oauth/v2/token',
 
-    CLIENT_ID:     '', // ★要設定: MF会計アプリのクライアントID
-    CLIENT_SECRET: '', // ★要設定: MF会計アプリのクライアントシークレット
-    REDIRECT_URI:  'urn:ietf:wg:oauth:2.0:oob', // OOBフロー（コードを画面に表示）
+    CLIENT_ID:     '', // ★要設定: MF会計アプリのクライアントID（STEP4で取得）
+    CLIENT_SECRET: '', // ★要設定: MF会計アプリのクライアントシークレット（STEP4で取得）
+
+    // ★要設定: GAS Web AppのURL（STEP2でデプロイ後に取得）
+    // 例: 'https://script.google.com/macros/s/AKfycbxxxxxx/exec'
+    REDIRECT_URI:  '',
 
     // 必要スコープ（スペース区切りで複数指定）
     // mfc/accounting/offices.read     : 事業所情報の読み取り

@@ -270,7 +270,7 @@ function onOpen() {
     .addItem('🔬 API生データを出力（初回診断用）', 'exportRawApiResponse')
     .addSeparator()
     .addItem('🔑 MF会計 認証を開始', 'authorize')
-    .addItem('🔑 認証コードを入力', 'exchangeAuthCode')
+    .addItem('📋 Web App URL を確認（リダイレクトURI用）', 'showWebAppUrl')
     .addItem('🗑️ 認証情報をリセット', 'clearAuth')
     .addSeparator()
     .addItem('⚙️ 日次トリガーを設定', 'setupTriggers')
