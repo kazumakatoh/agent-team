@@ -235,55 +235,33 @@ const PLFormatter = {
    *   - item.account_category                    : 科目カテゴリ
    *   - item.financial_statement_type             : 'pl' | 'bs'
    *
-   *   実際のレスポンス構造は exportAccountItems() で確認してください
+   * MF会計 API v3 試算表レスポンス構造（確認済み）:
+   *   columns: ["opening_balance","debit_amount","credit_amount","closing_balance","ratio"]
+   *   rows（ネスト構造）:
+   *     { name:"売上高合計", type:"financial_statement_item", values:[...], rows:[
+   *       { name:"売上（国内）", type:"account", values:[0,0,15524254,15524254,110.1], rows:null },
+   *       ...
+   *     ]}
+   *   → type:"account" の葉ノードのみ収集し、values[3](closing_balance)を金額として使用
    */
-  _buildAccountMap(trialBalanceItems) {
+  _buildAccountMap(trialBalanceRows) {
     const map = {};
 
-    trialBalanceItems.forEach(item => {
-      // ★ 勘定科目名の取得（レスポンス構造に応じて優先順位で試みる）
-      const name = (item.account_item && item.account_item.name)
-        || item.name
-        || item.account_name
-        || null;
-      if (!name) return;
-
-      // ★ カテゴリの取得
-      const category = (item.account_item && item.account_item.account_category)
-        || item.account_category
-        || item.category
-        || '';
-
-      // ★ 金額の取得（MF会計APIのレスポンス構造に応じて確認）
-      // 収益科目: credit_amount（貸方）が実績金額
-      // 費用科目: debit_amount（借方）が実績金額
-      // または total_amount / amount で直接取得できる場合もある
-      let amount;
-
-      if (typeof item.total_amount === 'number') {
-        // total_amount フィールドがある場合（絶対値で統一されている可能性あり）
-        amount = Math.abs(item.total_amount);
-      } else if (typeof item.amount === 'number') {
-        amount = Math.abs(item.amount);
-      } else {
-        // debit/credit 分離の場合
-        const INCOME_CATS  = ['sales', 'non_operating_income', 'extraordinary_income'];
-        const EXPENSE_CATS = ['cost_of_sales', 'selling_general_and_administrative',
-                              'non_operating_expense', 'extraordinary_expense', 'income_taxes'];
-        if (INCOME_CATS.includes(category)) {
-          amount = item.credit_amount || 0;
-        } else if (EXPENSE_CATS.includes(category)) {
-          amount = item.debit_amount || 0;
-        } else {
-          // フォールバック: closing_balance の絶対値
-          amount = Math.abs(item.closing_balance || 0);
+    // ネスト構造を再帰的に辿り、type:"account" の葉ノードを収集
+    function collectAccounts(rows) {
+      if (!rows) return;
+      rows.forEach(row => {
+        if (row.type === 'account' && row.name) {
+          // values[3] = closing_balance（期末残高）
+          // 収益: 貸方残高（正値）、費用: 借方残高（正値）→ どちらも正なので Math.abs で統一
+          const amount = Math.abs((row.values && row.values[3]) || 0);
+          map[row.name] = (map[row.name] || 0) + amount;
         }
-      }
+        if (row.rows) collectAccounts(row.rows);
+      });
+    }
 
-      // 同名科目が複数ある場合は加算
-      map[name] = (map[name] || 0) + amount;
-    });
-
+    collectAccounts(trialBalanceRows);
     Logger.log(`勘定科目マップ: ${Object.keys(map).length}科目 → ${JSON.stringify(Object.keys(map).slice(0, 5))} ...`);
     return map;
   },
