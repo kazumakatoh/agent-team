@@ -16,26 +16,24 @@ const CONFIG = {
     // 会計API本体のベースURL（試算表・部門・勘定科目などのエンドポイント）
     BASE_URL:      'https://api-accounting.moneyforward.com',
 
-    // OAuth2認証基盤（MFビジネスプラットフォーム共通）
-    // ★ 正確なURLは developers.biz.moneyforward.com のドキュメントで確認してください
-    AUTH_URL:      'https://accounts.biz.moneyforward.com/oauth2/auth',
-    TOKEN_URL:     'https://accounts.biz.moneyforward.com/oauth2/token',
+    // OAuth2認証エンドポイント（MFビジネスプラットフォーム共通）
+    // 出典: github.com/moneyforward/api-doc
+    AUTH_URL:      'https://moneyforward.com/oauth/authorize',
+    TOKEN_URL:     'https://moneyforward.com/oauth/v2/token',
 
     CLIENT_ID:     '', // ★要設定: MF会計アプリのクライアントID
     CLIENT_SECRET: '', // ★要設定: MF会計アプリのクライアントシークレット
     REDIRECT_URI:  'urn:ietf:wg:oauth:2.0:oob', // OOBフロー（コードを画面に表示）
 
-    // スコープ: developers.biz.moneyforward.com で確認してください
-    // 例: 'mf_clerk' または 'accounting:read' など
-    SCOPE:         'mf_clerk',
+    // 必要スコープ（スペース区切りで複数指定）
+    // mfc/accounting/offices.read     : 事業所情報の読み取り
+    // mfc/accounting/accounts.read    : 勘定科目・補助科目の読み取り
+    // mfc/accounting/departments.read : 部門情報の読み取り
+    // mfc/accounting/journal.read     : 試算表・仕訳の読み取り
+    SCOPE: 'mfc/accounting/offices.read mfc/accounting/accounts.read mfc/accounting/departments.read mfc/accounting/journal.read',
 
-    // ★ 注意: COMPANY_ID はURLに含めない（OAuthトークンで事業所を特定）
-    // 複数事業所を持つ場合のみ必要。通常は不要（APIが自動判別）
-    COMPANY_ID:    '', // 通常は空白でOK
-
-    // 部門フィルタのパラメータ名
-    // ★ ドキュメントで確認（'segment_id' または 'department_id'）
-    SEGMENT_PARAM: 'segment_id',
+    // 部門フィルタのパラメータ名（確認済み）
+    SEGMENT_PARAM: 'department_id',
   },
 
   // ==============================

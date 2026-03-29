@@ -34,6 +34,7 @@ function authorize() {
   }
 
   const state   = Utilities.getUuid();
+  // ★ クエリパラメータはドキュメントの仕様に合わせて調整してください
   const authUrl = CONFIG.MF_API.AUTH_URL +
     `?client_id=${encodeURIComponent(CONFIG.MF_API.CLIENT_ID)}` +
     `&redirect_uri=${encodeURIComponent(CONFIG.MF_API.REDIRECT_URI)}` +

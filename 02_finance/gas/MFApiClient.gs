@@ -60,21 +60,21 @@ const MFApiClient = {
   },
 
   /**
-   * 部門（セグメント）一覧を取得する
-   * ★ エンドポイント名をドキュメントで確認（/api/v3/segments? /api/v3/departments?）
+   * 部門一覧を取得する
+   * スコープ: mfc/accounting/departments.read
+   * エンドポイント候補: /api/v3/departments（ドキュメントで確認済みのスコープ名から推定）
    */
   getDepartments() {
-    // ドキュメントで確認が必要なエンドポイント候補を順に試す
+    // 確認済みスコープ名 "departments" から推定する候補を順に試す
     const candidates = [
-      '/api/v3/segments',
       '/api/v3/departments',
-      '/api/v3/sub_accounts',
+      '/api/v3/segments',
     ];
 
     for (const endpoint of candidates) {
       try {
         const response = MFApiClient._request('GET', endpoint, {});
-        const items = response.segments || response.departments || response.items || [];
+        const items = response.departments || response.segments || response.items || [];
         if (items.length > 0) {
           Logger.log(`部門一覧取得成功: ${endpoint} (${items.length}件)`);
           return items;
