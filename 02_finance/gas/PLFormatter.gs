@@ -227,42 +227,64 @@ const PLFormatter = {
 
   /**
    * MF試算表アイテムから「勘定科目名 → 金額」マップを作成
-   * PL項目（account_category が income / expense 系）を対象とする
+   *
+   * ★ MF会計 APIのレスポンス構造について（ドキュメントで要確認）
+   *   各アイテムの想定フィールド:
+   *   - item.name または item.account_item.name : 勘定科目名
+   *   - item.amount または item.total_amount     : 期間合計金額
+   *   - item.account_category                    : 科目カテゴリ
+   *   - item.financial_statement_type             : 'pl' | 'bs'
+   *
+   *   実際のレスポンス構造は exportAccountItems() で確認してください
    */
   _buildAccountMap(trialBalanceItems) {
     const map = {};
 
     trialBalanceItems.forEach(item => {
-      const acct = item.account_item;
-      if (!acct) return;
+      // ★ 勘定科目名の取得（レスポンス構造に応じて優先順位で試みる）
+      const name = (item.account_item && item.account_item.name)
+        || item.name
+        || item.account_name
+        || null;
+      if (!name) return;
 
-      const name = acct.name;
-      // MF API では credit_amount がプラス（収益）、debit_amount がプラス（費用）
-      // closing_balance は残高（PL科目では期間合計）
-      // net_amount = credit_amount - debit_amount
-      const netAmount = (item.credit_amount || 0) - (item.debit_amount || 0);
+      // ★ カテゴリの取得
+      const category = (item.account_item && item.account_item.account_category)
+        || item.account_category
+        || item.category
+        || '';
 
-      // 収益科目（売上高など）: credit_amount > debit_amount → プラス
-      // 費用科目（仕入高など）: debit_amount > credit_amount → マイナス → 絶対値を使う
-      const category = acct.account_category || '';
+      // ★ 金額の取得（MF会計APIのレスポンス構造に応じて確認）
+      // 収益科目: credit_amount（貸方）が実績金額
+      // 費用科目: debit_amount（借方）が実績金額
+      // または total_amount / amount で直接取得できる場合もある
       let amount;
 
-      if (['sales', 'non_operating_income', 'extraordinary_income'].includes(category)) {
-        // 収益科目はプラス
-        amount = item.credit_amount || 0;
-      } else if (['cost_of_sales', 'selling_general_and_administrative', 'non_operating_expense', 'extraordinary_expense', 'income_taxes'].includes(category)) {
-        // 費用科目はプラス（PLFormatterのsignで符号を決める）
-        amount = item.debit_amount || 0;
+      if (typeof item.total_amount === 'number') {
+        // total_amount フィールドがある場合（絶対値で統一されている可能性あり）
+        amount = Math.abs(item.total_amount);
+      } else if (typeof item.amount === 'number') {
+        amount = Math.abs(item.amount);
       } else {
-        // その他（closing_balanceで代用）
-        amount = Math.abs(item.closing_balance || 0);
+        // debit/credit 分離の場合
+        const INCOME_CATS  = ['sales', 'non_operating_income', 'extraordinary_income'];
+        const EXPENSE_CATS = ['cost_of_sales', 'selling_general_and_administrative',
+                              'non_operating_expense', 'extraordinary_expense', 'income_taxes'];
+        if (INCOME_CATS.includes(category)) {
+          amount = item.credit_amount || 0;
+        } else if (EXPENSE_CATS.includes(category)) {
+          amount = item.debit_amount || 0;
+        } else {
+          // フォールバック: closing_balance の絶対値
+          amount = Math.abs(item.closing_balance || 0);
+        }
       }
 
       // 同名科目が複数ある場合は加算
       map[name] = (map[name] || 0) + amount;
     });
 
-    Logger.log(`勘定科目マップ作成: ${Object.keys(map).length}科目`);
+    Logger.log(`勘定科目マップ: ${Object.keys(map).length}科目 → ${JSON.stringify(Object.keys(map).slice(0, 5))} ...`);
     return map;
   },
 };

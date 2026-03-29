@@ -9,16 +9,33 @@ const CONFIG = {
 
   // ==============================
   // MF会計 API設定
+  // ※ OAuth認証は developers.biz.moneyforward.com で管理
+  // ※ 会計API本体は api-accounting.moneyforward.com
   // ==============================
   MF_API: {
-    BASE_URL:       'https://api.biz.moneyforward.com',
-    AUTH_URL:       'https://auth.biz.moneyforward.com/oauth2/auth',
-    TOKEN_URL:      'https://auth.biz.moneyforward.com/oauth2/token',
-    CLIENT_ID:      '', // ★要設定: MF会計アプリのクライアントID
-    CLIENT_SECRET:  '', // ★要設定: MF会計アプリのクライアントシークレット
-    REDIRECT_URI:   'urn:ietf:wg:oauth:2.0:oob', // OOBフロー（コードを画面に表示）
-    SCOPE:          'mf_clerk',
-    COMPANY_ID:     '', // ★要設定: MF会計の事業所ID（初回実行時に自動取得も可能）
+    // 会計API本体のベースURL（試算表・部門・勘定科目などのエンドポイント）
+    BASE_URL:      'https://api-accounting.moneyforward.com',
+
+    // OAuth2認証基盤（MFビジネスプラットフォーム共通）
+    // ★ 正確なURLは developers.biz.moneyforward.com のドキュメントで確認してください
+    AUTH_URL:      'https://accounts.biz.moneyforward.com/oauth2/auth',
+    TOKEN_URL:     'https://accounts.biz.moneyforward.com/oauth2/token',
+
+    CLIENT_ID:     '', // ★要設定: MF会計アプリのクライアントID
+    CLIENT_SECRET: '', // ★要設定: MF会計アプリのクライアントシークレット
+    REDIRECT_URI:  'urn:ietf:wg:oauth:2.0:oob', // OOBフロー（コードを画面に表示）
+
+    // スコープ: developers.biz.moneyforward.com で確認してください
+    // 例: 'mf_clerk' または 'accounting:read' など
+    SCOPE:         'mf_clerk',
+
+    // ★ 注意: COMPANY_ID はURLに含めない（OAuthトークンで事業所を特定）
+    // 複数事業所を持つ場合のみ必要。通常は不要（APIが自動判別）
+    COMPANY_ID:    '', // 通常は空白でOK
+
+    // 部門フィルタのパラメータ名
+    // ★ ドキュメントで確認（'segment_id' または 'department_id'）
+    SEGMENT_PARAM: 'segment_id',
   },
 
   // ==============================

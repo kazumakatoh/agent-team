@@ -151,9 +151,9 @@ function exportAccountItems() {
 
     sheet.getRange(1, 1, 1, 5).setValues([['ID', '科目名', 'カテゴリ', 'カテゴリ名', '税区分']]);
     const rows = items.map(item => [
-      item.id,
-      item.name,
-      item.account_category,
+      item.id || (item.account_item && item.account_item.id) || '',
+      item.name || (item.account_item && item.account_item.name) || '',
+      item.account_category || (item.account_item && item.account_item.account_category) || '',
       item.account_category_name || '',
       item.tax_name || '',
     ]);
@@ -162,6 +162,72 @@ function exportAccountItems() {
     ui.alert(`✅ 勘定科目一覧を "_勘定科目確認" シートに出力しました。\n${items.length}科目`);
   } catch (e) {
     ui.alert(`❌ エラー: ${e.message}`);
+  }
+}
+
+/**
+ * API生レスポンスを確認用シートに出力する（初回セットアップ時の診断用）
+ * 実際のレスポンス構造を確認して Config.gs・PLFormatter.gs を調整してください
+ */
+function exportRawApiResponse() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const fiscalYear = getCurrentFiscalYear();
+    const months     = getFiscalMonths(fiscalYear);
+    const thisMonth  = PLFormatter.getUpdatableMonths(months).slice(-1)[0]; // 直近月
+
+    if (!thisMonth) {
+      ui.alert('⚠️ 取得対象の月がありません。');
+      return;
+    }
+
+    // 全社（部門なし）で最新月のデータを取得
+    const items = MFApiClient.getTrialBalance(thisMonth.startDate, thisMonth.endDate);
+
+    const ss = SheetManager.getSpreadsheet();
+    let sheet = ss.getSheetByName('_API生データ確認');
+    if (!sheet) sheet = ss.insertSheet('_API生データ確認');
+    sheet.clearContents();
+
+    sheet.getRange(1, 1).setValue(
+      `MF会計 試算表API 生データ（${thisMonth.label}・全社）\n` +
+      `取得日時: ${new Date().toLocaleString('ja-JP')}\n` +
+      `取得件数: ${items.length}件\n\n` +
+      '↓ 下の表でフィールド名・値を確認して Config.gs / PLFormatter.gs を調整してください'
+    );
+
+    // JSON全体を1セルに出力（最初の3件）
+    const sample = items.slice(0, 3);
+    sheet.getRange(6, 1).setValue('【サンプル JSON（最初の3件）】');
+    sheet.getRange(7, 1).setValue(JSON.stringify(sample, null, 2));
+    sheet.getRange(7, 1).setWrap(true);
+    sheet.setColumnWidth(1, 600);
+    sheet.setRowHeight(7, 400);
+
+    // フラット形式でも出力
+    if (items.length > 0) {
+      const keys = Object.keys(items[0]).concat(
+        items[0].account_item ? Object.keys(items[0].account_item).map(k => `account_item.${k}`) : []
+      );
+      sheet.getRange(12, 1, 1, keys.length).setValues([keys]);
+      const rows = items.slice(0, 20).map(item => keys.map(k => {
+        if (k.startsWith('account_item.')) {
+          return (item.account_item && item.account_item[k.replace('account_item.', '')]) || '';
+        }
+        return item[k] !== undefined ? String(item[k]) : '';
+      }));
+      if (rows.length) sheet.getRange(13, 1, rows.length, keys.length).setValues(rows);
+    }
+
+    ui.alert(
+      `✅ API生データを "_API生データ確認" シートに出力しました。\n` +
+      `${items.length}件取得 / ${thisMonth.label}\n\n` +
+      `シートを確認してフィールド名を把握したら:\n` +
+      `・PLFormatter.gs の _buildAccountMap を調整\n` +
+      `・Config.gs の SEGMENT_PARAM を調整`
+    );
+  } catch (e) {
+    ui.alert(`❌ エラー: ${e.message}\n\nまず「🔑 MF会計 認証を開始」から認証してください。`);
   }
 }
 
@@ -201,6 +267,7 @@ function onOpen() {
     .addSeparator()
     .addItem('📋 勘定科目一覧を出力（設定確認用）', 'exportAccountItems')
     .addItem('🏢 部門一覧を出力（設定確認用）', 'exportDepartments')
+    .addItem('🔬 API生データを出力（初回診断用）', 'exportRawApiResponse')
     .addSeparator()
     .addItem('🔑 MF会計 認証を開始', 'authorize')
     .addItem('🔑 認証コードを入力', 'exchangeAuthCode')
