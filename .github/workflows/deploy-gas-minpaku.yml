@@ -19,14 +19,24 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install clasp
         run: npm install -g @google/clasp
 
       - name: Write clasp credentials
-        run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+        run: |
+          echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+          echo "✅ credentials file written"
+          echo "File size: $(wc -c < ~/.clasprc.json) bytes"
+          # Validate JSON
+          node -e "const j=require(process.env.HOME+'/.clasprc.json'); console.log('tokens keys:', Object.keys(j.tokens||{}));"
 
       - name: Push to GAS
         working-directory: 11_minpaku/gas
-        run: clasp push --force
+        run: |
+          echo "=== clasp version ==="
+          clasp --version
+          echo "=== pushing ==="
+          clasp push --force 2>&1
+          echo "=== done ==="
