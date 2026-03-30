@@ -13,19 +13,21 @@
       --black:   #0d0d0d;
       --charcoal:#1c1c1c;
       --gold:    #b8934f;
-      --gold-lt: #d4ac6e;
+      --gold-lt: #9a7a3e;
       --wood:    #7a4f2b;
-      --mist:    #e8e0d0;
+      --mist:    #f2ede4;
       --text:    #2c2c2c;
       --text-lt: #5c5c5c;
       --radius:  4px;
       --section: 100px 24px;
+      --bg:      #ffffff;
+      --bg-sub:  #f7f4ef;
     }
     html { scroll-behavior: smooth; }
     body {
       font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Georgia', serif;
-      background: var(--black);
-      color: var(--cream);
+      background: var(--bg);
+      color: var(--text);
       line-height: 1.8;
       overflow-x: hidden;
     }
@@ -53,7 +55,7 @@
       justify-content: center;
       text-align: center;
       padding: 60px 24px;
-      background: var(--black);
+      background: var(--bg);
       overflow: hidden;
     }
     #hero::before {
@@ -61,7 +63,7 @@
       position: absolute;
       inset: 0;
       background:
-        radial-gradient(ellipse 60% 40% at 50% 60%, rgba(184,147,79,0.08) 0%, transparent 70%);
+        radial-gradient(ellipse 60% 40% at 50% 60%, rgba(184,147,79,0.06) 0%, transparent 70%);
     }
     .hero-bg-art {
       position: absolute;
@@ -88,14 +90,13 @@
     .logo-img-wrap img {
       width: clamp(180px, 36vw, 320px);
       height: auto;
-      filter: invert(1);
     }
     .logo-en {
       font-family: 'Georgia', serif;
       font-size: clamp(52px, 12vw, 100px);
       font-weight: 400;
       letter-spacing: 0.25em;
-      color: var(--cream);
+      color: var(--text);
       line-height: 1;
     }
     .logo-jp {
@@ -114,7 +115,7 @@
     .hero-catch {
       font-size: clamp(18px, 4vw, 32px);
       letter-spacing: 0.15em;
-      color: var(--cream);
+      color: var(--text);
       position: relative;
       z-index: 1;
       margin-bottom: 20px;
@@ -158,7 +159,7 @@
 
     /* ─── Product ─── */
     #product {
-      background: var(--charcoal);
+      background: var(--bg-sub);
       position: relative;
       overflow: hidden;
     }
@@ -191,7 +192,7 @@
     }
     .product-desc {
       font-size: 15px;
-      color: #c8c0b0;
+      color: var(--text-lt);
       line-height: 2;
       margin-bottom: 24px;
     }
@@ -210,14 +211,14 @@
     .bottle-svg-wrap { width: 100%; max-width: 280px; }
 
     /* ─── Materials ─── */
-    #materials { background: var(--black); }
+    #materials { background: var(--bg); }
     .materials-title {
       font-size: clamp(24px, 5vw, 36px);
       letter-spacing: 0.1em;
       margin-bottom: 12px;
     }
     .materials-sub {
-      color: #a09080;
+      color: var(--text-lt);
       font-size: 14px;
       letter-spacing: 0.1em;
       margin-bottom: 60px;
@@ -229,7 +230,7 @@
       margin-top: 48px;
     }
     .material-card {
-      background: var(--charcoal);
+      background: var(--bg-sub);
       padding: 40px 28px;
       position: relative;
       overflow: hidden;
@@ -246,7 +247,7 @@
       font-size: 18px;
       letter-spacing: 0.1em;
       margin-bottom: 8px;
-      color: var(--cream);
+      color: var(--text);
     }
     .material-card .region {
       font-size: 11px;
@@ -257,13 +258,13 @@
     }
     .material-card p {
       font-size: 13px;
-      color: #a09080;
+      color: var(--text-lt);
       line-height: 1.8;
     }
 
     /* ─── How it works ─── */
     #how {
-      background: var(--charcoal);
+      background: var(--bg-sub);
       position: relative;
       overflow: hidden;
     }
@@ -307,15 +308,15 @@
       font-size: 20px;
       color: var(--gold);
       margin: 0 auto 20px;
-      background: var(--charcoal);
+      background: var(--bg);
       position: relative;
       z-index: 1;
     }
     .step h3 { font-size: 16px; letter-spacing: 0.1em; margin-bottom: 10px; }
-    .step p { font-size: 13px; color: #a09080; line-height: 1.8; }
+    .step p { font-size: 13px; color: var(--text-lt); line-height: 1.8; }
 
     /* ─── Scene ─── */
-    #scene { background: var(--black); }
+    #scene { background: var(--bg); }
     .scene-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -324,7 +325,7 @@
     }
     @media (max-width: 600px) { .scene-grid { grid-template-columns: 1fr; } }
     .scene-card {
-      background: var(--charcoal);
+      background: var(--bg-sub);
       padding: 48px 36px;
       position: relative;
       overflow: hidden;
@@ -340,16 +341,16 @@
     .scene-card .scene-num {
       font-family: 'Georgia', serif;
       font-size: 48px;
-      color: rgba(184,147,79,0.15);
+      color: rgba(184,147,79,0.25);
       line-height: 1;
       margin-bottom: 12px;
     }
-    .scene-card h3 { font-size: 20px; letter-spacing: 0.1em; margin-bottom: 12px; }
-    .scene-card p { font-size: 14px; color: #a09080; line-height: 1.9; }
+    .scene-card h3 { font-size: 20px; letter-spacing: 0.1em; margin-bottom: 12px; color: var(--text); }
+    .scene-card p { font-size: 14px; color: var(--text-lt); line-height: 1.9; }
 
     /* ─── Drinks ─── */
     #drinks {
-      background: var(--charcoal);
+      background: var(--bg-sub);
       position: relative;
     }
     #drinks::before {
@@ -371,7 +372,7 @@
       padding: 16px 32px;
       font-size: 15px;
       letter-spacing: 0.2em;
-      color: var(--cream);
+      color: var(--text);
       position: relative;
       transition: border-color 0.3s;
     }
@@ -391,7 +392,7 @@
     }
 
     /* ─── Story ─── */
-    #story { background: var(--black); }
+    #story { background: var(--bg); }
     .story-inner {
       max-width: 680px;
       margin: 0 auto;
@@ -405,7 +406,7 @@
     }
     .story-body {
       font-size: 15px;
-      color: #c0b8a8;
+      color: var(--text-lt);
       line-height: 2.4;
       text-align: left;
     }
@@ -419,7 +420,7 @@
 
     /* ─── MVV ─── */
     #mvv {
-      background: var(--charcoal);
+      background: var(--bg-sub);
       position: relative;
     }
     #mvv::before {
@@ -437,7 +438,7 @@
     }
     @media (max-width: 600px) { .mvv-grid { grid-template-columns: 1fr; } }
     .mvv-block {
-      background: #161616;
+      background: var(--bg);
       padding: 48px 36px;
     }
     .mvv-block .mvv-label {
@@ -453,17 +454,17 @@
       letter-spacing: 0.1em;
       margin-bottom: 20px;
       line-height: 1.5;
-      color: var(--cream);
+      color: var(--text);
     }
     .mvv-block p {
       font-size: 13px;
-      color: #a09080;
+      color: var(--text-lt);
       line-height: 2.2;
     }
 
     /* ─── Coming Soon ─── */
     #cta {
-      background: var(--black);
+      background: var(--bg-sub);
       text-align: center;
       padding: 120px 24px;
       position: relative;
@@ -500,7 +501,7 @@
     }
     .cta-sub {
       font-size: 14px;
-      color: #a09080;
+      color: var(--text-lt);
       letter-spacing: 0.15em;
       margin-bottom: 48px;
       position: relative;
@@ -519,17 +520,17 @@
       font-family: 'Helvetica Neue', sans-serif;
       font-size: 11px;
       letter-spacing: 0.3em;
-      color: #a09080;
+      color: var(--text-lt);
       position: relative;
       z-index: 1;
     }
 
     /* ─── Footer ─── */
     footer {
-      background: #080808;
+      background: var(--charcoal);
       padding: 48px 24px;
       text-align: center;
-      border-top: 1px solid #1c1c1c;
+      border-top: 1px solid #333;
     }
     .footer-logo {
       font-family: 'Georgia', serif;
@@ -546,7 +547,7 @@
     }
     footer p {
       font-size: 11px;
-      color: #404040;
+      color: #888;
       letter-spacing: 0.15em;
       font-family: 'Helvetica Neue', sans-serif;
     }
@@ -784,7 +785,7 @@
         伝統工芸の職人が一本一本に込めた技。そして、開発者である私たちの思い。
       </p>
       <p class="story-body">
-        それらすべてがプロダクトに<strong style="color:var(--gold-lt);">「宿り」</strong>、
+        それらすべてがプロダクトに<strong style="color:var(--gold);">「宿り」</strong>、
         国内・海外の人たちに極上の体験価値を届けるブランドとしてふさわしい名称——
         それが「宿木（YADORIGI）」でした。
       </p>
@@ -837,7 +838,7 @@
   <p class="cta-label en">COMING SOON</p>
   <!-- ロゴ（商標申請用・CTAセクションにも明示掲載） -->
   <div style="display:flex; justify-content:center; margin-bottom:48px; position:relative; z-index:1;">
-    <img src="logo.jpg" alt="YADORIGI 宿木 — 日本の森を、一献に宿す。" style="width:clamp(200px,36vw,320px); height:auto; filter:invert(1);" />
+    <img src="logo.jpg" alt="YADORIGI 宿木 — 日本の森を、一献に宿す。" style="width:clamp(200px,36vw,320px); height:auto;" />
   </div>
   <p class="cta-sub">2026年8月、Makuakeにてクラウドファンディング開始予定</p>
   <p class="cta-date en">August 2026</p>
@@ -846,28 +847,28 @@
 
 
 <!-- ━━━━━━━━━━━━━━━━ COMPANY INFO ━━━━━━━━━━━━━━━━ -->
-<section id="company" style="background:#111; padding:80px 24px; border-top:1px solid #222;">
+<section id="company" style="background:#f7f4ef; padding:80px 24px; border-top:1px solid #e0dbd0;">
   <div style="max-width:700px; margin:0 auto;">
     <span style="font-family:'Helvetica Neue',Arial,sans-serif; font-size:10px; letter-spacing:0.35em; text-transform:uppercase; color:#b8934f; display:block; margin-bottom:32px; text-align:center;">Company</span>
-    <h2 style="font-size:20px; letter-spacing:0.15em; text-align:center; margin-bottom:48px; color:#f5f0e8;">会社概要</h2>
+    <h2 style="font-size:20px; letter-spacing:0.15em; text-align:center; margin-bottom:48px; color:#2c2c2c;">会社概要</h2>
 
     <table style="width:100%; border-collapse:collapse; font-size:14px; line-height:2;">
       <tbody>
-        <tr style="border-bottom:1px solid #2a2a2a;">
+        <tr style="border-bottom:1px solid #ddd8cf;">
           <th style="width:140px; padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">企業名</th>
-          <td style="padding:16px 0; color:#c8c0b0;">株式会社LEVEL1</td>
+          <td style="padding:16px 0; color:#5c5c5c;">株式会社LEVEL1</td>
         </tr>
-        <tr style="border-bottom:1px solid #2a2a2a;">
+        <tr style="border-bottom:1px solid #ddd8cf;">
           <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">所在地</th>
-          <td style="padding:16px 0; color:#c8c0b0;">東京都杉並区阿佐谷南3-45-9</td>
+          <td style="padding:16px 0; color:#5c5c5c;">東京都杉並区阿佐谷南3-45-9</td>
         </tr>
-        <tr style="border-bottom:1px solid #2a2a2a;">
+        <tr style="border-bottom:1px solid #ddd8cf;">
           <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">URL</th>
           <td style="padding:16px 0;"><a href="https://level1.biz/" target="_blank" rel="noopener" style="color:#b8934f; text-decoration:none; letter-spacing:0.05em;">https://level1.biz/</a></td>
         </tr>
-        <tr style="border-bottom:1px solid #2a2a2a;">
+        <tr style="border-bottom:1px solid #ddd8cf;">
           <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">TEL</th>
-          <td style="padding:16px 0; color:#c8c0b0;"><a href="tel:0345009872" style="color:inherit; text-decoration:none;">03-4500-9872</a></td>
+          <td style="padding:16px 0; color:#5c5c5c;"><a href="tel:0345009872" style="color:inherit; text-decoration:none;">03-4500-9872</a></td>
         </tr>
         <tr>
           <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">Mail</th>
