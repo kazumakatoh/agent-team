@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YADORIGI | 日本の森を、一献に宿す。</title>
+  <meta name="description" content="国産銘木スティックと樽熟成ボトル。五百年続く銘木の歴史を、あなたのグラスへ。" />
+  <style>
+    /* ─── Reset & Base ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --cream:   #f5f0e8;
+      --black:   #0d0d0d;
+      --charcoal:#1c1c1c;
+      --gold:    #b8934f;
+      --gold-lt: #d4ac6e;
+      --wood:    #7a4f2b;
+      --mist:    #e8e0d0;
+      --text:    #2c2c2c;
+      --text-lt: #5c5c5c;
+      --radius:  4px;
+      --section: 100px 24px;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Georgia', serif;
+      background: var(--black);
+      color: var(--cream);
+      line-height: 1.8;
+      overflow-x: hidden;
+    }
+
+    /* ─── Typography ─── */
+    h1, h2, h3 { letter-spacing: 0.1em; }
+    .en { font-family: 'Georgia', 'Times New Roman', serif; }
+    .section-label {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 10px;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--gold);
+      display: block;
+      margin-bottom: 16px;
+    }
+
+    /* ─── Hero ─── */
+    #hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 60px 24px;
+      background: var(--black);
+      overflow: hidden;
+    }
+    #hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 50% 60%, rgba(184,147,79,0.08) 0%, transparent 70%);
+    }
+    .hero-bg-art {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.04;
+      pointer-events: none;
+    }
+    .hero-bg-art svg { width: 70vw; max-width: 700px; }
+
+    .logo-wrap {
+      position: relative;
+      z-index: 1;
+      margin-bottom: 40px;
+    }
+    /* ロゴ画像 */
+    .logo-img-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .logo-img-wrap img {
+      width: clamp(220px, 44vw, 380px);
+      height: auto;
+    }
+    .logo-en {
+      font-family: 'Georgia', serif;
+      font-size: clamp(52px, 12vw, 100px);
+      font-weight: 400;
+      letter-spacing: 0.25em;
+      color: var(--cream);
+      line-height: 1;
+    }
+    .logo-jp {
+      font-size: clamp(13px, 2vw, 16px);
+      letter-spacing: 0.6em;
+      color: var(--gold);
+      margin-top: 8px;
+      display: block;
+    }
+    .hero-divider {
+      width: 1px;
+      height: 60px;
+      background: linear-gradient(to bottom, transparent, var(--gold), transparent);
+      margin: 0 auto 40px;
+    }
+    .hero-catch {
+      font-size: clamp(18px, 4vw, 32px);
+      letter-spacing: 0.15em;
+      color: var(--cream);
+      position: relative;
+      z-index: 1;
+      margin-bottom: 20px;
+    }
+    .hero-sub {
+      font-size: clamp(12px, 2vw, 15px);
+      letter-spacing: 0.2em;
+      color: var(--gold-lt);
+      position: relative;
+      z-index: 1;
+      margin-bottom: 60px;
+    }
+    .hero-scroll {
+      position: absolute;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 9px;
+      letter-spacing: 0.3em;
+      color: var(--gold);
+      opacity: 0.7;
+      z-index: 1;
+    }
+    .hero-scroll::after {
+      content: '';
+      display: block;
+      width: 1px;
+      height: 40px;
+      background: linear-gradient(to bottom, var(--gold), transparent);
+    }
+
+    /* ─── Sections ─── */
+    section { padding: var(--section); }
+    .container { max-width: 900px; margin: 0 auto; }
+    .center { text-align: center; }
+
+    /* ─── Product ─── */
+    #product {
+      background: var(--charcoal);
+      position: relative;
+      overflow: hidden;
+    }
+    #product::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--gold), transparent);
+    }
+    .product-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+      margin-top: 60px;
+    }
+    @media (max-width: 680px) {
+      .product-grid { grid-template-columns: 1fr; gap: 48px; }
+    }
+    .product-visual {
+      display: flex;
+      justify-content: center;
+    }
+    .product-h2 {
+      font-size: clamp(24px, 5vw, 38px);
+      letter-spacing: 0.1em;
+      margin-bottom: 24px;
+      line-height: 1.4;
+    }
+    .product-desc {
+      font-size: 15px;
+      color: #c8c0b0;
+      line-height: 2;
+      margin-bottom: 24px;
+    }
+    .product-tag {
+      display: inline-block;
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      padding: 4px 12px;
+      margin: 4px 4px 0 0;
+      font-family: 'Helvetica Neue', sans-serif;
+    }
+
+    /* ─── Bottle illustration (SVG) ─── */
+    .bottle-svg-wrap { width: 100%; max-width: 280px; }
+
+    /* ─── Materials ─── */
+    #materials { background: var(--black); }
+    .materials-title {
+      font-size: clamp(24px, 5vw, 36px);
+      letter-spacing: 0.1em;
+      margin-bottom: 12px;
+    }
+    .materials-sub {
+      color: #a09080;
+      font-size: 14px;
+      letter-spacing: 0.1em;
+      margin-bottom: 60px;
+    }
+    .material-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2px;
+      margin-top: 48px;
+    }
+    .material-card {
+      background: var(--charcoal);
+      padding: 40px 28px;
+      position: relative;
+      overflow: hidden;
+    }
+    .material-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 2px; height: 100%;
+      background: var(--gold);
+    }
+    .material-card .icon { font-size: 28px; margin-bottom: 16px; }
+    .material-card h3 {
+      font-size: 18px;
+      letter-spacing: 0.1em;
+      margin-bottom: 8px;
+      color: var(--cream);
+    }
+    .material-card .region {
+      font-size: 11px;
+      color: var(--gold);
+      letter-spacing: 0.2em;
+      margin-bottom: 12px;
+      font-family: 'Helvetica Neue', sans-serif;
+    }
+    .material-card p {
+      font-size: 13px;
+      color: #a09080;
+      line-height: 1.8;
+    }
+
+    /* ─── How it works ─── */
+    #how {
+      background: var(--charcoal);
+      position: relative;
+      overflow: hidden;
+    }
+    #how::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--gold), transparent);
+    }
+    .how-title {
+      font-size: clamp(24px, 5vw, 36px);
+      letter-spacing: 0.1em;
+      margin-bottom: 48px;
+    }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 40px;
+      position: relative;
+    }
+    .steps::before {
+      content: '';
+      position: absolute;
+      top: 28px; left: calc(16.67% + 20px); right: calc(16.67% + 20px);
+      height: 1px;
+      background: linear-gradient(to right, var(--gold), var(--gold));
+      opacity: 0.3;
+    }
+    @media (max-width: 600px) {
+      .steps { grid-template-columns: 1fr; }
+      .steps::before { display: none; }
+    }
+    .step { text-align: center; }
+    .step-num {
+      width: 56px; height: 56px;
+      border: 1px solid var(--gold);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Georgia', serif;
+      font-size: 20px;
+      color: var(--gold);
+      margin: 0 auto 20px;
+      background: var(--charcoal);
+      position: relative;
+      z-index: 1;
+    }
+    .step h3 { font-size: 16px; letter-spacing: 0.1em; margin-bottom: 10px; }
+    .step p { font-size: 13px; color: #a09080; line-height: 1.8; }
+
+    /* ─── Scene ─── */
+    #scene { background: var(--black); }
+    .scene-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px;
+      margin-top: 60px;
+    }
+    @media (max-width: 600px) { .scene-grid { grid-template-columns: 1fr; } }
+    .scene-card {
+      background: var(--charcoal);
+      padding: 48px 36px;
+      position: relative;
+      overflow: hidden;
+    }
+    .scene-card::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(to right, transparent, var(--gold), transparent);
+      opacity: 0.4;
+    }
+    .scene-card .scene-num {
+      font-family: 'Georgia', serif;
+      font-size: 48px;
+      color: rgba(184,147,79,0.15);
+      line-height: 1;
+      margin-bottom: 12px;
+    }
+    .scene-card h3 { font-size: 20px; letter-spacing: 0.1em; margin-bottom: 12px; }
+    .scene-card p { font-size: 14px; color: #a09080; line-height: 1.9; }
+
+    /* ─── Drinks ─── */
+    #drinks {
+      background: var(--charcoal);
+      position: relative;
+    }
+    #drinks::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--gold), transparent);
+    }
+    .drinks-title { font-size: clamp(24px, 5vw, 36px); letter-spacing: 0.1em; margin-bottom: 48px; }
+    .drink-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+    }
+    .drink-item {
+      border: 1px solid rgba(184,147,79,0.4);
+      padding: 16px 32px;
+      font-size: 15px;
+      letter-spacing: 0.2em;
+      color: var(--cream);
+      position: relative;
+      transition: border-color 0.3s;
+    }
+    .drink-item::before {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border: 1px solid transparent;
+    }
+    .drink-item span {
+      display: block;
+      font-size: 10px;
+      color: var(--gold);
+      letter-spacing: 0.3em;
+      margin-top: 4px;
+      font-family: 'Helvetica Neue', sans-serif;
+    }
+
+    /* ─── Story ─── */
+    #story { background: var(--black); }
+    .story-inner {
+      max-width: 680px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .story-title {
+      font-size: clamp(26px, 5vw, 42px);
+      letter-spacing: 0.15em;
+      margin-bottom: 40px;
+      line-height: 1.5;
+    }
+    .story-body {
+      font-size: 15px;
+      color: #c0b8a8;
+      line-height: 2.4;
+      text-align: left;
+    }
+    .story-body + .story-body { margin-top: 28px; }
+    .gold-line {
+      width: 60px;
+      height: 1px;
+      background: var(--gold);
+      margin: 48px auto;
+    }
+
+    /* ─── MVV ─── */
+    #mvv {
+      background: var(--charcoal);
+      position: relative;
+    }
+    #mvv::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--gold), transparent);
+    }
+    .mvv-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px;
+      margin-top: 60px;
+    }
+    @media (max-width: 600px) { .mvv-grid { grid-template-columns: 1fr; } }
+    .mvv-block {
+      background: #161616;
+      padding: 48px 36px;
+    }
+    .mvv-block .mvv-label {
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 10px;
+      letter-spacing: 0.4em;
+      color: var(--gold);
+      margin-bottom: 20px;
+      display: block;
+    }
+    .mvv-block h3 {
+      font-size: clamp(18px, 3vw, 24px);
+      letter-spacing: 0.1em;
+      margin-bottom: 20px;
+      line-height: 1.5;
+      color: var(--cream);
+    }
+    .mvv-block p {
+      font-size: 13px;
+      color: #a09080;
+      line-height: 2.2;
+    }
+
+    /* ─── Coming Soon ─── */
+    #cta {
+      background: var(--black);
+      text-align: center;
+      padding: 120px 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    #cta::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--gold), transparent);
+    }
+    #cta::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 50% 50% at 50% 100%, rgba(184,147,79,0.06) 0%, transparent 70%);
+    }
+    .cta-label {
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 10px;
+      letter-spacing: 0.4em;
+      color: var(--gold);
+      margin-bottom: 24px;
+      position: relative;
+      z-index: 1;
+    }
+    .cta-title {
+      font-size: clamp(28px, 7vw, 60px);
+      letter-spacing: 0.2em;
+      margin-bottom: 12px;
+      position: relative;
+      z-index: 1;
+    }
+    .cta-sub {
+      font-size: 14px;
+      color: #a09080;
+      letter-spacing: 0.15em;
+      margin-bottom: 48px;
+      position: relative;
+      z-index: 1;
+    }
+    .cta-date {
+      font-family: 'Georgia', serif;
+      font-size: clamp(18px, 4vw, 28px);
+      color: var(--gold);
+      letter-spacing: 0.2em;
+      margin-bottom: 12px;
+      position: relative;
+      z-index: 1;
+    }
+    .cta-platform {
+      font-family: 'Helvetica Neue', sans-serif;
+      font-size: 11px;
+      letter-spacing: 0.3em;
+      color: #a09080;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ─── Footer ─── */
+    footer {
+      background: #080808;
+      padding: 48px 24px;
+      text-align: center;
+      border-top: 1px solid #1c1c1c;
+    }
+    .footer-logo {
+      font-family: 'Georgia', serif;
+      font-size: 22px;
+      letter-spacing: 0.3em;
+      color: var(--cream);
+      margin-bottom: 8px;
+    }
+    .footer-jp {
+      font-size: 11px;
+      letter-spacing: 0.4em;
+      color: var(--gold);
+      margin-bottom: 24px;
+    }
+    footer p {
+      font-size: 11px;
+      color: #404040;
+      letter-spacing: 0.15em;
+      font-family: 'Helvetica Neue', sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ━━━━━━━━━━━━━━━━ HERO ━━━━━━━━━━━━━━━━ -->
+<section id="hero">
+  <!-- 背景装飾: 木の年輪をイメージした円 -->
+  <div class="hero-bg-art" aria-hidden="true">
+    <svg viewBox="0 0 600 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="300" cy="300" r="280" stroke="#b8934f" stroke-width="0.8"/>
+      <circle cx="300" cy="300" r="240" stroke="#b8934f" stroke-width="0.6"/>
+      <circle cx="300" cy="300" r="200" stroke="#b8934f" stroke-width="0.8"/>
+      <circle cx="300" cy="300" r="160" stroke="#b8934f" stroke-width="0.5"/>
+      <circle cx="300" cy="300" r="120" stroke="#b8934f" stroke-width="0.7"/>
+      <circle cx="300" cy="300" r="80"  stroke="#b8934f" stroke-width="0.5"/>
+      <circle cx="300" cy="300" r="40"  stroke="#b8934f" stroke-width="0.8"/>
+      <line x1="300" y1="20" x2="300" y2="580" stroke="#b8934f" stroke-width="0.3"/>
+      <line x1="20"  y1="300" x2="580" y2="300" stroke="#b8934f" stroke-width="0.3"/>
+      <line x1="102" y1="102" x2="498" y2="498" stroke="#b8934f" stroke-width="0.2"/>
+      <line x1="498" y1="102" x2="102" y2="498" stroke="#b8934f" stroke-width="0.2"/>
+    </svg>
+  </div>
+
+  <div class="logo-wrap">
+    <div class="logo-img-wrap">
+      <img src="logo.jpg" alt="YADORIGI 宿木 — 日本の森を、一献に宿す。" />
+    </div>
+  </div>
+
+  <div class="hero-divider"></div>
+
+  <p class="hero-catch">日本の森を、一献に宿す。</p>
+  <p class="hero-sub en">JAPANESE MEIBOKU STICK &amp; BARREL AGING BOTTLE</p>
+
+  <div class="hero-scroll">SCROLL</div>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ PRODUCT ━━━━━━━━━━━━━━━━ -->
+<section id="product">
+  <div class="container">
+    <div class="product-grid">
+
+      <!-- イラスト: ボトル＆スティック -->
+      <div class="product-visual">
+        <div class="bottle-svg-wrap">
+          <svg viewBox="0 0 220 400" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="銘木スティック＆樽熟成ボトル">
+            <!-- ボトル本体 -->
+            <rect x="60" y="100" width="100" height="240" rx="12" fill="#111" stroke="#b8934f" stroke-width="1.2"/>
+            <!-- ボトルネック -->
+            <rect x="80" y="60" width="60" height="50" rx="6" fill="#111" stroke="#b8934f" stroke-width="1"/>
+            <!-- キャップ（グロスブラック） -->
+            <rect x="76" y="40" width="68" height="26" rx="4" fill="#0d0d0d" stroke="#b8934f" stroke-width="1.2"/>
+            <!-- お酒の色 (アンバー) -->
+            <rect x="62" y="200" width="96" height="138" rx="10" fill="rgba(184,120,40,0.18)"/>
+            <!-- スティック1 -->
+            <rect x="95" y="70" width="8" height="220" rx="4" fill="#7a4f2b" opacity="0.9"/>
+            <!-- スティック2 -->
+            <rect x="110" y="75" width="6" height="215" rx="3" fill="#5c3a1e" opacity="0.85"/>
+            <!-- スティック3 -->
+            <rect x="122" y="72" width="7" height="218" rx="3.5" fill="#8c5e35" opacity="0.9"/>
+            <!-- ロゴ刻印エリア -->
+            <text x="110" y="168" text-anchor="middle" font-family="Georgia, serif" font-size="9" fill="#b8934f" letter-spacing="3" opacity="0.8">YADORIGI</text>
+            <line x1="75" y1="174" x2="145" y2="174" stroke="#b8934f" stroke-width="0.5" opacity="0.5"/>
+            <!-- 気泡演出 -->
+            <circle cx="85"  cy="240" r="3" fill="rgba(255,255,255,0.06)"/>
+            <circle cx="140" cy="260" r="2" fill="rgba(255,255,255,0.05)"/>
+            <circle cx="100" cy="290" r="1.5" fill="rgba(255,255,255,0.04)"/>
+            <!-- 底面ハイライト -->
+            <ellipse cx="110" cy="338" rx="42" ry="4" fill="rgba(184,147,79,0.08)"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- テキスト -->
+      <div>
+        <span class="section-label">Product</span>
+        <h2 class="product-h2">銘木スティック<br>&amp; 樽熟成ボトル</h2>
+        <p class="product-desc">
+          国産銘木を職人が丁寧に加工した「銘木スティック」を高ホウケイ酸ガラスボトルに入れ、
+          お好みのお酒を注ぐだけ。樽熟成のロジックでお酒がまろやかになり、
+          木の豊かな香りが加わります。<br><br>
+          ボトルの中で揺れる木のスティック。その佇まいそのものが、空間を整えます。
+        </p>
+        <div>
+          <span class="product-tag">国産銘木使用</span>
+          <span class="product-tag">高ホウケイ酸ガラス</span>
+          <span class="product-tag">500ml</span>
+          <span class="product-tag">グロスブラックキャップ</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ MATERIALS ━━━━━━━━━━━━━━━━ -->
+<section id="materials">
+  <div class="container center">
+    <span class="section-label">Materials</span>
+    <h2 class="materials-title">五百年の森から、選ばれた木々</h2>
+    <p class="materials-sub">産地・樹齢・種を刻印した、一本一本が物語を持つスティック</p>
+
+    <div class="material-cards">
+      <div class="material-card">
+        <div class="icon">🌳</div>
+        <h3>ミズナラ</h3>
+        <p class="region">HOKKAIDO MIZUNARA</p>
+        <p>北海道産。ウイスキー熟成樽にも使われる銘木。バニラ・ナッツ・ほのかなサンダルウッドの香りを宿す。</p>
+      </div>
+      <div class="material-card">
+        <div class="icon">🌿</div>
+        <h3>吉野杉</h3>
+        <p class="region">NARA YOSHINO SUGI</p>
+        <p>奈良県吉野産。日本酒の樽にも使われてきた伝統の銘木。爽やかで清廉な木の香りが特徴。</p>
+      </div>
+      <div class="material-card">
+        <div class="icon">✦</div>
+        <h3>厳選銘木</h3>
+        <p class="region">SELECT MEIBOKU</p>
+        <p>国内各地の銘木を3〜5種ラインナップ。産地・樹齢・種類を一本一本スティックに刻印。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ HOW IT WORKS ━━━━━━━━━━━━━━━━ -->
+<section id="how">
+  <div class="container center">
+    <span class="section-label">How It Works</span>
+    <h2 class="how-title">使い方は、シンプルに</h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num en">1</div>
+        <h3>スティックを入れる</h3>
+        <p>お好みの銘木スティックをガラスボトルへ。木の産地と樹齢を選ぶのも楽しみのひとつ。</p>
+      </div>
+      <div class="step">
+        <div class="step-num en">2</div>
+        <h3>お酒を注ぐ</h3>
+        <p>ウイスキー、日本酒、焼酎、ワイン——お好みのお酒を注ぐだけ。</p>
+      </div>
+      <div class="step">
+        <div class="step-num en">3</div>
+        <h3>時を待つ</h3>
+        <p>数時間から数日。木がお酒にまろやかさと香りをゆっくりと与えていきます。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ SCENE ━━━━━━━━━━━━━━━━ -->
+<section id="scene">
+  <div class="container">
+    <span class="section-label center" style="display:block; text-align:center;">Scene</span>
+    <h2 class="center" style="font-size: clamp(24px,5vw,36px); letter-spacing:0.1em; margin-bottom:8px;">極上の時間のために</h2>
+
+    <div class="scene-grid">
+      <div class="scene-card">
+        <div class="scene-num en">01</div>
+        <h3>自宅で、自分だけの時間へ</h3>
+        <p>
+          誰かの物語に時間を奪われるのではなく、自分の物語を慈しむために、時を使う。
+          帰宅後のひとり時間に、ボトルに灯るアンバー色を眺めながら。
+        </p>
+      </div>
+      <div class="scene-card">
+        <div class="scene-num en">02</div>
+        <h3>アウトドアで、森と対話する</h3>
+        <p>
+          木を愛でながら、木が宿ったお酒を飲む。
+          焚き火の傍らに置いたボトルが、その夜の会話を深くする。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ DRINKS ━━━━━━━━━━━━━━━━ -->
+<section id="drinks">
+  <div class="container center">
+    <span class="section-label">Pairing</span>
+    <h2 class="drinks-title">どんなお酒とも</h2>
+
+    <div class="drink-list">
+      <div class="drink-item">
+        ウイスキー
+        <span>WHISKY</span>
+      </div>
+      <div class="drink-item">
+        日本酒
+        <span>SAKE</span>
+      </div>
+      <div class="drink-item">
+        焼酎
+        <span>SHOCHU</span>
+      </div>
+      <div class="drink-item">
+        ワイン
+        <span>WINE</span>
+      </div>
+      <div class="drink-item">
+        その他
+        <span>AND MORE</span>
+      </div>
+    </div>
+
+    <p style="margin-top:40px; font-size:13px; color:#707070; letter-spacing:0.1em;">
+      基本的にはどんなお酒でも。木の種類によって、相性のベストマッチが異なります。
+    </p>
+  </div>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ STORY ━━━━━━━━━━━━━━━━ -->
+<section id="story">
+  <div class="container">
+    <div class="story-inner">
+      <span class="section-label">Brand Story</span>
+      <h2 class="story-title">「宿木」という名前に、<br>込めたもの</h2>
+
+      <p class="story-body">
+        銘木スティックにフォーカスをあてたとき、私たちが気づいたのは、
+        その一本に宿る無数の「歴史と想い」でした。
+      </p>
+      <p class="story-body">
+        五百年を生きた木が刻んできた年月。林業家たちが受け継いできた誇り。
+        伝統工芸の職人が一本一本に込めた技。そして、開発者である私たちの思い。
+      </p>
+      <p class="story-body">
+        それらすべてがプロダクトに<strong style="color:var(--gold-lt);">「宿り」</strong>、
+        国内・海外の人たちに極上の体験価値を届けるブランドとしてふさわしい名称——
+        それが「宿木（YADORIGI）」でした。
+      </p>
+
+      <div class="gold-line"></div>
+
+      <p style="font-size:13px; color:#707070; letter-spacing:0.1em;">
+        「飲む」という行為を「森を再生する儀式」へ。<br>
+        YADORIGIは、一杯のお酒を通じて、人と自然が再び共鳴する文化を創ります。
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ MVV ━━━━━━━━━━━━━━━━ -->
+<section id="mvv">
+  <div class="container">
+    <div class="center">
+      <span class="section-label">Mission &amp; Vision</span>
+      <h2 style="font-size:clamp(24px,5vw,36px); letter-spacing:0.1em;">私たちが目指すもの</h2>
+    </div>
+
+    <div class="mvv-grid">
+      <div class="mvv-block">
+        <span class="mvv-label">MISSION</span>
+        <h3>「日本の森を、<br>一献に宿す。」</h3>
+        <p>
+          五百年続く銘木の歴史と、伝統工芸の誇りを一本のスティックに凝縮し、
+          あなたのグラスへと届けます。一滴に溶け出す森の歴史を味わうことが、
+          日本の山々を護り、未来へ繋ぐ力となります。
+        </p>
+      </div>
+      <div class="mvv-block">
+        <span class="mvv-label">VISION</span>
+        <h3>「時を、<br>自分に取り戻す。」</h3>
+        <p>
+          誰かの物語に時間を奪われるのではなく、自分の物語を慈しむために、時を使う。
+          熟成を待つ静寂の中で、失われかけていた「時の価値」を再発見する。
+          あなたの人生はあなただけのもの。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ COMING SOON ━━━━━━━━━━━━━━━━ -->
+<section id="cta">
+  <p class="cta-label en">COMING SOON</p>
+  <!-- ロゴ（商標申請用・CTAセクションにも明示掲載） -->
+  <div style="display:flex; justify-content:center; margin-bottom:48px; position:relative; z-index:1;">
+    <img src="logo.jpg" alt="YADORIGI 宿木 — 日本の森を、一献に宿す。" style="width:clamp(200px,36vw,320px); height:auto; filter:invert(1); opacity:0.9;" />
+  </div>
+  <p class="cta-sub">2026年8月、Makuakeにてクラウドファンディング開始予定</p>
+  <p class="cta-date en">August 2026</p>
+  <p class="cta-platform en">MAKUAKE CROWDFUNDING</p>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ COMPANY INFO ━━━━━━━━━━━━━━━━ -->
+<section id="company" style="background:#111; padding:80px 24px; border-top:1px solid #222;">
+  <div style="max-width:700px; margin:0 auto;">
+    <span style="font-family:'Helvetica Neue',Arial,sans-serif; font-size:10px; letter-spacing:0.35em; text-transform:uppercase; color:#b8934f; display:block; margin-bottom:32px; text-align:center;">Company</span>
+    <h2 style="font-size:20px; letter-spacing:0.15em; text-align:center; margin-bottom:48px; color:#f5f0e8;">会社概要</h2>
+
+    <table style="width:100%; border-collapse:collapse; font-size:14px; line-height:2;">
+      <tbody>
+        <tr style="border-bottom:1px solid #2a2a2a;">
+          <th style="width:140px; padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">企業名</th>
+          <td style="padding:16px 0; color:#c8c0b0;">株式会社LEVEL1</td>
+        </tr>
+        <tr style="border-bottom:1px solid #2a2a2a;">
+          <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">所在地</th>
+          <td style="padding:16px 0; color:#c8c0b0;">東京都杉並区阿佐谷南3-45-9</td>
+        </tr>
+        <tr style="border-bottom:1px solid #2a2a2a;">
+          <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">URL</th>
+          <td style="padding:16px 0;"><a href="https://level1.biz/" target="_blank" rel="noopener" style="color:#b8934f; text-decoration:none; letter-spacing:0.05em;">https://level1.biz/</a></td>
+        </tr>
+        <tr style="border-bottom:1px solid #2a2a2a;">
+          <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">TEL</th>
+          <td style="padding:16px 0; color:#c8c0b0;"><a href="tel:0345009872" style="color:inherit; text-decoration:none;">03-4500-9872</a></td>
+        </tr>
+        <tr>
+          <th style="padding:16px 0; text-align:left; font-weight:400; color:#b8934f; letter-spacing:0.1em; vertical-align:top; font-family:'Helvetica Neue',sans-serif; font-size:12px;">Mail</th>
+          <td style="padding:16px 0;"><a href="mailto:contact@level1.biz" style="color:#b8934f; text-decoration:none;">contact@level1.biz</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
+<!-- ━━━━━━━━━━━━━━━━ FOOTER ━━━━━━━━━━━━━━━━ -->
+<footer>
+  <p class="footer-logo en">YADORIGI</p>
+  <p class="footer-jp">宿　木</p>
+  <p style="margin-top:8px;">&copy; 2026 株式会社LEVEL1. All Rights Reserved.</p>
+</footer>
+
+</body>
+</html>
