@@ -72,13 +72,19 @@ function writeReservations(reservations) {
     rowData[C.NOTES         - 1] = r.notes            || '';
     rowData[C.EMAIL_ID      - 1] = r.emailId          || '';
 
-    // 同じ予約IDが既存行にある場合は更新（変更メール対応）
+    // 同じ予約IDが既存行にある場合は更新（変更メール対応）またはスキップ（重複防止）
     const existingRow = reservationIdToRow[String(r.reservationId)];
-    if (existingRow && r.status === '変更') {
-      sheet.getRange(existingRow, 1, 1, NUM_COLS).setValues([rowData]);
-      Logger.log(`予約更新（変更）: ${r.reservationId}`);
+    if (existingRow) {
+      if (r.status === '変更') {
+        sheet.getRange(existingRow, 1, 1, NUM_COLS).setValues([rowData]);
+        Logger.log(`予約更新（変更）: ${r.reservationId}`);
+      } else {
+        // 同じ予約IDが既にある場合はスキップ（Booking.comの複数メール対策）
+        Logger.log(`スキップ（予約ID重複）: ${r.reservationId}`);
+      }
     } else {
       sheet.appendRow(rowData);
+      reservationIdToRow[String(r.reservationId)] = sheet.getLastRow(); // 次の重複チェック用に登録
       Logger.log(`予約追加: ${r.reservationId} (${r.platform})`);
     }
 
