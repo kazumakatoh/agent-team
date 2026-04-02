@@ -285,18 +285,14 @@ const MFApiClient = {
   },
 
   /**
-   * 有効なアクセストークンを取得する
-   * APIキー（MF_API_KEY）が設定されている場合は優先して使用する（期限なし）
-   * 未設定の場合はOAuth2トークンにフォールバック
+   * 有効なアクセストークンを取得する（OAuth2のみ）
+   * ※ app-portal.moneyforward.com の APIキーは api-accounting.moneyforward.com では
+   *    401 を返すため使用しない（確認済み）
    */
   _getAccessToken() {
-    const props  = PropertiesService.getScriptProperties();
+    const props = PropertiesService.getScriptProperties();
 
-    // APIキーが設定されていればそちらを優先（期限切れなし）
-    const apiKey = props.getProperty('MF_API_KEY');
-    if (apiKey) return apiKey;
-
-    // フォールバック: OAuth2トークン
+    // OAuth2トークン
     const token = props.getProperty('MF_ACCESS_TOKEN');
     if (!token) {
       throw new Error(
