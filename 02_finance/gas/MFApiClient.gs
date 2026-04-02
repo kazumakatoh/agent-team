@@ -105,6 +105,7 @@ const MFApiClient = {
 
   /**
    * 指定期間の全仕訳を取得する（ページネーション対応・実行内キャッシュ）
+   * per_page=10000 (APIの上限値) を使用して呼び出し回数を最小化する
    * @private
    */
   _getAllJournals(startDate, endDate) {
@@ -115,8 +116,8 @@ const MFApiClient = {
 
     const allJournals = [];
     let page    = 1;
-    const perPage = 100;
-    const MAX_PAGES = 50; // 安全上限（月5000件まで対応）
+    const perPage = 10000; // OpenAPI spec の上限値（旧: 100）
+    const MAX_PAGES = 10;  // 安全上限（月100,000件まで対応）
 
     while (page <= MAX_PAGES) {
       const response = MFApiClient._request('GET', '/api/v3/journals', {
@@ -135,6 +136,41 @@ const MFApiClient = {
 
     MFApiClient._journalCache[cacheKey] = allJournals;
     return allJournals;
+  },
+
+  /**
+   * 月次推移PLを一括取得する（全12ヶ月を1回のAPIコールで取得）
+   * trial_balance_pl を12回呼ぶ代わりにこちらを使うと高速
+   *
+   * @param {number} fiscalYear  - 事業年度開始年（例: 2025）
+   * @param {number} startMonth  - 取得開始月（デフォルト: 事業年度開始月）
+   * @param {number} endMonth    - 取得終了月（デフォルト: 12）
+   * @return {Object} APIレスポンス（rows構造はtrial_balance_plと同形だが
+   *   values[]が月次配列になる）
+   *
+   * ■ レスポンス構造（予想・要実機確認）
+   *   {
+   *     columns: ["4月", "5月", ..., "3月"],
+   *     rows: [
+   *       { name:"売上高合計", type:"financial_statement_item",
+   *         values:[月1合計, 月2合計, ...], rows:[
+   *           { name:"売上（国内）", type:"account", values:[月1, 月2, ...] },
+   *           ...
+   *         ]}
+   *     ]
+   *   }
+   */
+  getTransitionPL(fiscalYear, startMonth, endMonth) {
+    const params = {
+      type:        'monthly',
+      fiscal_year: fiscalYear,
+    };
+    if (startMonth) params.start_month = startMonth;
+    if (endMonth)   params.end_month   = endMonth;
+
+    const response = MFApiClient._request('GET', '/api/v3/reports/transition_pl', params);
+    Logger.log(`推移PL取得: FY${fiscalYear} → カラム数: ${(response.columns || []).length}`);
+    return response;
   },
 
   /**

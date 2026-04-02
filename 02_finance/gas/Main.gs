@@ -137,6 +137,83 @@ function runSingleDeptUpdate() {
 }
 
 /**
+ * 月次推移PL（transition_pl）のレスポンス構造を確認用シートに出力する
+ * → 全12ヶ月を1回のAPIコールで取得できるか、レスポンス構造を確認するための診断ツール
+ *    確認後、fetchAllDepartmentsPL を高速化するために使用予定
+ */
+function exportTransitionPLRaw() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const fiscalYear = getCurrentFiscalYear();
+    const response   = MFApiClient.getTransitionPL(fiscalYear);
+
+    const ss = SheetManager.getSpreadsheet();
+    let sheet = ss.getSheetByName('_推移PL生データ確認');
+    if (!sheet) sheet = ss.insertSheet('_推移PL生データ確認');
+    sheet.clearContents();
+
+    const topKeys = Object.keys(response);
+    const columns = response.columns || [];
+    const rows    = response.rows || [];
+
+    sheet.getRange(1, 1).setValue(
+      `MF会計 月次推移PL 生レスポンス（FY${fiscalYear}）\n` +
+      `取得日時: ${new Date().toLocaleString('ja-JP')}\n` +
+      `トップレベルキー: ${topKeys.join(', ')}\n` +
+      `columns（月）: ${JSON.stringify(columns)}\n` +
+      `rows数: ${rows.length}`
+    );
+    sheet.getRange(1, 1).setWrap(true);
+    sheet.setRowHeight(1, 100);
+    sheet.setColumnWidth(1, 700);
+
+    // JSON全体（先頭8000文字）
+    sheet.getRange(4, 1).setValue('【レスポンス全体 JSON（先頭8000文字）】');
+    sheet.getRange(5, 1).setValue(JSON.stringify(response, null, 2).substring(0, 8000));
+    sheet.getRange(5, 1).setWrap(true);
+    sheet.setRowHeight(5, 800);
+
+    // rowsの最初の要素を展開
+    if (rows.length > 0) {
+      const startRow = 20;
+      sheet.getRange(startRow, 1).setValue(`【rows[0] の構造】`);
+      sheet.getRange(startRow + 1, 1, 1, 3).setValues([['フィールド', '型/長さ', '内容']]);
+      const r0 = rows[0];
+      const fieldRows = Object.keys(r0).map(k => {
+        const val = r0[k];
+        const type = Array.isArray(val) ? `Array(${val.length})` : typeof val;
+        return [k, type, JSON.stringify(val).substring(0, 300)];
+      });
+      sheet.getRange(startRow + 2, 1, fieldRows.length, 3).setValues(fieldRows);
+
+      // rows[0].rows（子ノード）があれば最初の1件も展開
+      if (r0.rows && r0.rows.length > 0) {
+        const r00 = r0.rows[0];
+        const childStart = startRow + 2 + fieldRows.length + 2;
+        sheet.getRange(childStart, 1).setValue(`【rows[0].rows[0] の構造（勘定科目ノード例）】`);
+        sheet.getRange(childStart + 1, 1, 1, 3).setValues([['フィールド', '型/長さ', '内容']]);
+        const childRows = Object.keys(r00).map(k => {
+          const val = r00[k];
+          const type = Array.isArray(val) ? `Array(${val.length})` : typeof val;
+          return [k, type, JSON.stringify(val).substring(0, 300)];
+        });
+        sheet.getRange(childStart + 2, 1, childRows.length, 3).setValues(childRows);
+      }
+    }
+
+    ui.alert(
+      `✅ 月次推移PLを "_推移PL生データ確認" シートに出力しました。\n\n` +
+      `トップレベルキー: ${topKeys.join(', ')}\n` +
+      `columns（月リスト）: ${JSON.stringify(columns)}\n` +
+      `rows数: ${rows.length}\n\n` +
+      `シートで values[] の構造（月ごとの配列かどうか）を確認してください。`
+    );
+  } catch (e) {
+    ui.alert(`❌ エラー: ${e.message}`);
+  }
+}
+
+/**
  * MF会計の勘定科目一覧を確認用シートに出力する
  */
 function exportAccountItems() {
@@ -283,6 +360,7 @@ function onOpen() {
     .addItem('📋 勘定科目一覧を出力（設定確認用）', 'exportAccountItems')
     .addItem('🏢 部門一覧を出力（設定確認用）', 'exportDepartments')
     .addItem('🔬 API生データを出力（初回診断用）', 'exportRawApiResponse')
+    .addItem('📈 月次推移PLを出力（transition_pl 構造確認）', 'exportTransitionPLRaw')
     .addSeparator()
     .addItem('🔑 MF会計 認証を開始', 'authorize')
     .addItem('📋 Web App URL を確認（リダイレクトURI用）', 'showWebAppUrl')
