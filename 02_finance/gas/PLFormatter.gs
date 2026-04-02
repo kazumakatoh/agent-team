@@ -252,9 +252,12 @@ const PLFormatter = {
       if (!rows) return;
       rows.forEach(row => {
         if (row.type === 'account' && row.name) {
-          // values[3] = closing_balance（期末残高）
-          // 収益: 貸方残高（正値）、費用: 借方残高（正値）→ どちらも正なので Math.abs で統一
-          const amount = Math.abs((row.values && row.values[3]) || 0);
+          // values[0] = opening_balance（期首残高 = 前月までの累計）
+          // values[3] = closing_balance（期末残高 = 当月末までの累計）
+          // 月次金額 = closing_balance - opening_balance（当月の発生額のみ）
+          const closing = (row.values && row.values[3]) || 0;
+          const opening = (row.values && row.values[0]) || 0;
+          const amount = Math.abs(closing - opening);
           map[row.name] = (map[row.name] || 0) + amount;
         }
         if (row.rows) collectAccounts(row.rows);
