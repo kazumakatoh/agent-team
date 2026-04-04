@@ -145,6 +145,13 @@ const CONFIG = {
     },
     {
       category:   'cogs',
+      label:      '仕入（海外）',
+      indent:     1,
+      accountNames: ['仕入（海外）', '海外仕入高', '仕入-海外'],
+      sign:       1,
+    },
+    {
+      category:   'cogs',
       label:      '仕入値引・返品',
       indent:     1,
       accountNames: ['仕入値引', '仕入返品', '仕入値引・返品'],
@@ -203,6 +210,7 @@ const CONFIG = {
     { category: 'sga', label: '荷造運賃',      indent: 1, accountNames: ['荷造運賃', '発送費'],    sign: 1 },
     { category: 'sga', label: '広告宣伝費',    indent: 1, accountNames: ['広告宣伝費', '広告費'],  sign: 1 },
     { category: 'sga', label: '備品・消耗品費', indent: 1, accountNames: ['備品費', '消耗品費', '備品・消耗品費'], sign: 1 },
+    { category: 'sga', label: '車両費',        indent: 1, accountNames: ['車両費', '車両維持費'], sign: 1 },
     { category: 'sga', label: '地代家賃',      indent: 1, accountNames: ['地代家賃', '賃借料'],    sign: 1 },
     { category: 'sga', label: '修繕費',        indent: 1, accountNames: ['修繕費', '修理費'],      sign: 1 },
     { category: 'sga', label: '雑費',          indent: 1, accountNames: ['雑費', 'その他費用', 'その他経費'], sign: 1 },
@@ -236,6 +244,7 @@ const CONFIG = {
     },
     { category: 'nonOpIncome', label: '受取利息',   indent: 1, accountNames: ['受取利息'],               sign: 1 },
     { category: 'nonOpIncome', label: '受取配当金', indent: 1, accountNames: ['受取配当金', '受取配当'], sign: 1 },
+    { category: 'nonOpIncome', label: '為替差益',   indent: 1, accountNames: ['為替差益', '為替益'],    sign: 1 },
     { category: 'nonOpIncome', label: '雑収入',     indent: 1, accountNames: ['雑収入', '雑益', 'その他営業外収益'], sign: 1 },
     {
       category:   'subtotal',
@@ -255,6 +264,7 @@ const CONFIG = {
     },
     { category: 'nonOpExpense', label: '支払利息', indent: 1, accountNames: ['支払利息'],          sign: 1 },
     { category: 'nonOpExpense', label: '為替差損', indent: 1, accountNames: ['為替差損', '為替損'], sign: 1 },
+    { category: 'nonOpExpense', label: '雑損失',   indent: 1, accountNames: ['雑損失', '雑損'],    sign: 1 },
     {
       category:   'subtotal',
       label:      '営業外費用合計',
