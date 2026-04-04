@@ -453,7 +453,7 @@ const SheetManager = {
     const labels = CONFIG.PL_STRUCTURE.map(item => '　'.repeat(item.indent || 0) + item.label);
     sheet.getRange(dataStart, 1, numItems, 1).setValues(labels.map(l => [l]));
 
-    // 各期の合計列を読み込んで書き込む
+    // 各期の合計列をラベルマッチングで読み込む（PL_STRUCTURE追加によるズレを防ぐ）
     fiscalYears.forEach((year, colIdx) => {
       const srcName  = buildSheetName(year, 'PL_CONSOLIDATED');
       const srcSheet = ss.getSheetByName(srcName);
@@ -461,8 +461,30 @@ const SheetManager = {
         Logger.log(`スキップ（シートなし）: ${srcName}`);
         return;
       }
-      const srcData = srcSheet.getRange(dataStart, SheetManager.COL.TOTAL, numItems, 1).getValues();
-      sheet.getRange(dataStart, 2 + colIdx, numItems, 1).setValues(srcData);
+
+      const lastRow = srcSheet.getLastRow();
+      if (lastRow < dataStart) return;
+
+      // A列（ラベル）とO列（合計）を一括取得
+      const numSrcRows = lastRow - dataStart + 1;
+      const srcLabels  = srcSheet.getRange(dataStart, 1, numSrcRows, 1).getValues()
+                           .map(r => r[0].toString().trim());
+      const srcTotals  = srcSheet.getRange(dataStart, SheetManager.COL.TOTAL, numSrcRows, 1).getValues()
+                           .map(r => r[0]);
+
+      // ラベル → 合計値 のマップ（インデント除去してマッチング）
+      const labelMap = {};
+      srcLabels.forEach((label, i) => {
+        if (label) labelMap[label] = srcTotals[i];
+      });
+
+      // 現在のPL_STRUCTUREのラベルに対してマッチング
+      const colValues = CONFIG.PL_STRUCTURE.map(item => {
+        const val = labelMap[item.label];
+        return [val !== undefined ? val : ''];
+      });
+
+      sheet.getRange(dataStart, 2 + colIdx, numItems, 1).setValues(colValues);
     });
 
     // 行スタイル
