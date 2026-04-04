@@ -436,16 +436,26 @@ const SheetManager = {
     sheet.clearContents();
     sheet.clearFormats();
 
-    const dataStart  = 3;
-    const numItems   = CONFIG.PL_STRUCTURE.length;
-    const numPeriods = fiscalYears.length;
+    const dataStart     = 3;
+    const numItems      = CONFIG.PL_STRUCTURE.length;
+    const numPeriods    = fiscalYears.length;
+    const colsPerPeriod = 2; // 金額 + 売上比率
+    const totalCols     = 1 + numPeriods * colsPerPeriod;
+
+    // 売上高合計の行番号（売上比率の分母）
+    const revenueRowIdx = CONFIG.PL_STRUCTURE.findIndex(item => item.label === '売上高合計');
+    const revenueAbsRow = dataStart + revenueRowIdx;
 
     // タイトル
     sheet.getRange(1, 1).setValue('通期比較 損益計算書（年度別合計）')
          .setFontSize(12).setFontWeight('bold');
 
-    // ヘッダー行
-    const headers = ['勘定科目', ...fiscalYears.map(y => getFiscalPeriodLabel(y))];
+    // ヘッダー行（第X期, 売上比, 第X期, 売上比, ...）
+    const headers = ['勘定科目'];
+    fiscalYears.forEach(y => {
+      headers.push(getFiscalPeriodLabel(y));
+      headers.push('売上比');
+    });
     sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
     SheetManager._styleHeaderRow(sheet, 2, headers.length);
 
@@ -453,8 +463,12 @@ const SheetManager = {
     const labels = CONFIG.PL_STRUCTURE.map(item => '　'.repeat(item.indent || 0) + item.label);
     sheet.getRange(dataStart, 1, numItems, 1).setValues(labels.map(l => [l]));
 
-    // 各期の合計列をラベルマッチングで読み込む（PL_STRUCTURE追加によるズレを防ぐ）
+    // 各期：金額列 + 売上比率列
     fiscalYears.forEach((year, colIdx) => {
+      const valueCol       = 2 + colIdx * colsPerPeriod;
+      const ratioCol       = valueCol + 1;
+      const valueColLetter = SheetManager._colLetter(valueCol);
+
       const srcName  = buildSheetName(year, 'PL_CONSOLIDATED');
       const srcSheet = ss.getSheetByName(srcName);
       if (!srcSheet) {
@@ -465,31 +479,34 @@ const SheetManager = {
       const lastRow = srcSheet.getLastRow();
       if (lastRow < dataStart) return;
 
-      // A列（ラベル）とO列（合計）を一括取得
+      // ラベルマッチングで金額を取得
       const numSrcRows = lastRow - dataStart + 1;
       const srcLabels  = srcSheet.getRange(dataStart, 1, numSrcRows, 1).getValues()
                            .map(r => r[0].toString().trim());
       const srcTotals  = srcSheet.getRange(dataStart, SheetManager.COL.TOTAL, numSrcRows, 1).getValues()
                            .map(r => r[0]);
+      const labelMap   = {};
+      srcLabels.forEach((label, i) => { if (label) labelMap[label] = srcTotals[i]; });
 
-      // ラベル → 合計値 のマップ（インデント除去してマッチング）
-      const labelMap = {};
-      srcLabels.forEach((label, i) => {
-        if (label) labelMap[label] = srcTotals[i];
-      });
-
-      // 現在のPL_STRUCTUREのラベルに対してマッチング
+      // 金額列
       const colValues = CONFIG.PL_STRUCTURE.map(item => {
         const val = labelMap[item.label];
         return [val !== undefined ? val : ''];
       });
+      sheet.getRange(dataStart, valueCol, numItems, 1).setValues(colValues);
 
-      sheet.getRange(dataStart, 2 + colIdx, numItems, 1).setValues(colValues);
+      // 売上比率列（数式）
+      const ratioFormulas = CONFIG.PL_STRUCTURE.map((item, i) => {
+        if (item.category === 'header') return [''];
+        const rowNum = dataStart + i;
+        return [`=IF(${valueColLetter}${revenueAbsRow}=0,"",${valueColLetter}${rowNum}/${valueColLetter}${revenueAbsRow})`];
+      });
+      sheet.getRange(dataStart, ratioCol, numItems, 1).setFormulas(ratioFormulas);
     });
 
     // 行スタイル
     CONFIG.PL_STRUCTURE.forEach((item, i) => {
-      SheetManager._styleDataRow(sheet, dataStart + i, headers.length, {
+      SheetManager._styleDataRow(sheet, dataStart + i, totalCols, {
         isHeader:    item.category === 'header',
         isSubtotal:  item.category === 'subtotal',
         isBold:      item.isBold || false,
@@ -499,11 +516,16 @@ const SheetManager = {
 
     // 列幅・数値フォーマット
     sheet.setColumnWidth(1, 200);
-    for (let c = 2; c <= headers.length; c++) {
-      sheet.setColumnWidth(c, 110);
+    for (let p = 0; p < numPeriods; p++) {
+      const valueCol = 2 + p * colsPerPeriod;
+      const ratioCol = valueCol + 1;
+      sheet.setColumnWidth(valueCol, 110);
+      sheet.setColumnWidth(ratioCol, 65);
+      sheet.getRange(dataStart, valueCol, numItems, 1)
+           .setNumberFormat('#,##0;[RED]-#,##0;"-"');
+      sheet.getRange(dataStart, ratioCol, numItems, 1)
+           .setNumberFormat('0%;;"-"');
     }
-    sheet.getRange(dataStart, 2, numItems, numPeriods)
-         .setNumberFormat('#,##0;[RED]-#,##0;"-"');
     sheet.setFrozenRows(2);
     sheet.setFrozenColumns(1);
 
