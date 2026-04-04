@@ -495,10 +495,19 @@ const SheetManager = {
       });
       sheet.getRange(dataStart, valueCol, numItems, 1).setValues(colValues);
 
-      // 売上比率列（営業利益・経常利益・税引前当期純利益・当期純利益のみ）
-      const ratioCategories = new Set(['operatingProfit', 'ordinaryProfit', 'pretaxProfit', 'netProfit']);
+      // 売上比率列（指定項目のみ）
+      const ratioLabels = new Set([
+        '売上高合計', '売上原価合計', '売上総利益',
+        '役員賞与', '役員報酬', '給料手当', '法定福利費', '福利厚生費',
+        '研修採用費', '接待交際費', '旅費交通費', '通信費', '水道光熱費',
+        '保険料', '租税公課', '支払手数料', '支払報酬', '業務委託費',
+        '会議費', '新聞図書費', '減価償却費', '繰延資産償却', '長期前払費用償却',
+        '荷造運賃', '広告宣伝費', '備品・消耗品費', '車両費', '地代家賃',
+        '修繕費', '雑費',
+        '販売費及び一般管理費合計', '営業利益', '経常利益', '税引前当期純利益', '当期純利益',
+      ]);
       const ratioFormulas = CONFIG.PL_STRUCTURE.map((item, i) => {
-        if (!ratioCategories.has(item.category)) return [''];
+        if (!ratioLabels.has(item.label)) return [''];
         const rowNum = dataStart + i;
         return [`=IF(${valueColLetter}${revenueAbsRow}=0,"",${valueColLetter}${rowNum}/${valueColLetter}${revenueAbsRow})`];
       });
