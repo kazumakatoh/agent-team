@@ -22,6 +22,7 @@ const CSVImporter = {
    * Google DriveフォルダからすべてのCSVをインポートする（メニューから呼ぶ）
    */
   importAllFromDrive() {
+    CSVImporter._lastUnmatched = []; // 未照合科目リセット
     const ui = SpreadsheetApp.getUi();
     const folderId = CONFIG.CSV_IMPORT && CONFIG.CSV_IMPORT.FOLDER_ID;
 
@@ -131,6 +132,10 @@ const CSVImporter = {
 
     let msg = `✅ ${label} — ${imported}件をインポートしました。`;
     if (errors.length) msg += `\n\n⚠️ エラー（${errors.length}件）:\n` + errors.join('\n');
+    if (CSVImporter._lastUnmatched && CSVImporter._lastUnmatched.length > 0) {
+      msg += `\n\n📋 PL_STRUCTUREに未登録の勘定科目（Config.gsへの追加を検討）:\n` +
+             CSVImporter._lastUnmatched.map(n => `  ・${n}`).join('\n');
+    }
     ui.alert(msg);
   },
 
@@ -249,6 +254,17 @@ const CSVImporter = {
     }
 
     Logger.log(`CSV解析: ${Object.keys(accountMonthly).length}科目 → ${Object.keys(accountMonthly).slice(0, 5).join(', ')}...`);
+
+    // PL_STRUCTURE に照合されない科目を警告ログ出力（デバッグ用）
+    const allMappedNames = new Set();
+    CONFIG.PL_STRUCTURE.forEach(item => {
+      if (item.accountNames) item.accountNames.forEach(n => allMappedNames.add(n));
+    });
+    const unmatchedAccounts = Object.keys(accountMonthly).filter(name => !allMappedNames.has(name));
+    if (unmatchedAccounts.length > 0) {
+      Logger.log(`⚠️ PL_STRUCTUREに未登録の勘定科目（金額が取り込まれません）:\n  ${unmatchedAccounts.join('\n  ')}`);
+    }
+    CSVImporter._lastUnmatched = unmatchedAccounts; // importAllFromDriveで集約して表示
 
     // 月別PLRowsを生成（PLFormatter.buildPLRows に渡せる形式に変換）
     const monthlyRows = {};

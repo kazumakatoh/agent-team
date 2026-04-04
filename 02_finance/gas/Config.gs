@@ -94,6 +94,13 @@ const CONFIG = {
     },
     {
       category:   'revenue',
+      label:      '売上（その他）',
+      indent:     1,
+      accountNames: ['売上（その他）', 'その他売上', '売上その他'],
+      sign:       1,
+    },
+    {
+      category:   'revenue',
       label:      '売上値引・返品',
       indent:     1,
       accountNames: ['売上値引', '売上返品', '売上値引・返品', '返品・値引き'],
@@ -197,6 +204,10 @@ const CONFIG = {
     { category: 'sga', label: '広告宣伝費',    indent: 1, accountNames: ['広告宣伝費', '広告費'],  sign: 1 },
     { category: 'sga', label: '備品・消耗品費', indent: 1, accountNames: ['備品費', '消耗品費', '備品・消耗品費'], sign: 1 },
     { category: 'sga', label: '地代家賃',      indent: 1, accountNames: ['地代家賃', '賃借料'],    sign: 1 },
+    { category: 'sga', label: '修繕費',        indent: 1, accountNames: ['修繕費', '修理費'],      sign: 1 },
+    { category: 'sga', label: '雑費',          indent: 1, accountNames: ['雑費', 'その他費用', 'その他経費'], sign: 1 },
+    { category: 'sga', label: '福利厚生費',    indent: 1, accountNames: ['福利厚生費'],            sign: 1 },
+    { category: 'sga', label: '給料手当',      indent: 1, accountNames: ['給料手当', '給与手当', '給料'],   sign: 1 },
     {
       category:   'subtotal',
       label:      '販売費及び一般管理費合計',
