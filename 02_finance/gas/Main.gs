@@ -137,6 +137,28 @@ function runSingleDeptUpdate() {
 }
 
 /**
+ * 通期比較シートを作成する（第1期〜現在）
+ */
+function runPeriodComparison() {
+  const ui        = SpreadsheetApp.getUi();
+  const BASE_YEAR = 2018;
+  const currYear  = getCurrentFiscalYear();
+  const fiscalYears = [];
+  for (let y = BASE_YEAR; y <= currYear; y++) fiscalYears.push(y);
+
+  try {
+    SheetManager.writePeriodComparisonSheet(fiscalYears);
+    ui.alert(
+      `✅ 通期比較シートを作成しました。\n` +
+      `（${getFiscalPeriodLabel(BASE_YEAR)}〜${getFiscalPeriodLabel(currYear)}　${fiscalYears.length}期分）\n\n` +
+      `シート名: 通期比較_全体`
+    );
+  } catch (e) {
+    ui.alert(`❌ エラー: ${e.message}`);
+  }
+}
+
+/**
  * 部門別CSVインポートを実行する
  */
 function runCSVImport() {
@@ -430,6 +452,8 @@ function onOpen() {
     .addItem('🔄 当期PLを更新（過去・当月のみ）', 'runCurrentYearUpdate')
     .addItem('📅 年度指定して全月フル更新', 'runSpecificYearUpdate')
     .addItem('🏢 部門指定して更新', 'runSingleDeptUpdate')
+    .addSeparator()
+    .addItem('📊 通期比較シートを作成（第1〜8期）', 'runPeriodComparison')
     .addSeparator()
     .addItem('📥 部門別CSVをインポート（MF会計 推移試算表）', 'runCSVImport')
     .addItem('🔍 CSVフォーマットを確認（診断用）', 'runCSVPreview')

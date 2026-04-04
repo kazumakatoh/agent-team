@@ -418,6 +418,76 @@ const SheetManager = {
     sheet.setFrozenRows(2);
     sheet.setFrozenColumns(1);
   },
+
+  // ==============================
+  // 通期比較シート（全期一覧）
+  // ==============================
+
+  /**
+   * 各期の 第X期_PL_全体 シートの合計列（O列）を横並びにした通期比較シートを作成する
+   *
+   * @param {Array} fiscalYears - [2018, 2019, ..., 2025] など
+   */
+  writePeriodComparisonSheet(fiscalYears) {
+    const ss        = SheetManager.getSpreadsheet();
+    const sheetName = '通期比較_全体';
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) sheet = ss.insertSheet(sheetName);
+    sheet.clearContents();
+    sheet.clearFormats();
+
+    const dataStart  = 3;
+    const numItems   = CONFIG.PL_STRUCTURE.length;
+    const numPeriods = fiscalYears.length;
+
+    // タイトル
+    sheet.getRange(1, 1).setValue('通期比較 損益計算書（年度別合計）')
+         .setFontSize(12).setFontWeight('bold');
+
+    // ヘッダー行
+    const headers = ['勘定科目', ...fiscalYears.map(y => getFiscalPeriodLabel(y))];
+    sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
+    SheetManager._styleHeaderRow(sheet, 2, headers.length);
+
+    // ラベル列（A列）
+    const labels = CONFIG.PL_STRUCTURE.map(item => '　'.repeat(item.indent || 0) + item.label);
+    sheet.getRange(dataStart, 1, numItems, 1).setValues(labels.map(l => [l]));
+
+    // 各期の合計列を読み込んで書き込む
+    fiscalYears.forEach((year, colIdx) => {
+      const srcName  = buildSheetName(year, 'PL_CONSOLIDATED');
+      const srcSheet = ss.getSheetByName(srcName);
+      if (!srcSheet) {
+        Logger.log(`スキップ（シートなし）: ${srcName}`);
+        return;
+      }
+      const srcData = srcSheet.getRange(dataStart, SheetManager.COL.TOTAL, numItems, 1).getValues();
+      sheet.getRange(dataStart, 2 + colIdx, numItems, 1).setValues(srcData);
+    });
+
+    // 行スタイル
+    CONFIG.PL_STRUCTURE.forEach((item, i) => {
+      SheetManager._styleDataRow(sheet, dataStart + i, headers.length, {
+        isHeader:    item.category === 'header',
+        isSubtotal:  item.category === 'subtotal',
+        isBold:      item.isBold || false,
+        isBorderTop: item.isBorderTop || false,
+      });
+    });
+
+    // 列幅・数値フォーマット
+    sheet.setColumnWidth(1, 200);
+    for (let c = 2; c <= headers.length; c++) {
+      sheet.setColumnWidth(c, 110);
+    }
+    sheet.getRange(dataStart, 2, numItems, numPeriods)
+         .setNumberFormat('#,##0;[RED]-#,##0;"-"');
+    sheet.setFrozenRows(2);
+    sheet.setFrozenColumns(1);
+
+    Logger.log(`通期比較シート作成完了: ${sheetName}（${numPeriods}期分）`);
+    return sheet;
+  },
 };
 
 function getSpreadsheet() {
