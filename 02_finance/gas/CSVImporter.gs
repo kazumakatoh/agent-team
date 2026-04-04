@@ -52,7 +52,8 @@ const CSVImporter = {
     const label      = getFiscalPeriodLabel(targetYear);
 
     let imported = 0;
-    const errors  = [];
+    const errors      = [];
+    const allDeptData = {}; // { deptName: monthlyRows } → 全体合算に使用
 
     try {
       const folder = DriveApp.getFolderById(folderId);
@@ -83,9 +84,10 @@ const CSVImporter = {
         }
 
         try {
-          const csvText    = file.getBlob().getDataAsString('Shift_JIS');
+          const csvText     = file.getBlob().getDataAsString('Shift_JIS');
           const monthlyRows = CSVImporter._parseToMonthlyRows(csvText, months);
           SheetManager.writePLSheet(targetYear, dept.name, monthlyRows, months);
+          allDeptData[dept.name] = monthlyRows; // 合算用に保存
           Logger.log(`✅ ${dept.name} (${label}): インポート完了`);
           imported++;
         } catch (e) {
@@ -98,7 +100,19 @@ const CSVImporter = {
       return;
     }
 
-    let msg = `✅ ${label} — ${imported}部門をインポートしました。`;
+    // 全部門インポート後に「全体」合計シートを生成
+    if (imported > 0) {
+      try {
+        const consolidatedRows = CSVImporter._mergeAllDepts(allDeptData, months);
+        SheetManager.writePLSheet(targetYear, '全体', consolidatedRows, months);
+        Logger.log(`✅ 全体 (${label}): 合計シート生成完了`);
+      } catch (e) {
+        errors.push(`"全体合計": ${e.message}`);
+        Logger.log(`❌ 全体合計: ${e.message}`);
+      }
+    }
+
+    let msg = `✅ ${label} — ${imported}部門 + 全体合計シートをインポートしました。`;
     if (errors.length) msg += `\n\n⚠️ エラー（${errors.length}件）:\n` + errors.join('\n');
     ui.alert(msg);
   },
@@ -266,6 +280,38 @@ const CSVImporter = {
     });
 
     return { numDataCols, firstMonthOffset, monthOffsets };
+  },
+
+  /**
+   * 全部門のmonthlyRowsを合算して「全体」用monthlyRowsを生成する
+   *
+   * @param {Object} allDeptData - { deptName: { monthLabel: [PLrows] } }
+   * @param {Array}  months      - getFiscalMonths() の結果
+   * @return {Object} { monthLabel: [PLrows] } 全部門合算
+   */
+  _mergeAllDepts(allDeptData, months) {
+    const numItems    = CONFIG.PL_STRUCTURE.length;
+    const consolidated = {};
+
+    months.forEach(m => {
+      const mergedRows = Array.from({length: numItems}, (_, i) => {
+        const item = CONFIG.PL_STRUCTURE[i];
+        if (item.category === 'header') return { amount: null };
+
+        let total = 0;
+        Object.values(allDeptData).forEach(monthlyRows => {
+          const plRows = monthlyRows[m.label] || [];
+          const plRow  = plRows[i];
+          if (plRow && plRow.amount !== null && plRow.amount !== undefined) {
+            total += plRow.amount || 0;
+          }
+        });
+        return { amount: total };
+      });
+      consolidated[m.label] = mergedRows;
+    });
+
+    return consolidated;
   },
 
   /**
