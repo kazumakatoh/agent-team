@@ -51,9 +51,10 @@ const CSVImporter = {
     const months     = getFiscalMonths(targetYear);
     const label      = getFiscalPeriodLabel(targetYear);
 
-    let imported = 0;
-    const errors      = [];
-    const allDeptData = {}; // { deptName: monthlyRows } → 全体合算に使用
+    let imported        = 0;
+    const errors        = [];
+    const allDeptData   = {}; // { deptName: monthlyRows } → 全体合算に使用
+    let consolidatedFromCSV = false; // 全体CSVが明示的にインポートされたか
 
     try {
       const folder = DriveApp.getFolderById(folderId);
@@ -67,7 +68,7 @@ const CSVImporter = {
         if (!/\.(csv|tsv|txt)$/i.test(fileName)) continue;
 
         // ファイル名から年度と部門名を抽出
-        // 対応フォーマット: 民泊.csv / 民泊_2025.csv / 2025_民泊.csv
+        // 対応フォーマット: 民泊.csv / 民泊_2025.csv / 全体_2024.csv
         const rawName   = fileName.replace(/\.(csv|tsv|txt)$/i, '').trim();
         const yearMatch = rawName.match(/^(\d{4})[-_](.+)$|^(.+?)[-_](\d{4})$/);
         const fileYear  = yearMatch ? parseInt(yearMatch[1] || yearMatch[4]) : null;
@@ -75,6 +76,22 @@ const CSVImporter = {
 
         // ファイル名に年度が含まれている場合、対象年度と一致しなければスキップ
         if (fileYear !== null && fileYear !== targetYear) continue;
+
+        // 「全体」ファイルは直接 PL_全体 シートへ書き込む
+        if (deptKey === '全体') {
+          try {
+            const csvText     = file.getBlob().getDataAsString('Shift_JIS');
+            const monthlyRows = CSVImporter._parseToMonthlyRows(csvText, months);
+            SheetManager.writePLSheet(targetYear, '全体', monthlyRows, months);
+            consolidatedFromCSV = true;
+            Logger.log(`✅ 全体 (${label}): CSVから直接インポート完了`);
+            imported++;
+          } catch (e) {
+            errors.push(`"${fileName}": ${e.message}`);
+            Logger.log(`❌ ${fileName}: ${e.message}`);
+          }
+          continue;
+        }
 
         const dept = CONFIG.DEPARTMENTS.find(d => d.name === deptKey || d.shortName === deptKey);
 
@@ -100,19 +117,19 @@ const CSVImporter = {
       return;
     }
 
-    // 全部門インポート後に「全体」合計シートを生成
-    if (imported > 0) {
+    // 部門CSVから全体を合算生成（全体CSVが明示的になかった場合のみ）
+    if (Object.keys(allDeptData).length > 0 && !consolidatedFromCSV) {
       try {
         const consolidatedRows = CSVImporter._mergeAllDepts(allDeptData, months);
         SheetManager.writePLSheet(targetYear, '全体', consolidatedRows, months);
-        Logger.log(`✅ 全体 (${label}): 合計シート生成完了`);
+        Logger.log(`✅ 全体 (${label}): 部門合算シート生成完了`);
       } catch (e) {
         errors.push(`"全体合計": ${e.message}`);
         Logger.log(`❌ 全体合計: ${e.message}`);
       }
     }
 
-    let msg = `✅ ${label} — ${imported}部門 + 全体合計シートをインポートしました。`;
+    let msg = `✅ ${label} — ${imported}件をインポートしました。`;
     if (errors.length) msg += `\n\n⚠️ エラー（${errors.length}件）:\n` + errors.join('\n');
     ui.alert(msg);
   },
