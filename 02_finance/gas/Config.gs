@@ -101,6 +101,13 @@ const CONFIG = {
     },
     {
       category:   'revenue',
+      label:      '売上（クラウドファンディング）',
+      indent:     1,
+      accountNames: ['売上（クラウドファンディング）', 'クラウドファンディング売上'],
+      sign:       1,
+    },
+    {
+      category:   'revenue',
       label:      '売上値引・返品',
       indent:     1,
       accountNames: ['売上値引', '売上返品', '売上値引・返品', '返品・値引き'],
