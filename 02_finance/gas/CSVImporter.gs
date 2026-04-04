@@ -65,8 +65,17 @@ const CSVImporter = {
         // .csv / .tsv / .txt のみ対象
         if (!/\.(csv|tsv|txt)$/i.test(fileName)) continue;
 
-        const deptName = fileName.replace(/\.(csv|tsv|txt)$/i, '').trim();
-        const dept     = CONFIG.DEPARTMENTS.find(d => d.name === deptName || d.shortName === deptName);
+        // ファイル名から年度と部門名を抽出
+        // 対応フォーマット: 民泊.csv / 民泊_2025.csv / 2025_民泊.csv
+        const rawName   = fileName.replace(/\.(csv|tsv|txt)$/i, '').trim();
+        const yearMatch = rawName.match(/^(\d{4})[-_](.+)$|^(.+?)[-_](\d{4})$/);
+        const fileYear  = yearMatch ? parseInt(yearMatch[1] || yearMatch[4]) : null;
+        const deptKey   = yearMatch ? (yearMatch[2] || yearMatch[3]).trim() : rawName;
+
+        // ファイル名に年度が含まれている場合、対象年度と一致しなければスキップ
+        if (fileYear !== null && fileYear !== targetYear) continue;
+
+        const dept = CONFIG.DEPARTMENTS.find(d => d.name === deptKey || d.shortName === deptKey);
 
         if (!dept) {
           errors.push(`"${fileName}": 部門名が一致しません（Config.gs の DEPARTMENTS を確認）`);
