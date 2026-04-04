@@ -151,6 +151,66 @@ function runCSVPreview() {
 }
 
 /**
+ * 第1期〜現在の全期間、全体PLシートをAPIから一括取得する
+ * ※ 部門フィルタなし（全社合計）のみ取得
+ */
+function runAllYearsConsolidated() {
+  const ui        = SpreadsheetApp.getUi();
+  const BASE_YEAR = 2018; // 第1期開始年
+  const currYear  = getCurrentFiscalYear();
+  const numYears  = currYear - BASE_YEAR + 1;
+
+  const confirm = ui.alert(
+    `📊 全期間・全体PL一括取得`,
+    `${getFiscalPeriodLabel(BASE_YEAR)}〜${getFiscalPeriodLabel(currYear)}（${numYears}期分）の\n` +
+    `全体PLシートをAPIから取得します。\n\n` +
+    `所要時間: 約 ${Math.ceil(numYears * 12 * 0.6 / 60)} 分\n` +
+    `（既存シートは上書き）\n\nよろしいですか？`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (confirm !== ui.Button.OK) return;
+
+  const errors = [];
+  let success  = 0;
+
+  for (let year = BASE_YEAR; year <= currYear; year++) {
+    const label  = getFiscalPeriodLabel(year);
+    const months = getFiscalMonths(year);
+    // 過去年度は全12ヶ月、当期は取得済み月のみ
+    const monthsToFetch = (year < currYear)
+      ? months
+      : PLFormatter.getUpdatableMonths(months);
+
+    Logger.log(`${label} 取得開始（${monthsToFetch.length}ヶ月）...`);
+    try {
+      const monthlyRows = {};
+      monthsToFetch.forEach(m => {
+        try {
+          const items = MFApiClient.getTrialBalance(m.startDate, m.endDate);
+          monthlyRows[m.label] = PLFormatter.buildPLRows(items);
+          Logger.log(`  ${m.label}: ${items.length}件`);
+        } catch (e) {
+          Logger.log(`  ${m.label}: エラー - ${e.message}`);
+          monthlyRows[m.label] = PLFormatter.buildPLRows([]);
+        }
+        Utilities.sleep(600);
+      });
+
+      SheetManager.writePLSheet(year, '全体', monthlyRows, monthsToFetch);
+      Logger.log(`✅ ${label}: 完了`);
+      success++;
+    } catch (e) {
+      Logger.log(`❌ ${label}: ${e.message}`);
+      errors.push(`${label}: ${e.message}`);
+    }
+  }
+
+  let msg = `✅ ${success}期分の全体PLシートを生成しました。`;
+  if (errors.length) msg += `\n\n⚠️ エラー（${errors.length}件）:\n` + errors.join('\n');
+  ui.alert(msg);
+}
+
+/**
  * 月次推移PL（transition_pl）のレスポンス構造を確認用シートに出力する
  * → 全12ヶ月を1回のAPIコールで取得できるか、レスポンス構造を確認するための診断ツール
  *    確認後、fetchAllDepartmentsPL を高速化するために使用予定
@@ -373,6 +433,7 @@ function onOpen() {
     .addSeparator()
     .addItem('📥 部門別CSVをインポート（MF会計 推移試算表）', 'runCSVImport')
     .addItem('🔍 CSVフォーマットを確認（診断用）', 'runCSVPreview')
+    .addItem('📊 全期間の全体PLを一括取得（第1〜9期）', 'runAllYearsConsolidated')
     .addSeparator()
     .addItem('📋 勘定科目一覧を出力（設定確認用）', 'exportAccountItems')
     .addItem('🏢 部門一覧を出力（設定確認用）', 'exportDepartments')
