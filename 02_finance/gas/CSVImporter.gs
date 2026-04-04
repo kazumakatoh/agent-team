@@ -74,7 +74,7 @@ const CSVImporter = {
         }
 
         try {
-          const csvText    = file.getBlob().getDataAsString('UTF-8');
+          const csvText    = file.getBlob().getDataAsString('Shift_JIS');
           const monthlyRows = CSVImporter._parseToMonthlyRows(csvText, months);
           SheetManager.writePLSheet(targetYear, dept.name, monthlyRows, months);
           Logger.log(`✅ ${dept.name} (${label}): インポート完了`);
@@ -115,7 +115,7 @@ const CSVImporter = {
 
       // 最初のファイルをプレビュー
       const file    = files.next();
-      const csvText = file.getBlob().getDataAsString('UTF-8');
+      const csvText = file.getBlob().getDataAsString('Shift_JIS');
       const lines   = csvText.split(/\r?\n/).filter(l => l.trim());
 
       const ss = SheetManager.getSpreadsheet();
