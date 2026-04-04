@@ -133,7 +133,7 @@ const CSVImporter = {
 
       // 勘定科目として検出された行を表示
       const months = getFiscalMonths(getCurrentFiscalYear() - 1);
-      const { numDataCols, firstMonthOffset, monthOffsets } = CSVImporter._parseHeader(lines[0].split('\t'), months);
+      const { numDataCols, firstMonthOffset, monthOffsets } = CSVImporter._parseHeader(CSVImporter._splitLine(lines[0]), months);
 
       sheet.getRange(25, 1).setValue(`ヘッダー解析結果:\n  データ列数: ${numDataCols}\n  月ラベルオフセット: ${JSON.stringify(monthOffsets)}`);
       sheet.getRange(25, 1).setWrap(true);
@@ -142,7 +142,7 @@ const CSVImporter = {
       sheet.getRange(30, 1, 1, 3).setValues([['勘定科目名', '（1月）', '（2月）']]);
       const accountRows = [];
       for (let i = 1; i < lines.length; i++) {
-        const cells = lines[i].split('\t');
+        const cells = CSVImporter._splitLine(lines[i]);
         if (CSVImporter._getRowLevel(cells) !== 1) continue;
         const name = cells[1].trim();
         const data = cells.slice(cells.length - numDataCols);
@@ -176,7 +176,7 @@ const CSVImporter = {
     const lines = csvText.split(/\r?\n/).filter(l => l.trim());
     if (lines.length < 2) throw new Error('CSVが空または不正です');
 
-    const headerCells = lines[0].split('\t');
+    const headerCells = CSVImporter._splitLine(lines[0]);
     const { numDataCols, monthOffsets } = CSVImporter._parseHeader(headerCells, months);
 
     if (Object.keys(monthOffsets).length === 0) {
@@ -191,7 +191,7 @@ const CSVImporter = {
     const accountMonthly = {}; // { accountName: { monthLabel: number } }
 
     for (let i = 1; i < lines.length; i++) {
-      const cells = lines[i].split('\t');
+      const cells = CSVImporter._splitLine(lines[i]);
       if (CSVImporter._getRowLevel(cells) !== 1) continue;
 
       const accountName = cells[1].trim();
@@ -257,6 +257,34 @@ const CSVImporter = {
     });
 
     return { numDataCols, firstMonthOffset, monthOffsets };
+  },
+
+  /**
+   * CSV行をタブ区切りまたはカンマ区切り（クォート対応）で分割する
+   * MF会計CSVはカンマ区切りでフィールドが "" で囲まれている
+   *
+   * @param {string} line - CSV/TSVの1行
+   * @return {Array} 分割されたセルの配列
+   */
+  _splitLine(line) {
+    // タブが含まれていれば TSV として扱う
+    if (line.indexOf('\t') >= 0) return line.split('\t');
+
+    // カンマ区切り（クォート対応）
+    const parts = [];
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === '"') {
+        const end = line.indexOf('"', i + 1);
+        parts.push(end >= 0 ? line.slice(i + 1, end) : line.slice(i + 1));
+        i = end >= 0 ? end + 2 : line.length;
+      } else {
+        const end = line.indexOf(',', i);
+        parts.push(end >= 0 ? line.slice(i, end) : line.slice(i));
+        i = end >= 0 ? end + 1 : line.length;
+      }
+    }
+    return parts;
   },
 
   /**
