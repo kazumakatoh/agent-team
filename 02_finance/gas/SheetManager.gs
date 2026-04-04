@@ -454,7 +454,7 @@ const SheetManager = {
     const headers = ['勘定科目'];
     fiscalYears.forEach(y => {
       headers.push(getFiscalPeriodLabel(y));
-      headers.push('売上比');
+      headers.push('%');
     });
     sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
     SheetManager._styleHeaderRow(sheet, 2, headers.length);
