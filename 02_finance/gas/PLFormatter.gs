@@ -255,9 +255,10 @@ const PLFormatter = {
           // values[0] = opening_balance（期首残高 = 前月までの累計）
           // values[3] = closing_balance（期末残高 = 当月末までの累計）
           // 月次金額 = closing_balance - opening_balance（当月の発生額のみ）
+          // ※ Math.abs不使用：符号を保持する（期末棚卸高の月次減少など負値が正しい場合がある）
           const closing = (row.values && row.values[3]) || 0;
           const opening = (row.values && row.values[0]) || 0;
-          const amount = Math.abs(closing - opening);
+          const amount = closing - opening;
           map[row.name] = (map[row.name] || 0) + amount;
         }
         if (row.rows) collectAccounts(row.rows);

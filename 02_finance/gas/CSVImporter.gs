@@ -272,7 +272,7 @@ const CSVImporter = {
       const fakeItems = Object.entries(accountMonthly).map(([name, monthData]) => ({
         name,
         type:   'account',
-        values: [0, 0, 0, Math.abs(monthData[m.label] || 0), 0],
+        values: [0, 0, 0, monthData[m.label] || 0, 0],  // Math.abs不使用：符号を保持（期末棚卸高の減少など）
         rows:   null,
       }));
       monthlyRows[m.label] = PLFormatter.buildPLRows(fakeItems);
