@@ -495,9 +495,10 @@ const SheetManager = {
       });
       sheet.getRange(dataStart, valueCol, numItems, 1).setValues(colValues);
 
-      // 売上比率列（数式）
+      // 売上比率列（営業利益・経常利益・税引前当期純利益・当期純利益のみ）
+      const ratioCategories = new Set(['operatingProfit', 'ordinaryProfit', 'pretaxProfit', 'netProfit']);
       const ratioFormulas = CONFIG.PL_STRUCTURE.map((item, i) => {
-        if (item.category === 'header') return [''];
+        if (!ratioCategories.has(item.category)) return [''];
         const rowNum = dataStart + i;
         return [`=IF(${valueColLetter}${revenueAbsRow}=0,"",${valueColLetter}${rowNum}/${valueColLetter}${revenueAbsRow})`];
       });
