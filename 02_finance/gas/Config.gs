@@ -236,6 +236,7 @@ const CONFIG = {
     },
     { category: 'nonOpIncome', label: '受取利息',   indent: 1, accountNames: ['受取利息'],               sign: 1 },
     { category: 'nonOpIncome', label: '受取配当金', indent: 1, accountNames: ['受取配当金', '受取配当'], sign: 1 },
+    { category: 'nonOpIncome', label: '雑収入',     indent: 1, accountNames: ['雑収入', '雑益', 'その他営業外収益'], sign: 1 },
     {
       category:   'subtotal',
       label:      '営業外収益合計',
