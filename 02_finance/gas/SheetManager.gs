@@ -534,7 +534,7 @@ const SheetManager = {
       sheet.getRange(dataStart, valueCol, numItems, 1)
            .setNumberFormat('#,##0;[RED]-#,##0;"-"');
       sheet.getRange(dataStart, ratioCol, numItems, 1)
-           .setNumberFormat('0.0%;;"-"');
+           .setNumberFormat('0.0%;[RED]-0.0%;"-"');
     }
     sheet.setFrozenRows(2);
     sheet.setFrozenColumns(1);
