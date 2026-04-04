@@ -251,6 +251,13 @@ const CSVImporter = {
         const raw = (dataValues[offset] || '').replace(/,/g, '');
         accountMonthly[accountName][m.label] = parseInt(raw) || 0;
       });
+
+      // 決算整理列も取得
+      const adjOffset = monthOffsets['決算整理'];
+      if (adjOffset !== undefined) {
+        const raw = (dataValues[adjOffset] || '').replace(/,/g, '');
+        accountMonthly[accountName]['決算整理'] = parseInt(raw) || 0;
+      }
     }
 
     Logger.log(`CSV解析: ${Object.keys(accountMonthly).length}科目 → ${Object.keys(accountMonthly).slice(0, 5).join(', ')}...`);
@@ -277,6 +284,17 @@ const CSVImporter = {
       }));
       monthlyRows[m.label] = PLFormatter.buildPLRows(fakeItems);
     });
+
+    // 決算整理列のPLRowsを生成
+    if (monthOffsets['決算整理'] !== undefined) {
+      const adjItems = Object.entries(accountMonthly).map(([name, monthData]) => ({
+        name,
+        type:   'account',
+        values: [0, 0, 0, monthData['決算整理'] || 0, 0],
+        rows:   null,
+      }));
+      monthlyRows['決算整理'] = PLFormatter.buildPLRows(adjItems);
+    }
 
     return monthlyRows;
   },
@@ -309,6 +327,13 @@ const CSVImporter = {
       const headerIdx = firstMonthOffset + i;
       if (headerCells[headerIdx] && headerCells[headerIdx].trim() === m.label) {
         monthOffsets[m.label] = i;
+      }
+    });
+
+    // 決算整理列を検出（12ヶ月の後ろにある）
+    headerCells.forEach((cell, idx) => {
+      if (idx >= firstMonthOffset && cell.trim() === '決算整理') {
+        monthOffsets['決算整理'] = idx - firstMonthOffset;
       }
     });
 

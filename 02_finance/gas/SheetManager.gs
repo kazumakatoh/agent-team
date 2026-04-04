@@ -83,6 +83,11 @@ const SheetManager = {
       SheetManager._writeAmountColumn(sheet, monthIdx, plRows);
     });
 
+    // ── 決算整理列の書き込み（CSVに決算整理データがある場合のみ） ──
+    if (monthlyRows['決算整理']) {
+      SheetManager._writeAdjColumn(sheet, monthlyRows['決算整理']);
+    }
+
     Logger.log(`PLシート更新完了: ${sheetName}（${monthsToUpdate.length}ヶ月）`);
     return sheet;
   },
@@ -138,6 +143,24 @@ const SheetManager = {
 
     // 列幅・フォント・固定
     SheetManager._applyColumnFormats(sheet, numItems, dataStart, revenueRow);
+  },
+
+  /**
+   * 決算整理列（N列）にデータを書き込む
+   * @param {Sheet} sheet
+   * @param {Array} plRows - PLFormatter.buildPLRows() の結果
+   */
+  _writeAdjColumn(sheet, plRows) {
+    const dataStart = SheetManager.DATA_START_ROW;
+    const adjCol    = SheetManager.COL.ADJ; // 14
+
+    const values = CONFIG.PL_STRUCTURE.map((item, i) => {
+      const plRow = plRows[i];
+      if (!plRow || item.category === 'header') return [''];
+      return [plRow.amount !== null ? (plRow.amount || 0) : 0];
+    });
+
+    sheet.getRange(dataStart, adjCol, values.length, 1).setValues(values);
   },
 
   /**
