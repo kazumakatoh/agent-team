@@ -30,7 +30,10 @@ const SheetManager = {
   // ==============================
 
   getSpreadsheet() {
-    return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    if (CONFIG.SPREADSHEET_ID) {
+      return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+    }
+    return SpreadsheetApp.getActiveSpreadsheet();
   },
 
   getOrCreateSheet(sheetName) {
