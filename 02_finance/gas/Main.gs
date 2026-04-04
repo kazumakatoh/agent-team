@@ -137,6 +137,20 @@ function runSingleDeptUpdate() {
 }
 
 /**
+ * 部門別CSVインポートを実行する
+ */
+function runCSVImport() {
+  CSVImporter.importAllFromDrive();
+}
+
+/**
+ * CSVフォーマットを診断して確認シートに出力する
+ */
+function runCSVPreview() {
+  CSVImporter.previewCSV();
+}
+
+/**
  * 月次推移PL（transition_pl）のレスポンス構造を確認用シートに出力する
  * → 全12ヶ月を1回のAPIコールで取得できるか、レスポンス構造を確認するための診断ツール
  *    確認後、fetchAllDepartmentsPL を高速化するために使用予定
@@ -356,6 +370,9 @@ function onOpen() {
     .addItem('🔄 当期PLを更新（過去・当月のみ）', 'runCurrentYearUpdate')
     .addItem('📅 年度指定して全月フル更新', 'runSpecificYearUpdate')
     .addItem('🏢 部門指定して更新', 'runSingleDeptUpdate')
+    .addSeparator()
+    .addItem('📥 部門別CSVをインポート（MF会計 推移試算表）', 'runCSVImport')
+    .addItem('🔍 CSVフォーマットを確認（診断用）', 'runCSVPreview')
     .addSeparator()
     .addItem('📋 勘定科目一覧を出力（設定確認用）', 'exportAccountItems')
     .addItem('🏢 部門一覧を出力（設定確認用）', 'exportDepartments')
