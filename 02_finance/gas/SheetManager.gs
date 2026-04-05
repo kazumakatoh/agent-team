@@ -436,7 +436,8 @@ const SheetManager = {
     sheet.clearContents();
     sheet.clearFormats();
 
-    const dataStart     = 3;
+    const dataStart     = 4; // 行1=タイトル, 行2=期ヘッダー, 行3=期間サブヘッダー
+    const srcDataStart  = SheetManager.DATA_START_ROW; // ソースシートは常に行3
     const numItems      = CONFIG.PL_STRUCTURE.length;
     const numPeriods    = fiscalYears.length;
     const colsPerPeriod = 2; // 金額 + 売上比率
@@ -450,7 +451,7 @@ const SheetManager = {
     sheet.getRange(1, 1).setValue('通期比較 損益計算書（年度別合計）')
          .setFontSize(12).setFontWeight('bold');
 
-    // ヘッダー行（第X期, 売上比, 第X期, 売上比, ...）
+    // 行2: 期ヘッダー（第X期 | % | ...）
     const headers = ['勘定科目'];
     fiscalYears.forEach(y => {
       headers.push(getFiscalPeriodLabel(y));
@@ -458,6 +459,19 @@ const SheetManager = {
     });
     sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
     SheetManager._styleHeaderRow(sheet, 2, headers.length);
+
+    // 行3: 事業期間サブヘッダー（2018年3月-2019年2月 | (空) | ...）
+    const subHeaders = [''];
+    fiscalYears.forEach(y => {
+      subHeaders.push(`${y}年3月-${y+1}年2月`);
+      subHeaders.push('');
+    });
+    sheet.getRange(3, 1, 1, subHeaders.length).setValues([subHeaders]);
+    sheet.getRange(3, 1, 1, subHeaders.length)
+         .setBackground('#3d3d5c')
+         .setFontColor('#ccccdd')
+         .setFontSize(9)
+         .setHorizontalAlignment('center');
 
     // ラベル列（A列）
     const labels = CONFIG.PL_STRUCTURE.map(item => '　'.repeat(item.indent || 0) + item.label);
@@ -477,13 +491,13 @@ const SheetManager = {
       }
 
       const lastRow = srcSheet.getLastRow();
-      if (lastRow < dataStart) return;
+      if (lastRow < srcDataStart) return;
 
       // ラベルマッチングで金額を取得
-      const numSrcRows = lastRow - dataStart + 1;
-      const srcLabels  = srcSheet.getRange(dataStart, 1, numSrcRows, 1).getValues()
+      const numSrcRows = lastRow - srcDataStart + 1;
+      const srcLabels  = srcSheet.getRange(srcDataStart, 1, numSrcRows, 1).getValues()
                            .map(r => r[0].toString().trim());
-      const srcTotals  = srcSheet.getRange(dataStart, SheetManager.COL.TOTAL, numSrcRows, 1).getValues()
+      const srcTotals  = srcSheet.getRange(srcDataStart, SheetManager.COL.TOTAL, numSrcRows, 1).getValues()
                            .map(r => r[0]);
       const labelMap   = {};
       srcLabels.forEach((label, i) => { if (label) labelMap[label] = srcTotals[i]; });
@@ -536,7 +550,7 @@ const SheetManager = {
       sheet.getRange(dataStart, ratioCol, numItems, 1)
            .setNumberFormat('0.0%;[RED]-0.0%;"-"');
     }
-    sheet.setFrozenRows(2);
+    sheet.setFrozenRows(3);
     sheet.setFrozenColumns(1);
 
     Logger.log(`通期比較シート作成完了: ${sheetName}（${numPeriods}期分）`);
