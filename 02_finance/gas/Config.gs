@@ -359,9 +359,60 @@ const CONFIG = {
     // フォルダURLの末尾: drive.google.com/drive/folders/[ここがID]
     FOLDER_ID: '',
 
-    // ファイル命名規則: 部門名.csv（Config.gs の DEPARTMENTS[].name と一致させること）
-    // 例: 民泊.csv / 物販.csv / ブランド.csv / 共通.csv
+    // PL ファイル命名規則: {部門名}_PL_{年}.csv  例: 物販_PL_2026.csv
+    // BS ファイル命名規則: 全体_BS_{年}.csv       例: 全体_BS_2026.csv
   },
+
+  // ==============================
+  // BS構造定義（貸借対照表 通期比較用）
+  // srcLevel: 0=A列（合計行）, 1=B列（勘定科目行）
+  // srcLabel: MF会計CSVの表示ラベルと完全一致させること
+  // ==============================
+  BS_STRUCTURE: [
+    // ── 資産の部 ──────────────────────────────
+    { category: 'header',   label: '資産の部',             indent: 0, isBold: true },
+    { category: 'header',   label: '流動資産',             indent: 0 },
+    { category: 'account',  label: '現金及び預金',         indent: 1, srcLevel: 0, srcLabel: '現金及び預金合計' },
+    { category: 'account',  label: '売掛金',               indent: 1, srcLevel: 1, srcLabel: '売掛金' },
+    { category: 'account',  label: '商品',                 indent: 1, srcLevel: 0, srcLabel: '棚卸資産合計' },
+    { category: 'account',  label: 'その他流動資産',       indent: 1, srcLevel: 0, srcLabel: 'その他流動資産合計' },
+    { category: 'subtotal', label: '流動資産合計',         indent: 0, srcLevel: 0, srcLabel: '流動資産合計',         isBold: true, isBorderTop: true },
+
+    { category: 'header',   label: '固定資産',             indent: 0 },
+    { category: 'account',  label: '有形固定資産合計',     indent: 1, srcLevel: 0, srcLabel: '有形固定資産合計' },
+    { category: 'account',  label: '無形固定資産合計',     indent: 1, srcLevel: 0, srcLabel: '無形固定資産合計' },
+    { category: 'account',  label: '投資その他の資産合計', indent: 1, srcLevel: 0, srcLabel: '投資その他の資産合計' },
+    { category: 'subtotal', label: '固定資産合計',         indent: 0, srcLevel: 0, srcLabel: '固定資産合計',         isBold: true, isBorderTop: true },
+
+    { category: 'header',   label: '繰延資産',             indent: 0 },
+    { category: 'account',  label: '開発費',               indent: 1, srcLevel: 1, srcLabel: '開発費' },
+    { category: 'subtotal', label: '繰延資産合計',         indent: 0, srcLevel: 0, srcLabel: '繰延資産合計',         isBold: true, isBorderTop: true },
+
+    { category: 'total',    label: '資産の部合計',         indent: 0, srcLevel: 0, srcLabel: '資産の部合計',         isBold: true, isBorderTop: true },
+
+    // ── 負債の部 ──────────────────────────────
+    { category: 'header',   label: '負債の部',             indent: 0, isBold: true },
+    { category: 'header',   label: '流動負債',             indent: 0 },
+    { category: 'account',  label: '未払金',               indent: 1, srcLevel: 1, srcLabel: '未払金' },
+    { category: 'account',  label: '未払費用',             indent: 1, srcLevel: 1, srcLabel: '未払費用' },
+    { category: 'account',  label: '預り金',               indent: 1, srcLevel: 1, srcLabel: '預り金' },
+    { category: 'account',  label: '仮受消費税',           indent: 1, srcLevel: 1, srcLabel: '仮受消費税' },
+    { category: 'subtotal', label: '流動負債合計',         indent: 0, srcLevel: 0, srcLabel: '流動負債合計',         isBold: true, isBorderTop: true },
+
+    { category: 'header',   label: '固定負債',             indent: 0 },
+    { category: 'account',  label: '長期借入金',           indent: 1, srcLevel: 1, srcLabel: '長期借入金' },
+    { category: 'subtotal', label: '固定負債合計',         indent: 0, srcLevel: 0, srcLabel: '固定負債合計',         isBold: true, isBorderTop: true },
+
+    { category: 'total',    label: '負債の部合計',         indent: 0, srcLevel: 0, srcLabel: '負債の部合計',         isBold: true, isBorderTop: true },
+
+    // ── 純資産の部 ──────────────────────────────
+    { category: 'header',   label: '純資産の部',           indent: 0, isBold: true },
+    { category: 'account',  label: '資本金',               indent: 1, srcLevel: 1, srcLabel: '資本金' },
+    { category: 'account',  label: '繰越利益剰余金',       indent: 1, srcLevel: 1, srcLabel: '繰越利益剰余金' },
+    { category: 'subtotal', label: '純資産の部合計',       indent: 0, srcLevel: 0, srcLabel: '純資産の部合計',       isBold: true, isBorderTop: true },
+
+    { category: 'total',    label: '負債・純資産の部合計', indent: 0, srcLevel: 0, srcLabel: '負債・純資産の部合計', isBold: true, isBorderTop: true },
+  ],
 
   // ==============================
   // シート名プレフィックス（事業年度ごとに「第8期_」のようなプレフィックスがつく）

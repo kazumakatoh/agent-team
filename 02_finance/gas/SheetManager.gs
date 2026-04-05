@@ -556,6 +556,93 @@ const SheetManager = {
     Logger.log(`通期比較シート作成完了: ${sheetName}（${numPeriods}期分）`);
     return sheet;
   },
+  // ==============================
+  // 通期比較BSシート（全期一覧）
+  // ==============================
+
+  /**
+   * 各期の 全体_BS_{年}.csv から読み込んだ期末残高を横並びにした通期比較BSシートを作成
+   *
+   * @param {Array}  fiscalYears  - [2018, 2019, ..., 2026]
+   * @param {Object} yearDataMap  - { year: { level0: {}, level1: {} } }（BSImporter.importAllFromDrive()の戻り値）
+   */
+  writePeriodComparisonBSSheet(fiscalYears, yearDataMap) {
+    const ss        = SheetManager.getSpreadsheet();
+    const sheetName = '通期比較_BS';
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) sheet = ss.insertSheet(sheetName);
+    sheet.clearContents();
+    sheet.clearFormats();
+
+    const dataStart  = 4;
+    const numItems   = CONFIG.BS_STRUCTURE.length;
+    const numPeriods = fiscalYears.length;
+    const totalCols  = 1 + numPeriods;
+
+    // タイトル
+    sheet.getRange(1, 1).setValue('通期比較 貸借対照表（期末残高）')
+         .setFontSize(12).setFontWeight('bold');
+
+    // 行2: 期ヘッダー
+    const headers = ['勘定科目'];
+    fiscalYears.forEach(y => headers.push(getFiscalPeriodLabel(y)));
+    sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
+    SheetManager._styleHeaderRow(sheet, 2, headers.length);
+
+    // 行3: 事業期間サブヘッダー
+    const subHeaders = [''];
+    fiscalYears.forEach(y => subHeaders.push(`${y}年3月-${y+1}年2月`));
+    sheet.getRange(3, 1, 1, subHeaders.length).setValues([subHeaders]);
+    sheet.getRange(3, 1, 1, subHeaders.length)
+         .setBackground('#3d3d5c').setFontColor('#ccccdd')
+         .setFontSize(9).setHorizontalAlignment('center');
+
+    // ラベル列（A列）
+    const labels = CONFIG.BS_STRUCTURE.map(item => '　'.repeat(item.indent || 0) + item.label);
+    sheet.getRange(dataStart, 1, numItems, 1).setValues(labels.map(l => [l]));
+
+    // 各期データ列
+    fiscalYears.forEach((year, colIdx) => {
+      const valueCol = 2 + colIdx;
+      const data     = yearDataMap[year];
+      if (!data) {
+        Logger.log(`スキップ（データなし）: ${getFiscalPeriodLabel(year)}`);
+        return;
+      }
+
+      const colValues = CONFIG.BS_STRUCTURE.map(item => {
+        if (item.category === 'header') return [''];
+        const map = item.srcLevel === 0 ? data.level0 : data.level1;
+        const val = map[item.srcLabel];
+        return [val !== undefined ? val : ''];
+      });
+      sheet.getRange(dataStart, valueCol, numItems, 1).setValues(colValues);
+    });
+
+    // 行スタイル
+    CONFIG.BS_STRUCTURE.forEach((item, i) => {
+      SheetManager._styleDataRow(sheet, dataStart + i, totalCols, {
+        isHeader:    item.category === 'header',
+        isSubtotal:  item.category === 'subtotal' || item.category === 'total',
+        isBold:      item.isBold || false,
+        isBorderTop: item.isBorderTop || false,
+      });
+    });
+
+    // 列幅・数値フォーマット
+    sheet.setColumnWidth(1, 200);
+    for (let p = 0; p < numPeriods; p++) {
+      const valueCol = 2 + p;
+      sheet.setColumnWidth(valueCol, 120);
+      sheet.getRange(dataStart, valueCol, numItems, 1)
+           .setNumberFormat('#,##0;[RED]-#,##0;"-"');
+    }
+    sheet.setFrozenRows(3);
+    sheet.setFrozenColumns(1);
+
+    Logger.log(`通期比較BSシート作成完了: ${sheetName}（${numPeriods}期分）`);
+    return sheet;
+  },
 };
 
 function getSpreadsheet() {
