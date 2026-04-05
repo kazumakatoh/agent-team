@@ -13,17 +13,39 @@
  */
 
 /**
+ * スクリプトプロパティからMFクレデンシャルを取得する
+ * @return {{ clientId: string, clientSecret: string }}
+ */
+function getMfCredentials_() {
+  const props = PropertiesService.getScriptProperties();
+  const clientId = props.getProperty('MF_CLIENT_ID');
+  const clientSecret = props.getProperty('MF_CLIENT_SECRET');
+
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      'MF APIのクレデンシャルが未設定です。\n\n' +
+      'GASエディタ → プロジェクトの設定 → スクリプトプロパティ に以下を追加:\n' +
+      '  MF_CLIENT_ID: (Client ID)\n' +
+      '  MF_CLIENT_SECRET: (Client Secret)'
+    );
+  }
+
+  return { clientId, clientSecret };
+}
+
+/**
  * MF OAuth2サービスを構築する
  * @return {OAuth2.Service}
  */
 function getMfOAuth2Service_() {
   const config = CF_CONFIG.MF_API;
+  const creds = getMfCredentials_();
 
   return OAuth2.createService('moneyforward')
     .setAuthorizationBaseUrl(config.AUTH_URL)
     .setTokenUrl(config.TOKEN_URL)
-    .setClientId(config.CLIENT_ID)
-    .setClientSecret(config.CLIENT_SECRET)
+    .setClientId(creds.clientId)
+    .setClientSecret(creds.clientSecret)
     .setScope(config.SCOPE)
     .setCallbackFunction('mfAuthCallback')
     .setPropertyStore(PropertiesService.getUserProperties())

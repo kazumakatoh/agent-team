@@ -2,10 +2,9 @@
  * キャッシュフロー管理システム - 設定ファイル
  * 株式会社LEVEL1 資金繰り管理
  *
- * ※ 以下の値を実際の環境に合わせて設定してください：
- *   - SPREADSHEET_ID
- *   - MF_API.CLIENT_ID / CLIENT_SECRET
- *   - ACCOUNTS 内の walletId（MF連携後に自動設定）
+ * ※ MF API の Client ID / Client Secret はコードに書かないこと！
+ *   スプレッドシートの「設定」シートに入力するか、
+ *   GASのスクリプトプロパティに設定してください。
  */
 
 const CF_CONFIG = {
@@ -29,13 +28,11 @@ const CF_CONFIG = {
   // マネーフォワードクラウド会計 API設定
   // ==============================
   MF_API: {
-    CLIENT_ID:     '',  // MFアプリポータルで発行されたClient ID
-    CLIENT_SECRET: '',  // MFアプリポータルで発行されたClient Secret
+    // Client ID / Secret はスクリプトプロパティから読み込む（getMfCredentials_()で取得）
     BASE_URL:      'https://accounting.moneyforward.com/api/v3',
     AUTH_URL:       'https://api.moneyforward.com/oauth/authorize',
     TOKEN_URL:      'https://api.moneyforward.com/oauth/token',
-    SCOPE:          'mfc/accounting/read',
-    OFFICE_ID:      ''   // 事業所ID（初回連携時に自動取得・保存）
+    SCOPE:          'mfc/accounting/read'
   },
 
   // ==============================
