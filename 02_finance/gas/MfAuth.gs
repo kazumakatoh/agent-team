@@ -1,0 +1,279 @@
+/**
+ * キャッシュフロー管理システム - マネーフォワード OAuth2認証モジュール
+ *
+ * OAuth2ライブラリ（apps-script-oauth2）を使用してMFクラウド会計と連携する。
+ *
+ * ■ 前提
+ *   - GASエディタ → ライブラリ → 以下のスクリプトIDを追加:
+ *     1B7FSrk5Zi6L1rSxxTDgDEUsPzlukDsi4KGuTMorsTQHhGBzBkMun4iDF
+ *     （OAuth2 for Apps Script）
+ *
+ * ■ MFアプリポータルでの設定
+ *   - リダイレクトURI: https://script.google.com/macros/d/{SCRIPT_ID}/usercallback
+ */
+
+/**
+ * MF OAuth2サービスを構築する
+ * @return {OAuth2.Service}
+ */
+function getMfOAuth2Service_() {
+  const config = CF_CONFIG.MF_API;
+
+  return OAuth2.createService('moneyforward')
+    .setAuthorizationBaseUrl(config.AUTH_URL)
+    .setTokenUrl(config.TOKEN_URL)
+    .setClientId(config.CLIENT_ID)
+    .setClientSecret(config.CLIENT_SECRET)
+    .setScope(config.SCOPE)
+    .setCallbackFunction('mfAuthCallback')
+    .setPropertyStore(PropertiesService.getUserProperties())
+    .setCache(CacheService.getUserCache());
+}
+
+/**
+ * OAuth2コールバック（リダイレクトURI先で呼ばれる）
+ * @param {Object} request
+ * @return {HtmlOutput}
+ */
+function mfAuthCallback(request) {
+  const service = getMfOAuth2Service_();
+  const authorized = service.handleCallback(request);
+
+  if (authorized) {
+    // 認証成功 → 事業所IDを自動取得して保存
+    try {
+      fetchAndSaveOfficeId_();
+      fetchAndSaveWalletIds_();
+      return HtmlService.createHtmlOutput(
+        '<h2>✅ マネーフォワード連携成功！</h2>' +
+        '<p>スプレッドシートに戻って「💰 CF管理」メニューから操作してください。</p>' +
+        '<p>このタブは閉じて構いません。</p>'
+      );
+    } catch (e) {
+      return HtmlService.createHtmlOutput(
+        '<h2>⚠️ 認証は成功しましたが、初期設定でエラーが発生しました</h2>' +
+        '<p>' + e.message + '</p>'
+      );
+    }
+  } else {
+    return HtmlService.createHtmlOutput(
+      '<h2>❌ 認証に失敗しました</h2>' +
+      '<p>もう一度やり直してください。</p>'
+    );
+  }
+}
+
+/**
+ * MF連携を開始する（認証URLをダイアログ表示）
+ */
+function startMfAuth() {
+  const service = getMfOAuth2Service_();
+
+  if (service.hasAccess()) {
+    SpreadsheetApp.getUi().alert('✅ マネーフォワードは既に連携済みです。\n\n再連携する場合は「MF連携解除」を実行してください。');
+    return;
+  }
+
+  const authUrl = service.getAuthorizationUrl();
+
+  const html = HtmlService.createHtmlOutput(`
+    <html>
+    <head>
+      <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; text-align: center; }
+        a { display: inline-block; margin-top: 16px; padding: 12px 32px; background: #1a73e8;
+            color: white; text-decoration: none; border-radius: 6px; font-size: 14px; }
+        a:hover { background: #1557b0; }
+        .note { font-size: 12px; color: #666; margin-top: 16px; }
+      </style>
+    </head>
+    <body>
+      <h3>🔗 マネーフォワード連携</h3>
+      <p>下のボタンをクリックして、MFクラウド会計へのアクセスを許可してください。</p>
+      <a href="${authUrl}" target="_blank">マネーフォワードに接続</a>
+      <p class="note">※ 認証後、このダイアログは閉じてください</p>
+    </body>
+    </html>
+  `).setWidth(420).setHeight(260);
+
+  SpreadsheetApp.getUi().showModalDialog(html, 'マネーフォワード連携');
+}
+
+/**
+ * MF連携を解除する
+ */
+function disconnectMf() {
+  const ui = SpreadsheetApp.getUi();
+  const result = ui.alert(
+    'MF連携解除',
+    'マネーフォワードとの連携を解除しますか？\n\n既に取り込んだデータは削除されません。',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (result !== ui.Button.YES) return;
+
+  const service = getMfOAuth2Service_();
+  service.reset();
+
+  // 保存済みの設定をクリア
+  const props = PropertiesService.getUserProperties();
+  props.deleteProperty('MF_OFFICE_ID');
+  props.deleteProperty('MF_WALLET_MAP');
+
+  ui.alert('✅ マネーフォワード連携を解除しました。');
+}
+
+/**
+ * MF連携状態を確認
+ * @return {boolean}
+ */
+function isMfConnected() {
+  const service = getMfOAuth2Service_();
+  return service.hasAccess();
+}
+
+/**
+ * MF APIにリクエストを送る（認証ヘッダー付き）
+ * @param {string} endpoint - APIエンドポイント（例: /offices）
+ * @param {Object} [params] - クエリパラメータ
+ * @return {Object} レスポンスJSON
+ */
+function mfApiRequest_(endpoint, params) {
+  const service = getMfOAuth2Service_();
+  if (!service.hasAccess()) {
+    throw new Error('マネーフォワード未連携です。メニューから「MF連携開始」を実行してください。');
+  }
+
+  let url = CF_CONFIG.MF_API.BASE_URL + endpoint;
+
+  if (params) {
+    const queryString = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+    if (queryString) url += '?' + queryString;
+  }
+
+  const response = UrlFetchApp.fetch(url, {
+    headers: {
+      'Authorization': 'Bearer ' + service.getAccessToken(),
+      'Content-Type': 'application/json'
+    },
+    muteHttpExceptions: true
+  });
+
+  const code = response.getResponseCode();
+  if (code === 401) {
+    // トークン期限切れ → リフレッシュ試行
+    service.refresh();
+    return mfApiRequest_(endpoint, params);
+  }
+  if (code === 429) {
+    // レート制限 → 5秒待ってリトライ
+    Utilities.sleep(5000);
+    return mfApiRequest_(endpoint, params);
+  }
+  if (code >= 400) {
+    throw new Error(`MF API エラー (${code}): ${response.getContentText()}`);
+  }
+
+  return JSON.parse(response.getContentText());
+}
+
+/**
+ * 事業所IDを取得して保存する
+ */
+function fetchAndSaveOfficeId_() {
+  const data = mfApiRequest_('/offices');
+  const offices = data.offices || [];
+
+  if (offices.length === 0) {
+    throw new Error('MFクラウド会計に事業所が見つかりません。');
+  }
+
+  // 最初の事業所を使用（通常は1つ）
+  const officeId = String(offices[0].id);
+  PropertiesService.getUserProperties().setProperty('MF_OFFICE_ID', officeId);
+  Logger.log('事業所ID保存: ' + officeId + ' (' + offices[0].display_name + ')');
+}
+
+/**
+ * 口座一覧を取得し、3口座のwallet IDを紐付けて保存する
+ */
+function fetchAndSaveWalletIds_() {
+  const officeId = getOfficeId_();
+  const data = mfApiRequest_(`/offices/${officeId}/walletables`);
+  const wallets = data.walletables || [];
+
+  Logger.log('取得した口座数: ' + wallets.length);
+
+  // 口座名でマッチング（部分一致）
+  const walletMap = {};
+  const matchPatterns = {
+    CF005: ['ビジネス営業', 'PayPay.*005', 'PayPay.*ビジネス'],
+    CF003: ['はやぶさ', 'PayPay.*003'],
+    SEIBU: ['西武信用金庫', '西武信金', '阿佐ヶ谷']
+  };
+
+  wallets.forEach(w => {
+    const walletName = w.name || '';
+    Logger.log(`口座: ${walletName} (type: ${w.type}, id: ${w.id})`);
+
+    for (const [accountKey, patterns] of Object.entries(matchPatterns)) {
+      if (walletMap[accountKey]) continue; // 既にマッチ済み
+      for (const pattern of patterns) {
+        if (new RegExp(pattern, 'i').test(walletName)) {
+          walletMap[accountKey] = {
+            id: String(w.id),
+            type: w.type,
+            name: walletName
+          };
+          Logger.log(`  → ${accountKey} にマッチ`);
+          break;
+        }
+      }
+    }
+  });
+
+  PropertiesService.getUserProperties().setProperty('MF_WALLET_MAP', JSON.stringify(walletMap));
+
+  // マッチ結果をログ
+  const matched = Object.keys(walletMap).length;
+  if (matched < 3) {
+    Logger.log(`⚠️ ${matched}/3 口座のみマッチ。設定シートで手動紐付けが必要です。`);
+  }
+}
+
+/**
+ * 保存済みの事業所IDを取得
+ * @return {string}
+ */
+function getOfficeId_() {
+  const officeId = PropertiesService.getUserProperties().getProperty('MF_OFFICE_ID');
+  if (!officeId) throw new Error('事業所IDが未設定です。MF連携を実行してください。');
+  return officeId;
+}
+
+/**
+ * 保存済みのwallet IDマップを取得
+ * @return {Object} { CF005: { id, type, name }, CF003: {...}, SEIBU: {...} }
+ */
+function getWalletMap_() {
+  const json = PropertiesService.getUserProperties().getProperty('MF_WALLET_MAP');
+  if (!json) throw new Error('口座マッピングが未設定です。MF連携を実行してください。');
+  return JSON.parse(json);
+}
+
+/**
+ * リダイレクトURIを表示する（MFアプリポータル設定用）
+ */
+function showRedirectUri() {
+  const scriptId = ScriptApp.getScriptId();
+  const redirectUri = `https://script.google.com/macros/d/${scriptId}/usercallback`;
+
+  SpreadsheetApp.getUi().alert(
+    'リダイレクトURI',
+    'MFアプリポータルの「リダイレクトURI」に以下を設定してください：\n\n' + redirectUri,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
