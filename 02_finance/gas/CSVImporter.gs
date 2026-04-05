@@ -4,7 +4,7 @@
  * ■ 使い方
  *   1. MF会計 → レポート → 推移試算表 → 部門選択 → 全期間 → CSVダウンロード
  *   2. Googleドライブの指定フォルダ（Config.gs の CSV_IMPORT.FOLDER_ID）にアップロード
- *      ファイル名 = 部門名.csv（例: 民泊.csv / 物販.csv / 全体_2024.csv）
+ *      ファイル名 = {部門名}_PL_{年}.csv（例: 物販_PL_2026.csv / 全体_PL_2026.csv）
  *   3. スプレッドシートのメニュー「📥 部門別CSVをインポート」を実行
  *
  * ■ MF会計 推移試算表のCSVフォーマット
@@ -65,11 +65,19 @@ const CSVImporter = {
         if (!/\.(csv|tsv|txt)$/i.test(fileName)) continue;
 
         // ファイル名から年度と部門名を抽出
-        // 対応: 民泊.csv / 民泊_2025.csv / 2024_全体.csv / 全体_2024.csv
-        const rawName   = fileName.replace(/\.(csv|tsv|txt)$/i, '').trim();
-        const yearMatch = rawName.match(/^(\d{4})[-_](.+)$|^(.+?)[-_](\d{4})$/);
-        const fileYear  = yearMatch ? parseInt(yearMatch[1] || yearMatch[4]) : null;
-        const deptKey   = yearMatch ? (yearMatch[2] || yearMatch[3]).trim() : rawName;
+        // 主形式: 物販_PL_2026.csv → deptKey=物販, fileYear=2026
+        // 旧形式: 民泊_2025.csv / 2024_全体.csv も引き続き対応
+        const rawName  = fileName.replace(/\.(csv|tsv|txt)$/i, '').trim();
+        let fileYear, deptKey;
+        const plMatch  = rawName.match(/^(.+?)_PL_(\d{4})$/i);
+        if (plMatch) {
+          deptKey  = plMatch[1].trim();
+          fileYear = parseInt(plMatch[2]);
+        } else {
+          const yearMatch = rawName.match(/^(\d{4})[-_](.+)$|^(.+?)[-_](\d{4})$/);
+          fileYear = yearMatch ? parseInt(yearMatch[1] || yearMatch[4]) : null;
+          deptKey  = yearMatch ? (yearMatch[2] || yearMatch[3]).trim() : rawName;
+        }
 
         if (fileYear !== null && fileYear !== targetYear) continue;
 
