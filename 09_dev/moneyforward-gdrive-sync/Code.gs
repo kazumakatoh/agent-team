@@ -29,6 +29,51 @@ var CONFIG = {
 };
 
 // ============================================================
+// レポート名設定
+// ============================================================
+
+/**
+ * 同期対象レポートの定義
+ * ここでレポート名・取得対象・部門フィルタを自由にカスタマイズ可能
+ *
+ * 各エントリの設定:
+ *   name     : ファイル名のプレフィックス（例: "物販_PL", "民泊_仕訳"）
+ *   type     : レポート種別 "journals" | "trial_bs" | "trial_pl"
+ *   department : 部門名（MF上の部門名と一致させる。nullなら全部門）
+ *   enabled  : true/false で個別に有効・無効を切替
+ */
+var REPORT_DEFINITIONS = [
+  // --- 物販部門 ---
+  { name: '物販_PL',   type: 'trial_pl',  department: '物販部門', enabled: true },
+  { name: '物販_BS',   type: 'trial_bs',  department: '物販部門', enabled: true },
+  { name: '物販_仕訳', type: 'journals',   department: '物販部門', enabled: true },
+
+  // --- 民泊部門 ---
+  { name: '民泊_PL',   type: 'trial_pl',  department: '民泊部門', enabled: true },
+  { name: '民泊_BS',   type: 'trial_bs',  department: '民泊部門', enabled: true },
+  { name: '民泊_仕訳', type: 'journals',   department: '民泊部門', enabled: true },
+
+  // --- 全社（部門指定なし） ---
+  { name: '全社_PL',   type: 'trial_pl',  department: null, enabled: true },
+  { name: '全社_BS',   type: 'trial_bs',  department: null, enabled: true },
+  { name: '全社_仕訳', type: 'journals',   department: null, enabled: true }
+];
+
+/**
+ * レポートのファイル名を生成
+ * @param {string} reportName - レポート名プレフィックス（例: "物販_PL"）
+ * @param {number} year - 年
+ * @param {number} month - 月（nullなら年次）
+ * @return {string} ファイル名（例: "物販_PL_2026_03.csv"）
+ */
+function buildFileName(reportName, year, month) {
+  if (month) {
+    return reportName + '_' + year + '_' + String(month).padStart(2, '0') + '.csv';
+  }
+  return reportName + '_' + year + '.csv';
+}
+
+// ============================================================
 // OAuth2 認証
 // ============================================================
 
@@ -133,18 +178,23 @@ function mfApiRequest(endpoint, params) {
  * 仕訳一覧を取得
  * @param {number} year - 年
  * @param {number} month - 月
+ * @param {string|null} department - 部門名（nullなら全部門）
  * @return {Array} 仕訳データ
  */
-function getJournals(year, month) {
+function getJournals(year, month, department) {
   var startDate = Utilities.formatDate(new Date(year, month - 1, 1), 'Asia/Tokyo', 'yyyy-MM-dd');
   var lastDay = new Date(year, month, 0).getDate();
   var endDate = Utilities.formatDate(new Date(year, month - 1, lastDay), 'Asia/Tokyo', 'yyyy-MM-dd');
 
-  var data = mfApiRequest('/journals', {
+  var params = {
     start_date: startDate,
     end_date: endDate
-  });
+  };
+  if (department) {
+    params.department = department;
+  }
 
+  var data = mfApiRequest('/journals', params);
   return data.journals || [];
 }
 
@@ -152,13 +202,18 @@ function getJournals(year, month) {
  * 試算表を取得
  * @param {number} year - 年
  * @param {number} month - 月
+ * @param {string|null} department - 部門名（nullなら全部門）
  * @return {Object} 試算表データ
  */
-function getTrialBalance(year, month) {
-  var data = mfApiRequest('/reports/trial_bs', {
+function getTrialBalance(year, month, department) {
+  var params = {
     fiscal_year: year,
     month: month
-  });
+  };
+  if (department) {
+    params.department = department;
+  }
+  var data = mfApiRequest('/reports/trial_bs', params);
   return data;
 }
 
@@ -166,13 +221,18 @@ function getTrialBalance(year, month) {
  * 損益計算書データを取得
  * @param {number} year - 年
  * @param {number} month - 月
+ * @param {string|null} department - 部門名（nullなら全部門）
  * @return {Object} PLデータ
  */
-function getProfitAndLoss(year, month) {
-  var data = mfApiRequest('/reports/trial_pl', {
+function getProfitAndLoss(year, month, department) {
+  var params = {
     fiscal_year: year,
     month: month
-  });
+  };
+  if (department) {
+    params.department = department;
+  }
+  var data = mfApiRequest('/reports/trial_pl', params);
   return data;
 }
 
@@ -293,7 +353,44 @@ function saveToDrive(fileName, content, mimeType) {
 // ============================================================
 
 /**
+ * REPORT_DEFINITIONS に基づいて1件のレポートを取得・保存
+ * @param {Object} def - REPORT_DEFINITIONS の1エントリ
+ * @param {number} year - 年
+ * @param {number} month - 月
+ * @return {string} 結果メッセージ
+ */
+function syncOneReport(def, year, month) {
+  var fileName = buildFileName(def.name, year, month);
+  var csv;
+
+  switch (def.type) {
+    case 'journals':
+      var journals = getJournals(year, month, def.department);
+      if (journals.length === 0) return def.name + ': データなし';
+      csv = journalsToCsv(journals);
+      saveToDrive(fileName, csv, 'text/csv');
+      return def.name + ': ' + journals.length + '件';
+
+    case 'trial_bs':
+      var bsData = getTrialBalance(year, month, def.department);
+      csv = trialBalanceToCsv(bsData, 'bs');
+      saveToDrive(fileName, csv, 'text/csv');
+      return def.name + ': 保存完了';
+
+    case 'trial_pl':
+      var plData = getProfitAndLoss(year, month, def.department);
+      csv = trialBalanceToCsv(plData, 'pl');
+      saveToDrive(fileName, csv, 'text/csv');
+      return def.name + ': 保存完了';
+
+    default:
+      return def.name + ': 不明なtype "' + def.type + '"';
+  }
+}
+
+/**
  * 月次レポートを取得してGoogle Driveに保存（メイン関数）
+ * REPORT_DEFINITIONS で定義されたレポートを順に処理する
  * タイマートリガーからこの関数を呼び出す
  */
 function syncMonthlyReports() {
@@ -303,62 +400,13 @@ function syncMonthlyReports() {
   var year = targetDate.getFullYear();
   var month = targetDate.getMonth() + 1;
 
-  Logger.log('=== MoneyForward → Google Drive 月次同期開始 ===');
-  Logger.log('対象期間: ' + year + '年' + month + '月');
-
-  var timestamp = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
-  var results = [];
-
-  // 1. 仕訳一覧
-  try {
-    var journals = getJournals(year, month);
-    if (journals.length > 0) {
-      var csv = journalsToCsv(journals);
-      var fileName = '仕訳一覧_' + year + '_' + String(month).padStart(2, '0') + '_' + timestamp + '.csv';
-      saveToDrive(fileName, csv, 'text/csv');
-      results.push('仕訳一覧: ' + journals.length + '件');
-    } else {
-      results.push('仕訳一覧: データなし');
-    }
-  } catch (e) {
-    results.push('仕訳一覧: エラー - ' + e.message);
-  }
-
-  // 2. 試算表（BS）
-  try {
-    var bsData = getTrialBalance(year, month);
-    var bsCsv = trialBalanceToCsv(bsData, 'bs');
-    var bsFileName = '試算表BS_' + year + '_' + String(month).padStart(2, '0') + '_' + timestamp + '.csv';
-    saveToDrive(bsFileName, bsCsv, 'text/csv');
-    results.push('試算表BS: 保存完了');
-  } catch (e) {
-    results.push('試算表BS: エラー - ' + e.message);
-  }
-
-  // 3. 損益計算書（PL）
-  try {
-    var plData = getProfitAndLoss(year, month);
-    var plCsv = trialBalanceToCsv(plData, 'pl');
-    var plFileName = '損益計算書PL_' + year + '_' + String(month).padStart(2, '0') + '_' + timestamp + '.csv';
-    saveToDrive(plFileName, plCsv, 'text/csv');
-    results.push('損益計算書PL: 保存完了');
-  } catch (e) {
-    results.push('損益計算書PL: エラー - ' + e.message);
-  }
-
-  // 実行結果をログ出力
-  Logger.log('=== 実行結果 ===');
-  results.forEach(function(r) { Logger.log(r); });
-  Logger.log('=== 同期完了 ===');
-
-  // メール通知（オプション）
-  sendNotification(year, month, results);
+  syncReportsByDefinitions(year, month);
 }
 
 /**
- * 指定年月のレポートを手動で取得（テスト用）
- * @param {number} year - 年
- * @param {number} month - 月
+ * 指定年月のレポートを手動で取得
+ * @param {number} year - 年（省略時: 今年）
+ * @param {number} month - 月（省略時: 今月）
  */
 function syncReportsManual(year, month) {
   if (!year || !month) {
@@ -366,20 +414,59 @@ function syncReportsManual(year, month) {
     year = now.getFullYear();
     month = now.getMonth() + 1;
   }
+  syncReportsByDefinitions(year, month);
+}
 
-  Logger.log('=== 手動同期: ' + year + '年' + month + '月 ===');
-
-  var timestamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd_HHmmss');
-
-  try {
-    var journals = getJournals(year, month);
-    var csv = journalsToCsv(journals);
-    var fileName = '仕訳一覧_' + year + '_' + String(month).padStart(2, '0') + '_' + timestamp + '.csv';
-    saveToDrive(fileName, csv, 'text/csv');
-    Logger.log('仕訳一覧を保存しました: ' + journals.length + '件');
-  } catch (e) {
-    Logger.log('エラー: ' + e.message);
+/**
+ * 特定のレポートだけを手動で取得
+ * 例: syncSingleReport('物販_PL', 2026, 3)
+ * @param {string} reportName - REPORT_DEFINITIONS の name と一致させる
+ * @param {number} year - 年
+ * @param {number} month - 月
+ */
+function syncSingleReport(reportName, year, month) {
+  var def = REPORT_DEFINITIONS.filter(function(d) { return d.name === reportName; })[0];
+  if (!def) {
+    Logger.log('エラー: "' + reportName + '" はREPORT_DEFINITIONSに定義されていません。');
+    Logger.log('利用可能なレポート名:');
+    REPORT_DEFINITIONS.forEach(function(d) { Logger.log('  - ' + d.name); });
+    return;
   }
+
+  Logger.log('=== 単体同期: ' + reportName + ' (' + year + '年' + month + '月) ===');
+  try {
+    var result = syncOneReport(def, year, month);
+    Logger.log(result);
+  } catch (e) {
+    Logger.log(def.name + ': エラー - ' + e.message);
+  }
+}
+
+/**
+ * REPORT_DEFINITIONS の全有効レポートを同期する内部関数
+ */
+function syncReportsByDefinitions(year, month) {
+  Logger.log('=== MoneyForward → Google Drive 同期開始 ===');
+  Logger.log('対象期間: ' + year + '年' + month + '月');
+
+  var enabledReports = REPORT_DEFINITIONS.filter(function(d) { return d.enabled; });
+  Logger.log('対象レポート数: ' + enabledReports.length + '件');
+
+  var results = [];
+  enabledReports.forEach(function(def) {
+    try {
+      var result = syncOneReport(def, year, month);
+      results.push(result);
+    } catch (e) {
+      results.push(def.name + ': エラー - ' + e.message);
+    }
+  });
+
+  Logger.log('=== 実行結果 ===');
+  results.forEach(function(r) { Logger.log(r); });
+  Logger.log('=== 同期完了 ===');
+
+  sendNotification(year, month, results);
 }
 
 // ============================================================
