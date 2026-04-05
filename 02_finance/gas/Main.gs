@@ -140,7 +140,6 @@ function runSingleDeptUpdate() {
  * 通期比較シートを作成する（第1期〜現在）
  */
 function runPeriodComparison() {
-  const ui        = SpreadsheetApp.getUi();
   const BASE_YEAR = 2018;
   const currYear  = getCurrentFiscalYear();
   const fiscalYears = [];
@@ -148,13 +147,12 @@ function runPeriodComparison() {
 
   try {
     SheetManager.writePeriodComparisonSheet(fiscalYears);
-    ui.alert(
-      `✅ 通期比較シートを作成しました。\n` +
-      `（${getFiscalPeriodLabel(BASE_YEAR)}〜${getFiscalPeriodLabel(currYear)}　${fiscalYears.length}期分）\n\n` +
-      `シート名: 通期比較_全体`
-    );
+    const msg = `✅ 通期比較シートを作成しました。\n（${getFiscalPeriodLabel(BASE_YEAR)}〜${getFiscalPeriodLabel(currYear)}　${fiscalYears.length}期分）\nシート名: 通期比較_全体`;
+    Logger.log(msg);
+    try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
   } catch (e) {
-    ui.alert(`❌ エラー: ${e.message}`);
+    Logger.log(`❌ エラー: ${e.message}`);
+    try { SpreadsheetApp.getUi().alert(`❌ エラー: ${e.message}`); } catch (e2) {}
   }
 }
 
