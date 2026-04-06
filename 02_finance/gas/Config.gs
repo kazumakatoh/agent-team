@@ -87,7 +87,7 @@ const CF_CONFIG = {
   // Dailyシートの合計列（3口座合算残高）
   DAILY_TOTAL_COL: 1,  // A列: 合計残高
   // Dailyシートのヘッダー行数
-  DAILY_HEADER_ROWS: 1,
+  DAILY_HEADER_ROWS: 2,
 
   // ==============================
   // 月次集計の入金カテゴリ
