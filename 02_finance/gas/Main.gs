@@ -15,16 +15,7 @@ function onOpen() {
     .addSeparator()
     .addItem('📥 PL: CSVインポートのみ', 'runCSVImport')
     .addItem('📊 PL: 通期比較シートのみ作成（全期分）', 'runPeriodComparison')
-    .addSeparator()
-    .addItem('🏠 ダッシュボードを作成', 'setupDashboard')
     .addToUi();
-}
-
-/**
- * ダッシュボードシートを作成する（初回のみ実行）
- */
-function setupDashboard() {
-  Dashboard.setup();
 }
 
 // ==============================
