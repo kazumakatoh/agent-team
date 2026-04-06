@@ -10,12 +10,13 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('📊 財務レポート')
-    .addItem('🏠 ダッシュボードを作成（初回セットアップ）', 'setupDashboard')
+    .addItem('🔄 月次更新：PL（CSVインポート＋通期比較シート更新）', 'runCurrentYearUpdate')
+    .addItem('🔄 月次更新：BS（貸借対照表 通期比較シート更新）', 'runBSPeriodComparison')
     .addSeparator()
-    .addItem('📥 PL: 部門別CSVをインポート（推移試算表）', 'runCSVImport')
-    .addItem('📊 PL: 通期比較シートを作成（第1期〜現在）', 'runPeriodComparison')
+    .addItem('📥 PL: CSVインポートのみ', 'runCSVImport')
+    .addItem('📊 PL: 通期比較シートのみ作成（全期分）', 'runPeriodComparison')
     .addSeparator()
-    .addItem('📥 BS: 通期比較シートを作成（貸借対照表）', 'runBSPeriodComparison')
+    .addItem('🏠 ダッシュボードを作成', 'setupDashboard')
     .addToUi();
 }
 
