@@ -78,16 +78,27 @@ const BSImporter = {
     const lines = csvText.split(/\r?\n/).filter(l => l.trim());
     if (lines.length < 2) throw new Error('CSVが空または不正です');
 
-    // ヘッダー行から期末残高列を検出（"終了月:" で始まる列）
-    const headerCells    = BSImporter._splitLine(lines[0]);
-    const balanceColIdx  = headerCells.findIndex(c => c.trim().startsWith('終了月:'));
+    // ヘッダー行から期末残高列を検出
+    // 形式1: "終了月:2026-02"（旧）
+    // 形式2: "2026-02" や "2026/02"（新）
+    const headerCells = BSImporter._splitLine(lines[0]);
+    let balanceColIdx = headerCells.findIndex(c => c.trim().startsWith('終了月:'));
+    if (balanceColIdx < 0) {
+      // 日付形式（YYYY-MM または YYYY/MM）の列を末尾から検索
+      balanceColIdx = headerCells.reduce((found, c, i) => {
+        return /^\d{4}[-\/]\d{2}$/.test(c.trim()) ? i : found;
+      }, -1);
+    }
     if (balanceColIdx < 0) throw new Error(
-      '期末残高列（終了月:）が見つかりません。\n' +
-      `ヘッダー: ${headerCells.slice(0, 8).join(' | ')}`
+      '期末残高列が見つかりません。\n' +
+      'ヘッダー: ' + headerCells.slice(0, 8).join(' | ')
     );
+
+    Logger.log('BS期末残高列: col' + balanceColIdx + ' = "' + headerCells[balanceColIdx] + '"');
 
     const level0Map = {}; // A列（カテゴリ・合計行）
     const level1Map = {}; // B列（勘定科目行）
+
 
     for (let i = 1; i < lines.length; i++) {
       const cells = BSImporter._splitLine(lines[i]);
