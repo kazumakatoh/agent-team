@@ -19,7 +19,7 @@
  * @return {Array<Object>} 入出金データ配列
  */
 function fetchWalletTransactions(accountKey, dateFrom, dateTo) {
-  const officeId = getOfficeId_();
+
   const walletMap = getWalletMap_();
   const walletInfo = walletMap[accountKey];
 
@@ -33,7 +33,7 @@ function fetchWalletTransactions(accountKey, dateFrom, dateTo) {
 
   while (true) {
     const data = mfApiRequest_(
-      `/offices/${officeId}/walletables/${walletInfo.type}/${walletInfo.id}/wallet_txns`,
+      `/walletables/${walletInfo.type}/${walletInfo.id}/wallet_txns`,
       {
         date_from: dateFrom,
         date_to: dateTo,
@@ -104,14 +104,14 @@ function fetchAllWalletTransactions(dateFrom, dateTo) {
  * @return {Array<Object>} 仕訳データ配列
  */
 function fetchDeals(dateFrom, dateTo) {
-  const officeId = getOfficeId_();
+
   const allDeals = [];
   let page = 1;
   const perPage = 100;
 
   while (true) {
     const data = mfApiRequest_(
-      `/offices/${officeId}/deals`,
+      `/deals`,
       {
         start_issue_date: dateFrom,
         end_issue_date: dateTo,
@@ -158,11 +158,11 @@ function fetchDeals(dateFrom, dateTo) {
  * @return {Object} { CF005: { balance, name }, CF003: {...}, SEIBU: {...} }
  */
 function fetchCurrentBalances() {
-  const officeId = getOfficeId_();
+
   const walletMap = getWalletMap_();
   const result = {};
 
-  const data = mfApiRequest_(`/offices/${officeId}/walletables`);
+  const data = mfApiRequest_(`/walletables`);
   const wallets = data.walletables || [];
 
   // walletMap のIDで照合

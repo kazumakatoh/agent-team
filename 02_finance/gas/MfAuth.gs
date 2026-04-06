@@ -204,28 +204,34 @@ function mfApiRequest_(endpoint, params) {
 
 /**
  * 事業所IDを取得して保存する
+ * MFクラウド会計APIはトークンに紐づく事業所データを直接返す
  */
 function fetchAndSaveOfficeId_() {
   const data = mfApiRequest_('/offices');
-  const offices = data.offices || [];
 
-  if (offices.length === 0) {
-    throw new Error('MFクラウド会計に事業所が見つかりません。');
+  // APIはトークンに紐づく事業所を直接返す（配列ではない）
+  // accounting_periodsがあれば事業所データが取得できている
+  if (data.accounting_periods || data.id || data.display_name) {
+    const officeId = String(data.id || 'default');
+    PropertiesService.getUserProperties().setProperty('MF_OFFICE_ID', officeId);
+    Logger.log('事業所データ取得成功: ' + JSON.stringify(data).substring(0, 200));
+  } else if (data.offices && data.offices.length > 0) {
+    // リスト形式で返る場合のフォールバック
+    const officeId = String(data.offices[0].id);
+    PropertiesService.getUserProperties().setProperty('MF_OFFICE_ID', officeId);
+    Logger.log('事業所ID保存: ' + officeId);
+  } else {
+    throw new Error('MFクラウド会計に事業所が見つかりません。レスポンス: ' + JSON.stringify(data).substring(0, 300));
   }
-
-  // 最初の事業所を使用（通常は1つ）
-  const officeId = String(offices[0].id);
-  PropertiesService.getUserProperties().setProperty('MF_OFFICE_ID', officeId);
-  Logger.log('事業所ID保存: ' + officeId + ' (' + offices[0].display_name + ')');
 }
 
 /**
  * 口座一覧を取得し、3口座のwallet IDを紐付けて保存する
  */
 function fetchAndSaveWalletIds_() {
-  const officeId = getOfficeId_();
-  const data = mfApiRequest_(`/offices/${officeId}/walletables`);
-  const wallets = data.walletables || [];
+  // トークンに紐づく事業所の口座一覧を取得（office_idはパスに不要）
+  const data = mfApiRequest_('/walletables');
+  const wallets = data.walletables || data || [];
 
   Logger.log('取得した口座数: ' + wallets.length);
 
