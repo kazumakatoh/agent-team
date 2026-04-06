@@ -74,6 +74,11 @@ const CSVImporter = {
           deptKey  = plMatch[1].trim();
           fileYear = parseInt(plMatch[2]);
         } else {
+          // BSファイル（例: 全体_BS_2026.csv）はPLインポート対象外のためスキップ
+          if (/_BS_/i.test(rawName)) {
+            Logger.log(`BSファイルをスキップ (PLインポート対象外): ${fileName}`);
+            continue;
+          }
           const yearMatch = rawName.match(/^(\d{4})[-_](.+)$|^(.+?)[-_](\d{4})$/);
           fileYear = yearMatch ? parseInt(yearMatch[1] || yearMatch[4]) : null;
           deptKey  = yearMatch ? (yearMatch[2] || yearMatch[3]).trim() : rawName;

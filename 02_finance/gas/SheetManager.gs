@@ -581,6 +581,14 @@ const SheetManager = {
     sheet.getRange(taxStart + 10, 1).setValue('　特別法人事業税（試算）');
     sheet.getRange(taxStart + 11, 1).setValue('　法人税等 合計（試算）');
 
+    // 中間納税セクション（taxStart+12〜17）
+    sheet.getRange(taxStart + 12, 1).setValue('');
+    sheet.getRange(taxStart + 13, 1).setValue('━━ 中間納税（試算） ━━');
+    sheet.getRange(taxStart + 14, 1).setValue('※前期確定申告額の1/2ベース（8月頃納付）');
+    sheet.getRange(taxStart + 15, 1).setValue('　法人税等 中間（試算）');
+    sheet.getRange(taxStart + 16, 1).setValue('　消費税 中間（試算）');
+    sheet.getRange(taxStart + 17, 1).setValue('　中間納税 合計（試算）');
+
     const pretaxIdx = CONFIG.PL_STRUCTURE.findIndex(item => item.label === '税引前当期純利益');
     const bsRef     = "'通期比較_BS'";
 
@@ -630,8 +638,22 @@ const SheetManager = {
         `=${vcl}${rHojin}+${vcl}${rJumin}+${vcl}${rJigyo}+${vcl}${rToku}`
       );
 
+      // 中間納税（前期確定申告額の1/2）
+      if (colIdx > 0) {
+        const pvcl = SheetManager._colLetter(valueCol - colsPerPeriod);
+        sheet.getRange(taxStart + 15, valueCol).setFormula(
+          `=ROUND(${pvcl}${taxStart + 11}/2,0)`
+        );
+        sheet.getRange(taxStart + 16, valueCol).setFormula(
+          `=IF(${pvcl}${taxStart + 4}="","",ROUND(${pvcl}${taxStart + 4}/2,0))`
+        );
+        sheet.getRange(taxStart + 17, valueCol).setFormula(
+          `=${vcl}${taxStart + 15}+IF(${vcl}${taxStart + 16}="",0,${vcl}${taxStart + 16})`
+        );
+      }
+
       // 数値フォーマット
-      [2, 3, 4, 7, 8, 9, 10, 11].forEach(offset => {
+      [2, 3, 4, 7, 8, 9, 10, 11, 15, 16, 17].forEach(offset => {
         sheet.getRange(taxStart + offset, valueCol).setNumberFormat('#,##0;[RED]-#,##0;"-"');
       });
     });
@@ -643,6 +665,10 @@ const SheetManager = {
          .setBorder(true, null, null, null, null, null, '#000000', SpreadsheetApp.BorderStyle.SOLID);
     sheet.getRange(taxStart +  6, 1, 1, totalCols).setBackground('#e8eaf6').setFontWeight('bold');
     sheet.getRange(taxStart + 11, 1, 1, totalCols).setBackground('#c5cae9').setFontWeight('bold')
+         .setBorder(true, null, null, null, null, null, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+    sheet.getRange(taxStart + 13, 1, 1, totalCols).setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.getRange(taxStart + 14, 1, 1, totalCols).setBackground('#fff9c4').setFontColor('#666600').setFontStyle('italic');
+    sheet.getRange(taxStart + 17, 1, 1, totalCols).setBackground('#c5cae9').setFontWeight('bold')
          .setBorder(true, null, null, null, null, null, '#000000', SpreadsheetApp.BorderStyle.SOLID);
 
     Logger.log(`通期比較シート作成完了: ${sheetName}（${numPeriods}期分）`);
