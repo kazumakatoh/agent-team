@@ -81,6 +81,9 @@ function syncMonthToDaily(year, month) {
   // 3口座合計を更新
   updateDailyTotals_();
 
+  // 現残高シートを更新
+  updateCurrentBalanceSheet_();
+
   // アラートチェック
   checkCashOutRisk();
 
@@ -177,6 +180,7 @@ function syncDateRangeToDaily(dateFrom, dateTo) {
 
   Object.keys(CF_CONFIG.ACCOUNTS).forEach(key => recalculateBalances(key));
   updateDailyTotals_();
+  updateCurrentBalanceSheet_();
   checkCashOutRisk();
 
   SpreadsheetApp.getUi().alert(
@@ -337,6 +341,8 @@ function recalculateBalances(accountKey) {
 
 /**
  * 3口座の合計残高（A列）を更新する
+ * 各行で3口座それぞれの「その行までの最新残高」を合算する
+ * アラート基準はPayPay 005の残高で判定（A列の色付け）
  */
 function updateDailyTotals_() {
   const ss = getCfSpreadsheet();
@@ -357,22 +363,53 @@ function updateDailyTotals_() {
     balanceCols[key] = sheet.getRange(headerRows + 1, cols.BALANCE, numRows, 1).getValues();
   });
 
-  // A列に3口座合計を書き込み
+  // 各口座の「最新残高」を追跡しながら合計を計算
+  const latestBalance = {};
+  accountKeys.forEach(key => { latestBalance[key] = 0; });
+
   const totals = [];
   for (let i = 0; i < numRows; i++) {
-    let total = 0;
-    let hasData = false;
+    // 各口座の残高を更新（値がある場合のみ更新）
     accountKeys.forEach(key => {
       const val = Number(balanceCols[key][i][0]) || 0;
-      if (val !== 0) hasData = true;
-      total += val;
+      if (val !== 0) latestBalance[key] = val;
     });
-    totals.push([hasData ? total : '']);
+
+    // 3口座合計
+    let total = 0;
+    let hasAnyData = false;
+    accountKeys.forEach(key => {
+      total += latestBalance[key];
+      if (latestBalance[key] !== 0) hasAnyData = true;
+    });
+
+    totals.push([hasAnyData ? total : '']);
   }
 
-  sheet.getRange(headerRows + 1, CF_CONFIG.DAILY_TOTAL_COL, numRows, 1)
-    .setValues(totals)
-    .setNumberFormat('#,##0');
+  // A列に書き込み
+  const totalRange = sheet.getRange(headerRows + 1, CF_CONFIG.DAILY_TOTAL_COL, numRows, 1);
+  totalRange.setValues(totals).setNumberFormat('#,##0');
+
+  // アラート色付け（PayPay 005の残高ベース）
+  const alertCols = CF_CONFIG.ACCOUNTS[CF_CONFIG.ALERT.ALERT_ACCOUNT].daily;
+  const alertBalances = sheet.getRange(headerRows + 1, alertCols.BALANCE, numRows, 1).getValues();
+  let latestAlertBalance = 0;
+
+  for (let i = 0; i < numRows; i++) {
+    const alertVal = Number(alertBalances[i][0]) || 0;
+    if (alertVal !== 0) latestAlertBalance = alertVal;
+
+    const cell = sheet.getRange(headerRows + 1 + i, CF_CONFIG.DAILY_TOTAL_COL);
+    if (totals[i][0] === '') continue;
+
+    if (latestAlertBalance <= CF_CONFIG.ALERT.DANGER_THRESHOLD && latestAlertBalance !== 0) {
+      cell.setBackground('#ffcdd2').setFontColor('#b71c1c').setFontWeight('bold');
+    } else if (latestAlertBalance <= CF_CONFIG.ALERT.WARNING_THRESHOLD && latestAlertBalance !== 0) {
+      cell.setBackground('#fff9c4').setFontColor('#f57f17').setFontWeight('bold');
+    } else {
+      cell.setBackground(null).setFontColor('#000000').setFontWeight('normal');
+    }
+  }
 }
 
 // ==============================
