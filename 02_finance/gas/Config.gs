@@ -374,6 +374,7 @@ const CONFIG = {
     { category: 'header',   label: '流動資産',             indent: 0 },
     { category: 'account',  label: '現金及び預金',         indent: 1, srcLevel: 0, srcLabel: '現金及び預金合計' },
     { category: 'account',  label: '売掛金',               indent: 1, srcLevel: 1, srcLabel: '売掛金' },
+    { category: 'account',  label: '仮払消費税',           indent: 1, srcLevel: 1, srcLabel: '仮払消費税' },
     { category: 'account',  label: '商品',                 indent: 1, srcLevel: 0, srcLabel: '棚卸資産合計' },
     { category: 'account',  label: 'その他流動資産',       indent: 1, srcLevel: 0, srcLabel: 'その他流動資産合計' },
     { category: 'subtotal', label: '流動資産合計',         indent: 0, srcLevel: 0, srcLabel: '流動資産合計',         isBold: true, isBorderTop: true },

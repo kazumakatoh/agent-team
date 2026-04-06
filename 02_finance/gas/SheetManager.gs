@@ -564,6 +564,87 @@ const SheetManager = {
     sheet.setFrozenRows(3);
     sheet.setFrozenColumns(1);
 
+    // ── 税金試算セクション ──────────────────────────
+    const taxStart = dataStart + numItems + 2; // PL行の2行下から開始
+
+    // ラベル
+    sheet.getRange(taxStart,      1).setValue('━━ 税金試算 ━━');
+    sheet.getRange(taxStart +  1, 1).setValue('消費税');
+    sheet.getRange(taxStart +  2, 1).setValue('　仮受消費税');
+    sheet.getRange(taxStart +  3, 1).setValue('　仮払消費税');
+    sheet.getRange(taxStart +  4, 1).setValue('　支払消費税（試算）');
+    sheet.getRange(taxStart +  5, 1).setValue('');
+    sheet.getRange(taxStart +  6, 1).setValue('法人税等（東京都杉並区・試算）');
+    sheet.getRange(taxStart +  7, 1).setValue('　法人税（試算）');
+    sheet.getRange(taxStart +  8, 1).setValue('　法人住民税（試算）');
+    sheet.getRange(taxStart +  9, 1).setValue('　法人事業税（試算）');
+    sheet.getRange(taxStart + 10, 1).setValue('　特別法人事業税（試算）');
+    sheet.getRange(taxStart + 11, 1).setValue('　法人税等 合計（試算）');
+
+    const pretaxIdx = CONFIG.PL_STRUCTURE.findIndex(item => item.label === '税引前当期純利益');
+    const bsRef     = "'通期比較_BS'";
+
+    fiscalYears.forEach((year, colIdx) => {
+      const valueCol  = 2 + colIdx * colsPerPeriod;
+      const vcl       = SheetManager._colLetter(valueCol);
+      const srcName2  = buildSheetName(year, 'PL_CONSOLIDATED');
+      const srcSheet2 = ss.getSheetByName(srcName2);
+      if (!srcSheet2) return;
+
+      const pretaxRow  = dataStart + pretaxIdx;
+      const pretaxCell = `${vcl}${pretaxRow}`;
+      const phStr      = getFiscalPeriodLabel(year);
+
+      const rKariUke = taxStart + 2;
+      const rKariBar = taxStart + 3;
+      const rHojin   = taxStart + 7;
+      const rJumin   = taxStart + 8;
+      const rJigyo   = taxStart + 9;
+      const rToku    = taxStart + 10;
+
+      // 消費税（通期比較_BSから取得）
+      sheet.getRange(taxStart + 2, valueCol).setFormula(
+        `=IFERROR(INDEX(${bsRef}!$A:$Z,MATCH("　仮受消費税",${bsRef}!$A:$A,0),MATCH("${phStr}",${bsRef}!$2:$2,0)),"")`
+      );
+      sheet.getRange(taxStart + 3, valueCol).setFormula(
+        `=IFERROR(INDEX(${bsRef}!$A:$Z,MATCH("　仮払消費税",${bsRef}!$A:$A,0),MATCH("${phStr}",${bsRef}!$2:$2,0)),"")`
+      );
+      sheet.getRange(taxStart + 4, valueCol).setFormula(
+        `=IF(${vcl}${rKariUke}="","",ROUND(${vcl}${rKariUke}-${vcl}${rKariBar},0))`
+      );
+
+      // 法人税等（東京都杉並区・超過累進税率）
+      sheet.getRange(taxStart + 7, valueCol).setFormula(
+        `=IF(${pretaxCell}<=0,0,ROUND(MIN(${pretaxCell},8000000)*0.15+MAX(${pretaxCell}-8000000,0)*0.232,0))`
+      );
+      sheet.getRange(taxStart + 8, valueCol).setFormula(
+        `=IF(${pretaxCell}<=0,70000,ROUND(${vcl}${rHojin}*0.07,0)+70000)`
+      );
+      sheet.getRange(taxStart + 9, valueCol).setFormula(
+        `=IF(${pretaxCell}<=0,0,ROUND(MIN(${pretaxCell},4000000)*0.035+MAX(MIN(${pretaxCell},8000000)-4000000,0)*0.053+MAX(${pretaxCell}-8000000,0)*0.07,0))`
+      );
+      sheet.getRange(taxStart + 10, valueCol).setFormula(
+        `=IF(${pretaxCell}<=0,0,ROUND(${vcl}${rJigyo}*0.37,0))`
+      );
+      sheet.getRange(taxStart + 11, valueCol).setFormula(
+        `=${vcl}${rHojin}+${vcl}${rJumin}+${vcl}${rJigyo}+${vcl}${rToku}`
+      );
+
+      // 数値フォーマット
+      [2, 3, 4, 7, 8, 9, 10, 11].forEach(offset => {
+        sheet.getRange(taxStart + offset, valueCol).setNumberFormat('#,##0;[RED]-#,##0;"-"');
+      });
+    });
+
+    // スタイル
+    sheet.getRange(taxStart,      1, 1, totalCols).setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.getRange(taxStart +  1, 1, 1, totalCols).setBackground('#e8eaf6').setFontWeight('bold');
+    sheet.getRange(taxStart +  4, 1, 1, totalCols).setBackground('#c5cae9').setFontWeight('bold')
+         .setBorder(true, null, null, null, null, null, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+    sheet.getRange(taxStart +  6, 1, 1, totalCols).setBackground('#e8eaf6').setFontWeight('bold');
+    sheet.getRange(taxStart + 11, 1, 1, totalCols).setBackground('#c5cae9').setFontWeight('bold')
+         .setBorder(true, null, null, null, null, null, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+
     Logger.log(`通期比較シート作成完了: ${sheetName}（${numPeriods}期分）`);
     return sheet;
   },
