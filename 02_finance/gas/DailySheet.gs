@@ -341,8 +341,14 @@ function recalculateBalances(accountKey) {
 
 /**
  * 3口座の合計残高（A列）を更新する
- * 各行で3口座それぞれの「その行までの最新残高」を合算する
- * アラート基準はPayPay 005の残高で判定（A列の色付け）
+ *
+ * 各行の日付を確認し、その日付時点での各口座の最新残高を合算する。
+ * 口座ごとにデータの行位置がずれていても、日付ベースで正確に合算される。
+ *
+ * ロジック:
+ *  1. 全口座の日付→残高マップを構築（日付ごとの最新残高）
+ *  2. 全行を走査し、各行の最大日付を取得
+ *  3. その日付以前の各口座の最新残高を合算してA列に書き込み
  */
 function updateDailyTotals_() {
   const ss = getCfSpreadsheet();
@@ -356,55 +362,90 @@ function updateDailyTotals_() {
   const numRows = lastRow - headerRows;
   const accountKeys = Object.keys(CF_CONFIG.ACCOUNTS);
 
-  // 各口座の残高列を取得
-  const balanceCols = {};
+  // 各口座の日付・残高データを取得
+  const accountData = {};
   accountKeys.forEach(key => {
     const cols = CF_CONFIG.ACCOUNTS[key].daily;
-    balanceCols[key] = sheet.getRange(headerRows + 1, cols.BALANCE, numRows, 1).getValues();
+    const dates = sheet.getRange(headerRows + 1, cols.DATE, numRows, 1).getValues();
+    const balances = sheet.getRange(headerRows + 1, cols.BALANCE, numRows, 1).getValues();
+
+    // 日付順の残高リスト（日付→残高のペア、最新値を保持）
+    const dateBalanceMap = [];
+    let lastBal = 0;
+    for (let i = 0; i < numRows; i++) {
+      const d = dates[i][0];
+      const bal = Number(balances[i][0]) || 0;
+      if (d instanceof Date && bal !== 0) {
+        lastBal = bal;
+        dateBalanceMap.push({ date: d.getTime(), balance: bal });
+      }
+    }
+    accountData[key] = { dateBalanceMap, lastKnownBalance: lastBal };
   });
 
-  // 各口座の「最新残高」を追跡しながら合計を計算
-  const latestBalance = {};
-  accountKeys.forEach(key => { latestBalance[key] = 0; });
+  // 各行の「行にある最も新しい日付」を特定し、その日付時点の3口座合計を計算
+  const allDates = {};
+  accountKeys.forEach(key => {
+    const cols = CF_CONFIG.ACCOUNTS[key].daily;
+    const dates = sheet.getRange(headerRows + 1, cols.DATE, numRows, 1).getValues();
+    for (let i = 0; i < numRows; i++) {
+      if (dates[i][0] instanceof Date) {
+        allDates[i] = allDates[i] || [];
+        allDates[i].push(dates[i][0].getTime());
+      }
+    }
+  });
 
   const totals = [];
+  const alertBalances = []; // PayPay005の残高（アラート用）
+
   for (let i = 0; i < numRows; i++) {
-    // 各口座の残高を更新（値がある場合のみ更新）
-    accountKeys.forEach(key => {
-      const val = Number(balanceCols[key][i][0]) || 0;
-      if (val !== 0) latestBalance[key] = val;
-    });
+    const rowDates = allDates[i] || [];
+    if (rowDates.length === 0) {
+      totals.push(['']);
+      alertBalances.push(0);
+      continue;
+    }
 
-    // 3口座合計
+    // この行の日付（複数口座にデータがある場合は最大の日付を使用）
+    const rowDate = Math.max(...rowDates);
+
+    // 各口座のこの日付時点の最新残高を取得
     let total = 0;
-    let hasAnyData = false;
+    let cf005Balance = 0;
+
     accountKeys.forEach(key => {
-      total += latestBalance[key];
-      if (latestBalance[key] !== 0) hasAnyData = true;
+      const data = accountData[key];
+      // この日付以前の最新残高を探す
+      let bal = 0;
+      for (let j = data.dateBalanceMap.length - 1; j >= 0; j--) {
+        if (data.dateBalanceMap[j].date <= rowDate) {
+          bal = data.dateBalanceMap[j].balance;
+          break;
+        }
+      }
+      total += bal;
+      if (key === CF_CONFIG.ALERT.ALERT_ACCOUNT) cf005Balance = bal;
     });
 
-    totals.push([hasAnyData ? total : '']);
+    totals.push([total]);
+    alertBalances.push(cf005Balance);
   }
 
   // A列に書き込み
-  const totalRange = sheet.getRange(headerRows + 1, CF_CONFIG.DAILY_TOTAL_COL, numRows, 1);
-  totalRange.setValues(totals).setNumberFormat('#,##0');
+  sheet.getRange(headerRows + 1, CF_CONFIG.DAILY_TOTAL_COL, numRows, 1)
+    .setValues(totals)
+    .setNumberFormat('#,##0');
 
   // アラート色付け（PayPay 005の残高ベース）
-  const alertCols = CF_CONFIG.ACCOUNTS[CF_CONFIG.ALERT.ALERT_ACCOUNT].daily;
-  const alertBalances = sheet.getRange(headerRows + 1, alertCols.BALANCE, numRows, 1).getValues();
-  let latestAlertBalance = 0;
-
   for (let i = 0; i < numRows; i++) {
-    const alertVal = Number(alertBalances[i][0]) || 0;
-    if (alertVal !== 0) latestAlertBalance = alertVal;
-
     const cell = sheet.getRange(headerRows + 1 + i, CF_CONFIG.DAILY_TOTAL_COL);
     if (totals[i][0] === '') continue;
 
-    if (latestAlertBalance <= CF_CONFIG.ALERT.DANGER_THRESHOLD && latestAlertBalance !== 0) {
+    const cf005Bal = alertBalances[i];
+    if (cf005Bal > 0 && cf005Bal <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
       cell.setBackground('#ffcdd2').setFontColor('#b71c1c').setFontWeight('bold');
-    } else if (latestAlertBalance <= CF_CONFIG.ALERT.WARNING_THRESHOLD && latestAlertBalance !== 0) {
+    } else if (cf005Bal > 0 && cf005Bal <= CF_CONFIG.ALERT.WARNING_THRESHOLD) {
       cell.setBackground('#fff9c4').setFontColor('#f57f17').setFontWeight('bold');
     } else {
       cell.setBackground(null).setFontColor('#000000').setFontWeight('normal');
