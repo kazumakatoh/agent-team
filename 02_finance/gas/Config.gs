@@ -16,10 +16,7 @@ const CF_CONFIG = {
 
   SHEETS: {
     DAILY:       'Daily',       // 日次入出金記録
-    CF005:       'CF005',       // PayPay 005 月別集計
-    CF003:       'CF003',       // PayPay 003 月別集計
-    SEIBU:       '西武信金',     // 西武信用金庫 月別集計
-    MONTHLY:     '月別',        // 3口座合算サマリー
+    MONTHLY:     '月別',        // 月次集計（3口座集約）
     SETTINGS:    '設定',        // カテゴリマスタ・設定
     CURRENT_BAL: '現残高'       // 各口座の現在残高
   },

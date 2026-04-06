@@ -13,10 +13,7 @@ function runSetup() {
     '初期セットアップ',
     '以下のシートを作成します:\n\n' +
     '・Daily（日次入出金）\n' +
-    '・CF005（PayPay 005 月別集計）\n' +
-    '・CF003（PayPay 003 月別集計）\n' +
-    '・西武信金（西武信用金庫 月別集計）\n' +
-    '・月別（3口座合算サマリー）\n' +
+    '・月別（月次集計）\n' +
     '・設定（マスタ設定）\n' +
     '・現残高（各口座の現在残高）\n\n' +
     '既にあるシートはスキップします。',
@@ -28,9 +25,6 @@ function runSetup() {
   const ss = getCfSpreadsheet();
 
   createDailySheet_(ss);
-  createAccountSheet_(ss, 'CF005');
-  createAccountSheet_(ss, 'CF003');
-  createAccountSheet_(ss, '西武信金');
   createMonthlySheet_(ss);
   createSettingsSheet_(ss);
   createCurrentBalanceSheet_(ss);
