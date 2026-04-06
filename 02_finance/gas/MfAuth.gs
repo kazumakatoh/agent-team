@@ -229,11 +229,39 @@ function fetchAndSaveOfficeId_() {
  * 口座一覧を取得し、3口座のwallet IDを紐付けて保存する
  */
 function fetchAndSaveWalletIds_() {
-  // トークンに紐づく事業所の口座一覧を取得（office_idはパスに不要）
-  const data = mfApiRequest_('/walletables');
-  const wallets = data.walletables || data || [];
+  // 勘定科目一覧から銀行口座（現金・預金カテゴリ）を取得
+  const data = mfApiRequest_('/accounts');
+  const accounts = data.accounts || [];
 
-  Logger.log('取得した口座数: ' + wallets.length);
+  Logger.log('取得した勘定科目数: ' + accounts.length);
+
+  // 銀行口座を抽出（CASH_AND_DEPOSITS カテゴリ）
+  const bankAccounts = [];
+  accounts.forEach(acct => {
+    if (acct.category === 'CASH_AND_DEPOSITS' || acct.account_group === 'ASSET') {
+      // sub_accountsがあればそちらも確認
+      const subs = acct.sub_accounts || [];
+      if (subs.length > 0) {
+        subs.forEach(sub => {
+          bankAccounts.push({
+            id: sub.id || sub.account_id,
+            name: sub.name || acct.name,
+            parentName: acct.name,
+            type: 'bank_account'
+          });
+        });
+      }
+      bankAccounts.push({
+        id: acct.id || acct.account_id,
+        name: acct.name,
+        parentName: '',
+        type: 'bank_account'
+      });
+    }
+  });
+
+  Logger.log('銀行口座候補数: ' + bankAccounts.length);
+  bankAccounts.forEach(b => Logger.log(`  口座: ${b.name} (id: ${b.id})`));
 
   // 口座名でマッチング（部分一致）
   const walletMap = {};
@@ -243,12 +271,11 @@ function fetchAndSaveWalletIds_() {
     SEIBU: ['西武信用金庫', '西武信金', '阿佐ヶ谷']
   };
 
-  wallets.forEach(w => {
+  bankAccounts.forEach(w => {
     const walletName = w.name || '';
-    Logger.log(`口座: ${walletName} (type: ${w.type}, id: ${w.id})`);
 
     for (const [accountKey, patterns] of Object.entries(matchPatterns)) {
-      if (walletMap[accountKey]) continue; // 既にマッチ済み
+      if (walletMap[accountKey]) continue;
       for (const pattern of patterns) {
         if (new RegExp(pattern, 'i').test(walletName)) {
           walletMap[accountKey] = {

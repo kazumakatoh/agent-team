@@ -27,40 +27,49 @@ function fetchWalletTransactions(accountKey, dateFrom, dateTo) {
     throw new Error(`口座 ${accountKey} のwallet IDが未設定です。MF連携を再実行してください。`);
   }
 
+  // 仕訳データ（journals）から該当口座の入出金を抽出
   const allTxns = [];
   let page = 1;
   const perPage = 100;
 
   while (true) {
     const data = mfApiRequest_(
-      `/walletables/${walletInfo.type}/${walletInfo.id}/wallet_txns`,
+      '/journals',
       {
-        date_from: dateFrom,
-        date_to: dateTo,
+        start_date: dateFrom,
+        end_date: dateTo,
         page: page,
         per_page: perPage
       }
     );
 
-    const txns = data.wallet_txns || [];
-    if (txns.length === 0) break;
+    const journals = data.journals || [];
+    if (journals.length === 0) break;
 
-    txns.forEach(tx => {
-      allTxns.push({
-        date: new Date(tx.date),
-        content: tx.description || tx.note || '',
-        deposit: tx.entry_side === 'income' ? (tx.amount || 0) : 0,
-        withdrawal: tx.entry_side === 'expense' ? (tx.amount || 0) : 0,
-        balance: tx.balance || 0,
-        walletTxnId: String(tx.id),
-        source: CF_CONFIG.SOURCE.MF
+    journals.forEach(journal => {
+      // 仕訳の借方・貸方から該当口座を抽出
+      const entries = journal.entries || journal.journal_entries || [];
+      entries.forEach(entry => {
+        const acctId = String(entry.account_id || entry.sub_account_id || '');
+        const acctName = entry.account_name || '';
+
+        // 口座IDまたは口座名でマッチ
+        if (acctId === walletInfo.id || acctName.includes(walletInfo.name)) {
+          const isDebit = entry.side === 'debit';
+          allTxns.push({
+            date: new Date(journal.date || journal.journal_date),
+            content: journal.description || journal.note || entry.description || '',
+            deposit: isDebit ? (entry.amount || 0) : 0,
+            withdrawal: !isDebit ? (entry.amount || 0) : 0,
+            balance: 0,
+            source: CF_CONFIG.SOURCE.MF
+          });
+        }
       });
     });
 
-    if (txns.length < perPage) break;
+    if (journals.length < perPage) break;
     page++;
-
-    // レート制限対策
     Utilities.sleep(500);
   }
 
@@ -111,23 +120,23 @@ function fetchDeals(dateFrom, dateTo) {
 
   while (true) {
     const data = mfApiRequest_(
-      `/deals`,
+      '/journals',
       {
-        start_issue_date: dateFrom,
-        end_issue_date: dateTo,
+        start_date: dateFrom,
+        end_date: dateTo,
         page: page,
         per_page: perPage
       }
     );
 
-    const deals = data.deals || [];
+    const deals = data.journals || [];
     if (deals.length === 0) break;
 
     deals.forEach(deal => {
-      const details = deal.details || [];
+      const details = deal.entries || deal.journal_entries || deal.details || [];
       details.forEach(detail => {
         allDeals.push({
-          date: new Date(deal.issue_date),
+          date: new Date(deal.date || deal.journal_date || deal.issue_date),
           type: deal.type,  // 'income' or 'expense'
           accountItemName: detail.account_item_name || '',
           taxName: detail.tax_name || '',
@@ -162,17 +171,24 @@ function fetchCurrentBalances() {
   const walletMap = getWalletMap_();
   const result = {};
 
-  const data = mfApiRequest_(`/walletables`);
-  const wallets = data.walletables || [];
+  // 試算表（残高試算表）から口座残高を取得
+  try {
+    const today = Utilities.formatDate(new Date(), CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
+    const data = mfApiRequest_('/accounts');
+    const accounts = data.accounts || [];
 
-  // walletMap のIDで照合
-  for (const [accountKey, walletInfo] of Object.entries(walletMap)) {
-    const wallet = wallets.find(w => String(w.id) === walletInfo.id && w.type === walletInfo.type);
-    if (wallet) {
+    for (const [accountKey, walletInfo] of Object.entries(walletMap)) {
+      // accounts から名前でマッチング
+      const account = accounts.find(a => {
+        if (String(a.id) === walletInfo.id) return true;
+        const subs = a.sub_accounts || [];
+        return subs.some(s => String(s.id) === walletInfo.id);
+      });
+
       result[accountKey] = {
-        balance: wallet.last_balance || 0,
-        name: wallet.name,
-        lastSyncedAt: wallet.last_synced_at || ''
+        balance: 0, // 残高はDailyシートから計算
+        name: walletInfo.name,
+        lastSyncedAt: new Date().toISOString()
       };
     }
   }
