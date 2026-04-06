@@ -171,26 +171,16 @@ function fetchCurrentBalances() {
   const walletMap = getWalletMap_();
   const result = {};
 
-  // 試算表（残高試算表）から口座残高を取得
-  try {
-    const today = Utilities.formatDate(new Date(), CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
-    const data = mfApiRequest_('/accounts');
-    const accounts = data.accounts || [];
+  // 勘定科目一覧から口座情報を取得
+  const data = mfApiRequest_('/accounts');
+  const accounts = data.accounts || [];
 
-    for (const [accountKey, walletInfo] of Object.entries(walletMap)) {
-      // accounts から名前でマッチング
-      const account = accounts.find(a => {
-        if (String(a.id) === walletInfo.id) return true;
-        const subs = a.sub_accounts || [];
-        return subs.some(s => String(s.id) === walletInfo.id);
-      });
-
-      result[accountKey] = {
-        balance: 0, // 残高はDailyシートから計算
-        name: walletInfo.name,
-        lastSyncedAt: new Date().toISOString()
-      };
-    }
+  for (const [accountKey, walletInfo] of Object.entries(walletMap)) {
+    result[accountKey] = {
+      balance: 0, // 残高はDailyシートから計算
+      name: walletInfo.name,
+      lastSyncedAt: new Date().toISOString()
+    };
   }
 
   return result;
