@@ -65,18 +65,21 @@ function mfAuthCallback(request) {
     // 認証成功 → 事業所IDを自動取得して保存
     try {
       fetchAndSaveOfficeId_();
-      fetchAndSaveWalletIds_();
-      return HtmlService.createHtmlOutput(
-        '<h2>✅ マネーフォワード連携成功！</h2>' +
-        '<p>スプレッドシートに戻って「💰 CF管理」メニューから操作してください。</p>' +
-        '<p>このタブは閉じて構いません。</p>'
-      );
     } catch (e) {
-      return HtmlService.createHtmlOutput(
-        '<h2>⚠️ 認証は成功しましたが、初期設定でエラーが発生しました</h2>' +
-        '<p>' + e.message + '</p>'
-      );
+      Logger.log('事業所ID取得エラー（無視）: ' + e.message);
     }
+
+    try {
+      fetchAndSaveWalletIds_();
+    } catch (e) {
+      Logger.log('口座マッピングエラー（無視）: ' + e.message);
+    }
+
+    return HtmlService.createHtmlOutput(
+      '<h2>✅ マネーフォワード連携成功！</h2>' +
+      '<p>スプレッドシートに戻って「💰 CF管理」メニューから操作してください。</p>' +
+      '<p>このタブは閉じて構いません。</p>'
+    );
   } else {
     return HtmlService.createHtmlOutput(
       '<h2>❌ 認証に失敗しました</h2>' +
