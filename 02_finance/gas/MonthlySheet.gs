@@ -76,7 +76,8 @@ function updateAccountMonthlySheet(accountKey, year) {
   });
 
   // 月別データを取得して書き込む
-  let prevClosing = 0;
+  // 前月繰越残高をDailyシートから取得（前月繰越行の残高）
+  let prevClosing = getCarryForwardBalance_(accountKey);
   let cumDiff = 0;
 
   for (let m = 1; m <= 12; m++) {
@@ -366,4 +367,33 @@ function updateAllMonthlySheets() {
   updateConsolidatedMonthlySheet(year);
 
   ui.alert(`✅ ${year}年の月次集計を更新しました。`);
+}
+
+/**
+ * Dailyシートから前月繰越残高を取得する
+ * 最初の行（入出金なし、残高のみ）を前月繰越として返す
+ * @param {string} accountKey
+ * @return {number}
+ */
+function getCarryForwardBalance_(accountKey) {
+  const ss = getCfSpreadsheet();
+  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
+  if (!sheet) return 0;
+
+  const cols = CF_CONFIG.ACCOUNTS[accountKey].daily;
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= headerRows) return 0;
+
+  // 最初のデータ行を確認
+  const firstBalance = sheet.getRange(headerRows + 1, cols.BALANCE).getValue();
+  const firstDeposit = sheet.getRange(headerRows + 1, cols.DEPOSIT).getValue();
+  const firstWithdrawal = sheet.getRange(headerRows + 1, cols.WITHDRAWAL).getValue();
+
+  // 入出金がなく残高だけある = 前月繰越行
+  if ((!firstDeposit || firstDeposit === 0) && (!firstWithdrawal || firstWithdrawal === 0) && firstBalance > 0) {
+    return Number(firstBalance);
+  }
+
+  return 0;
 }

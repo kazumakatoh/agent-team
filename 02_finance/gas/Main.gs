@@ -146,42 +146,55 @@ function updateCurrentBalanceSheet_() {
   const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.CURRENT_BAL);
   if (!sheet) return;
 
-  try {
-    const balances = fetchCurrentBalances();
-    let row = 2;
+  const dailySheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
+  const now = Utilities.formatDate(new Date(), CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy/MM/dd HH:mm');
+  let row = 2;
 
-    Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
-      const bal = balances[key];
-      if (bal) {
-        sheet.getRange(row, 2).setValue(bal.balance).setNumberFormat('#,##0');
-        sheet.getRange(row, 3).setValue(
-          bal.lastSyncedAt
-            ? Utilities.formatDate(new Date(bal.lastSyncedAt), CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy/MM/dd HH:mm')
-            : '不明'
-        );
+  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
+    // Dailyシートの最新残高を取得
+    const balance = dailySheet
+      ? getLatestDailyBalance_(dailySheet, CF_CONFIG.ACCOUNTS[key].daily)
+      : 0;
 
-        // ステータス（CF005のみアラート判定）
-        if (key === CF_CONFIG.ALERT.ALERT_ACCOUNT) {
-          if (bal.balance <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
-            sheet.getRange(row, 4).setValue('🔴 危険');
-            sheet.getRange(row, 2).setFontColor('#b71c1c');
-          } else if (bal.balance <= CF_CONFIG.ALERT.WARNING_THRESHOLD) {
-            sheet.getRange(row, 4).setValue('🟡 注意');
-            sheet.getRange(row, 2).setFontColor('#f57f17');
-          } else {
-            sheet.getRange(row, 4).setValue('🟢 正常');
-            sheet.getRange(row, 2).setFontColor('#2e7d32');
-          }
-        } else {
-          sheet.getRange(row, 4).setValue('--');
-        }
+    sheet.getRange(row, 2).setValue(balance).setNumberFormat('#,##0');
+    sheet.getRange(row, 3).setValue(now);
+
+    // ステータス（CF005のみアラート判定）
+    if (key === CF_CONFIG.ALERT.ALERT_ACCOUNT) {
+      if (balance <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
+        sheet.getRange(row, 4).setValue('🔴 危険');
+        sheet.getRange(row, 2).setFontColor('#b71c1c');
+      } else if (balance <= CF_CONFIG.ALERT.WARNING_THRESHOLD) {
+        sheet.getRange(row, 4).setValue('🟡 注意');
+        sheet.getRange(row, 2).setFontColor('#f57f17');
+      } else {
+        sheet.getRange(row, 4).setValue('🟢 正常');
+        sheet.getRange(row, 2).setFontColor('#2e7d32');
       }
-      row++;
-    });
+    } else {
+      sheet.getRange(row, 4).setValue('--');
+    }
+    row++;
+  });
+}
 
-  } catch (e) {
-    Logger.log(`現残高シート更新エラー: ${e.message}`);
+/**
+ * Dailyシートから指定口座の最新残高を取得
+ */
+function getLatestDailyBalance_(sheet, cols) {
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= headerRows) return 0;
+
+  const numRows = lastRow - headerRows;
+  const balances = sheet.getRange(headerRows + 1, cols.BALANCE, numRows, 1).getValues();
+
+  // 最後から探して最初に見つかった非ゼロの残高を返す
+  for (let i = numRows - 1; i >= 0; i--) {
+    const val = Number(balances[i][0]);
+    if (val && val !== 0) return val;
   }
+  return 0;
 }
 
 // ==============================

@@ -296,6 +296,7 @@ function findInsertRowForDate_(sheet, dateCol, targetDate, headerRows) {
 
 /**
  * 指定口座の残高を上から再計算する
+ * 最初の行に残高のみ（入出金なし）があれば、それを前月繰越として起点にする
  * @param {string} accountKey - 口座キー
  */
 function recalculateBalances(accountKey) {
@@ -313,37 +314,24 @@ function recalculateBalances(accountKey) {
   const withdrawals = sheet.getRange(headerRows + 1, cols.WITHDRAWAL, numRows, 1).getValues();
   const balances = sheet.getRange(headerRows + 1, cols.BALANCE, numRows, 1).getValues();
 
-  // 最初の行に残高がある場合はそれを初期値として使用
-  // なければ0から計算
-  let balance = 0;
+  // 最初の行の残高を前月繰越として使用
+  let balance = Number(balances[0][0]) || 0;
 
-  // 最初のMFデータの残高から逆算して初期残高を求める
-  const firstDeposit = Number(deposits[0][0]) || 0;
-  const firstWithdrawal = Number(withdrawals[0][0]) || 0;
-  const firstBalance = Number(balances[0][0]) || 0;
+  // 最初の行は前月繰越行（残高のみ）の場合、そのまま維持
+  // 入出金がある行から残高を更新
+  for (let i = 0; i < numRows; i++) {
+    const dep = Number(deposits[i][0]) || 0;
+    const wth = Number(withdrawals[i][0]) || 0;
 
-  if (firstBalance > 0) {
-    // MFから残高が取れている場合、初期残高を逆算
-    balance = firstBalance;
-    sheet.getRange(headerRows + 1, cols.BALANCE).setValue(balance).setNumberFormat('#,##0');
-
-    // 2行目以降を計算
-    for (let i = 1; i < numRows; i++) {
-      const dep = Number(deposits[i][0]) || 0;
-      const wth = Number(withdrawals[i][0]) || 0;
-      if (dep === 0 && wth === 0) continue;
-      balance = balance + dep - wth;
-      sheet.getRange(headerRows + 1 + i, cols.BALANCE).setValue(balance).setNumberFormat('#,##0');
+    if (i === 0 && dep === 0 && wth === 0 && balance > 0) {
+      // 前月繰越行: 残高はそのまま
+      continue;
     }
-  } else {
-    // 残高情報がない場合は入出金の差分のみ
-    for (let i = 0; i < numRows; i++) {
-      const dep = Number(deposits[i][0]) || 0;
-      const wth = Number(withdrawals[i][0]) || 0;
-      if (dep === 0 && wth === 0) continue;
-      balance = balance + dep - wth;
-      sheet.getRange(headerRows + 1 + i, cols.BALANCE).setValue(balance).setNumberFormat('#,##0');
-    }
+
+    if (dep === 0 && wth === 0) continue;
+
+    balance = balance + dep - wth;
+    sheet.getRange(headerRows + 1 + i, cols.BALANCE).setValue(balance).setNumberFormat('#,##0');
   }
 }
 
