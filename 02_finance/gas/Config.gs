@@ -29,10 +29,10 @@ const CF_CONFIG = {
   // ==============================
   MF_API: {
     // Client ID / Secret はスクリプトプロパティから読み込む（getMfCredentials_()で取得）
-    BASE_URL:      'https://accounting.moneyforward.com/api/v3',
-    AUTH_URL:       'https://api.moneyforward.com/oauth/authorize',
-    TOKEN_URL:      'https://api.moneyforward.com/oauth/token',
-    SCOPE:          'mfc/accounting/read'
+    BASE_URL:      'https://api.biz.moneyforward.com',
+    AUTH_URL:       'https://api.biz.moneyforward.com/authorize',
+    TOKEN_URL:      'https://api.biz.moneyforward.com/token',
+    SCOPE:          'mfc/accounting/data.read'
   },
 
   // ==============================
