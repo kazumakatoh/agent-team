@@ -64,13 +64,24 @@ const SheetManager = {
       ? buildSheetName(fiscalYear, 'PL_CONSOLIDATED')
       : buildSheetName(fiscalYear, 'PL_PREFIX', deptName);
 
-    const sheet    = SheetManager.getOrCreateSheet(sheetName);
+    const sheet     = SheetManager.getOrCreateSheet(sheetName);
     const allMonths = getFiscalMonths(fiscalYear);
-    const isNew    = (sheet.getLastRow() <= 1);
 
-    if (isNew) {
-      // ── 初回: 全体を初期化 ──
-      Logger.log(`初期化: ${sheetName}`);
+    // PL_STRUCTUREの行数と実際のシート行数を比較して再初期化を判定
+    // ※ PL_STRUCTUREに項目を追加した場合、既存シートと行数がずれてデータがオフセットするため
+    const expectedDataRows = CONFIG.PL_STRUCTURE.length;
+    const actualDataRows   = sheet.getLastRow() < SheetManager.DATA_START_ROW
+      ? 0 : sheet.getLastRow() - SheetManager.DATA_START_ROW + 1;
+    const needsReinit = actualDataRows === 0 || actualDataRows !== expectedDataRows;
+
+    if (needsReinit) {
+      if (actualDataRows > 0 && actualDataRows !== expectedDataRows) {
+        Logger.log(`⚠️ PL_STRUCTURE変更検出（${actualDataRows}行→${expectedDataRows}行）: ${sheetName} を再初期化`);
+      } else {
+        Logger.log(`初期化: ${sheetName}`);
+      }
+      sheet.clearContents();
+      sheet.clearFormats();
       SheetManager._initPLSheet(sheet, fiscalYear, deptName, allMonths);
     }
 
