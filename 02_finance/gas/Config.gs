@@ -32,7 +32,7 @@ const CF_CONFIG = {
     BASE_URL:      'https://api.biz.moneyforward.com',
     AUTH_URL:       'https://api.biz.moneyforward.com/authorize',
     TOKEN_URL:      'https://api.biz.moneyforward.com/token',
-    SCOPE:          'mfc/accounting/data.read'
+    SCOPE:          'mfc/accounting/offices.read mfc/accounting/journal.read mfc/accounting/accounts.read mfc/accounting/report.read mfc/accounting/connected_account.read'
   },
 
   // ==============================
