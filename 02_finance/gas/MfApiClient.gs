@@ -37,26 +37,23 @@ function fetchWalletTransactions(accountKey, dateFrom, dateTo) {
     throw new Error(`口座 ${accountKey} のIDが未設定です。MF連携を再実行してください。`);
   }
 
-  // 仕訳を一括取得（account_idフィルタで該当口座の仕訳のみ取得）
+  // 仕訳を一括取得（全仕訳取得 → ローカルで口座フィルタ）
   const allTxns = [];
   let page = 1;
   const perPage = 500;
 
+  Logger.log(`[${accountKey}] 口座マッチング情報: accountId=${walletInfo.accountId}, subAccountId=${walletInfo.subAccountId}, name=${walletInfo.name}`);
+
   while (true) {
-    const params = {
+    const data = mfApiRequest_('/journals', {
       start_date: dateFrom,
       end_date: dateTo,
       page: page,
       per_page: perPage
-    };
+    });
 
-    // 勘定科目IDでフィルタ（APIがサポートしている場合）
-    if (walletInfo.accountId) {
-      params.account_id = walletInfo.accountId;
-    }
-
-    const data = mfApiRequest_('/journals', params);
     const journals = data.journals || [];
+    Logger.log(`[${accountKey}] page ${page}: ${journals.length}件の仕訳取得`);
     if (journals.length === 0) break;
 
     journals.forEach(journal => {
@@ -116,7 +113,9 @@ function isMatchingAccount_(side, walletInfo) {
 
   // sub_account_idでマッチ（最も正確）
   if (walletInfo.subAccountId && side.sub_account_id) {
-    return String(side.sub_account_id) === String(walletInfo.subAccountId);
+    const match = String(side.sub_account_id) === String(walletInfo.subAccountId);
+    if (match) Logger.log(`  ✓ マッチ: ${side.sub_account_name || side.account_name} (subId一致)`);
+    return match;
   }
 
   // account_id + sub_account_nameでマッチ
