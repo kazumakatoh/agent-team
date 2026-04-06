@@ -17,6 +17,101 @@
 const CSVImporter = {
 
   /**
+   * 現在の事業年度のCSVをインポートする（ダッシュボード用・年度入力なし）
+   * 結果をオブジェクトで返す（UIアラートなし）
+   *
+   * @returns {{ ok: boolean, msg: string, imported: number, errors: string[] }}
+   */
+  importCurrentYear() {
+    CSVImporter._lastUnmatched = [];
+    const folderId = CONFIG.CSV_IMPORT && CONFIG.CSV_IMPORT.FOLDER_ID;
+    if (!folderId) {
+      return { ok: false, msg: '⚠️ CSV_IMPORT.FOLDER_ID が未設定', imported: 0, errors: [] };
+    }
+
+    const targetYear = getCurrentFiscalYear();
+    const months     = getFiscalMonths(targetYear);
+    const label      = getFiscalPeriodLabel(targetYear);
+    let imported     = 0;
+    const errors     = [];
+    const allDeptData = {};
+    let consolidatedFromCSV = false;
+
+    try {
+      const folder = DriveApp.getFolderById(folderId);
+      const files  = folder.getFiles();
+
+      while (files.hasNext()) {
+        const file     = files.next();
+        const fileName = file.getName();
+        if (!/\.(csv|tsv|txt)$/i.test(fileName)) continue;
+
+        const rawName = fileName.replace(/\.(csv|tsv|txt)$/i, '').trim();
+        let fileYear, deptKey;
+        const plMatch = rawName.match(/^(.+?)_PL_(\d{4})$/i);
+        if (plMatch) {
+          deptKey  = plMatch[1].trim();
+          fileYear = parseInt(plMatch[2]);
+        } else {
+          if (/_BS_/i.test(rawName)) continue; // BSファイルスキップ
+          const yearMatch = rawName.match(/^(\d{4})[-_](.+)$|^(.+?)[-_](\d{4})$/);
+          fileYear = yearMatch ? parseInt(yearMatch[1] || yearMatch[4]) : null;
+          deptKey  = yearMatch ? (yearMatch[2] || yearMatch[3]).trim() : rawName;
+        }
+
+        if (fileYear !== null && fileYear !== targetYear) continue;
+
+        if (deptKey === '全体') {
+          try {
+            const csvText     = file.getBlob().getDataAsString('Shift_JIS');
+            const monthlyRows = CSVImporter._parseToMonthlyRows(csvText, months);
+            SheetManager.writePLSheet(targetYear, '全体', monthlyRows, months);
+            consolidatedFromCSV = true;
+            Logger.log('✅ 全体 (' + label + '): インポート完了');
+            imported++;
+          } catch (e) {
+            errors.push('"' + fileName + '": ' + e.message);
+          }
+          continue;
+        }
+
+        const dept = CONFIG.DEPARTMENTS.find(function(d) { return d.name === deptKey || d.shortName === deptKey; });
+        if (!dept) {
+          errors.push('"' + fileName + '": 部門名が一致しません');
+          continue;
+        }
+
+        try {
+          const csvText     = file.getBlob().getDataAsString('Shift_JIS');
+          const monthlyRows = CSVImporter._parseToMonthlyRows(csvText, months);
+          SheetManager.writePLSheet(targetYear, dept.name, monthlyRows, months);
+          allDeptData[dept.name] = monthlyRows;
+          Logger.log('✅ ' + dept.name + ' (' + label + '): インポート完了');
+          imported++;
+        } catch (e) {
+          errors.push('"' + fileName + '": ' + e.message);
+        }
+      }
+    } catch (e) {
+      return { ok: false, msg: '❌ Driveアクセスエラー: ' + e.message, imported: 0, errors: [] };
+    }
+
+    if (Object.keys(allDeptData).length > 0 && !consolidatedFromCSV) {
+      try {
+        const consolidatedRows = CSVImporter._mergeAllDepts(allDeptData, months);
+        SheetManager.writePLSheet(targetYear, '全体', consolidatedRows, months);
+      } catch (e) {
+        errors.push('"全体合計": ' + e.message);
+      }
+    }
+
+    const ok  = errors.length === 0;
+    const msg = (ok ? '✅ ' : '⚠️ ') + label + ' ' + imported + '件インポート' + (errors.length ? ' / エラー' + errors.length + '件' : '完了');
+    Logger.log(msg);
+    return { ok, msg, imported, errors, label };
+  },
+
+  /**
    * Google DriveフォルダからすべてのCSVをインポートする（メニューから呼ぶ）
    */
   importAllFromDrive() {

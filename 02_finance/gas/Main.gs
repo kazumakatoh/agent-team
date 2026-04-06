@@ -10,11 +10,20 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('📊 財務レポート')
+    .addItem('🏠 ダッシュボードを作成（初回セットアップ）', 'setupDashboard')
+    .addSeparator()
     .addItem('📥 PL: 部門別CSVをインポート（推移試算表）', 'runCSVImport')
     .addItem('📊 PL: 通期比較シートを作成（第1期〜現在）', 'runPeriodComparison')
     .addSeparator()
     .addItem('📥 BS: 通期比較シートを作成（貸借対照表）', 'runBSPeriodComparison')
     .addToUi();
+}
+
+/**
+ * ダッシュボードシートを作成する（初回のみ実行）
+ */
+function setupDashboard() {
+  Dashboard.setup();
 }
 
 // ==============================
@@ -27,6 +36,39 @@ function onOpen() {
  */
 function runCSVImport() {
   CSVImporter.importAllFromDrive();
+}
+
+/**
+ * 現在の事業年度をインポートして通期比較まで一括更新する
+ * ダッシュボードのチェックボックスから呼ばれる（年度入力なし）
+ */
+function runCurrentYearUpdate() {
+  Dashboard.updateStatus('⏳ インポート中...');
+
+  // 1. PLインポート（現在の事業年度・UI入力なし）
+  const result = CSVImporter.importCurrentYear();
+  Logger.log(result.msg);
+
+  if (!result.ok && result.imported === 0) {
+    Dashboard.updateStatus('❌ インポート失敗: ' + result.msg);
+    return;
+  }
+
+  // 2. 通期比較シート更新
+  Dashboard.updateStatus('⏳ 通期比較シート更新中...');
+  const BASE_YEAR   = 2018;
+  const currYear    = getCurrentFiscalYear();
+  const fiscalYears = [];
+  for (let y = BASE_YEAR; y <= currYear; y++) fiscalYears.push(y);
+
+  try {
+    SheetManager.writePeriodComparisonSheet(fiscalYears);
+    Dashboard.updateStatus(result.msg + ' ／ 通期比較更新完了 ✅');
+    Logger.log('通期比較更新完了');
+  } catch (e) {
+    Dashboard.updateStatus(result.msg + ' ⚠️ 通期比較失敗: ' + e.message);
+    Logger.log('通期比較更新失敗: ' + e.message);
+  }
 }
 
 /**
