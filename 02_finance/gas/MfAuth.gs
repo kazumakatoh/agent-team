@@ -230,41 +230,50 @@ function fetchAndSaveOfficeId_() {
 
 /**
  * 口座一覧を取得し、3口座のwallet IDを紐付けて保存する
+ *
+ * MFの勘定科目構造:
+ *   accounts[] → { id, name, category, sub_accounts[] → { id, name, account_id } }
+ *
+ * 銀行口座はcategory=CASH_AND_DEPOSITSの勘定科目（普通預金等）の
+ * sub_accounts（補助科目）として登録されている。
+ * 例: 普通預金 → PayPay銀行 ビジネス営業部、PayPay銀行 はやぶさ支店
  */
 function fetchAndSaveWalletIds_() {
-  // 勘定科目一覧から銀行口座（現金・預金カテゴリ）を取得
   const data = mfApiRequest_('/accounts');
   const accounts = data.accounts || [];
 
   Logger.log('取得した勘定科目数: ' + accounts.length);
 
-  // 銀行口座を抽出（CASH_AND_DEPOSITS カテゴリ）
+  // CASH_AND_DEPOSITS カテゴリの勘定科目と補助科目を抽出
   const bankAccounts = [];
   accounts.forEach(acct => {
-    if (acct.category === 'CASH_AND_DEPOSITS' || acct.account_group === 'ASSET') {
-      // sub_accountsがあればそちらも確認
-      const subs = acct.sub_accounts || [];
-      if (subs.length > 0) {
-        subs.forEach(sub => {
-          bankAccounts.push({
-            id: sub.id || sub.account_id,
-            name: sub.name || acct.name,
-            parentName: acct.name,
-            type: 'bank_account'
-          });
-        });
-      }
+    if (acct.category !== 'CASH_AND_DEPOSITS') return;
+
+    const subs = acct.sub_accounts || [];
+    subs.forEach(sub => {
       bankAccounts.push({
-        id: acct.id || acct.account_id,
-        name: acct.name,
-        parentName: '',
-        type: 'bank_account'
+        accountId: acct.id,           // 勘定科目ID（普通預金等）
+        accountName: acct.name,       // 勘定科目名
+        subAccountId: sub.id,         // 補助科目ID（各銀行口座）
+        subAccountName: sub.name,     // 補助科目名（PayPay銀行 ビジネス営業部等）
+        name: sub.name               // マッチング用
+      });
+    });
+
+    // 補助科目がない場合は勘定科目自体を候補にする
+    if (subs.length === 0) {
+      bankAccounts.push({
+        accountId: acct.id,
+        accountName: acct.name,
+        subAccountId: '',
+        subAccountName: '',
+        name: acct.name
       });
     }
   });
 
   Logger.log('銀行口座候補数: ' + bankAccounts.length);
-  bankAccounts.forEach(b => Logger.log(`  口座: ${b.name} (id: ${b.id})`));
+  bankAccounts.forEach(b => Logger.log(`  口座: ${b.name} (account: ${b.accountName}, subId: ${b.subAccountId})`));
 
   // 口座名でマッチング（部分一致）
   const walletMap = {};
@@ -274,19 +283,20 @@ function fetchAndSaveWalletIds_() {
     SEIBU: ['西武信用金庫', '西武信金', '阿佐ヶ谷']
   };
 
-  bankAccounts.forEach(w => {
-    const walletName = w.name || '';
+  bankAccounts.forEach(b => {
+    const searchName = b.name || '';
 
     for (const [accountKey, patterns] of Object.entries(matchPatterns)) {
       if (walletMap[accountKey]) continue;
       for (const pattern of patterns) {
-        if (new RegExp(pattern, 'i').test(walletName)) {
+        if (new RegExp(pattern, 'i').test(searchName)) {
           walletMap[accountKey] = {
-            id: String(w.id),
-            type: w.type,
-            name: walletName
+            accountId: String(b.accountId),
+            subAccountId: String(b.subAccountId || ''),
+            subAccountName: b.subAccountName || '',
+            name: searchName
           };
-          Logger.log(`  → ${accountKey} にマッチ`);
+          Logger.log(`  → ${accountKey} にマッチ: ${searchName}`);
           break;
         }
       }
@@ -295,10 +305,10 @@ function fetchAndSaveWalletIds_() {
 
   PropertiesService.getUserProperties().setProperty('MF_WALLET_MAP', JSON.stringify(walletMap));
 
-  // マッチ結果をログ
   const matched = Object.keys(walletMap).length;
+  Logger.log(`口座マッピング完了: ${matched}/3 口座`);
   if (matched < 3) {
-    Logger.log(`⚠️ ${matched}/3 口座のみマッチ。設定シートで手動紐付けが必要です。`);
+    Logger.log('⚠️ 一部の口座がマッチしませんでした。設定シートで手動紐付けが必要です。');
   }
 }
 
