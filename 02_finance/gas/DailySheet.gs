@@ -1,21 +1,17 @@
 /**
  * キャッシュフロー管理システム - Dailyシート管理モジュール
  *
- * MFから取得した入出金実績と、手入力の予定を統合して
- * 日次のキャッシュフローを管理する。
+ * 各口座ごとに専用のDailyシートを持つ。
+ * 列構成: A:日付 / B:内容 / C:入金 / D:出金 / E:残高 / F:ソース
  *
- * ■ 列構成（3口座が横に並ぶ）
- *   A: 3口座合計残高
- *   B-H: PayPay 005（日付/内容/入金/出金/残高/ソース）
- *   I: （空白）
- *   J-O: PayPay 003
- *   P: （空白）
- *   Q-V: 西武信金
+ * ■ 運用フロー
+ *   1. MFから入出金実績を取得 → シートの下に追加
+ *   2. 手入力で将来の入出金予定を追加（MFデータの下に日付順で追加）
+ *   3. 残高は1行目（前月繰越）から順に自動計算
  */
 
 /**
  * スプレッドシートを取得する
- * @return {Spreadsheet}
  */
 function getCfSpreadsheet() {
   if (CF_CONFIG.SPREADSHEET_ID) {
@@ -35,102 +31,38 @@ function syncCurrentMonth() {
   const today = new Date();
   const year = today.getFullYear();
   const month = today.getMonth() + 1;
-  syncMonthToDaily(year, month);
-}
-
-/**
- * 指定月のMFデータでDailyシートを更新する
- * @param {number} year
- * @param {number} month
- */
-function syncMonthToDaily(year, month) {
-  if (!isMfConnected()) {
-    SpreadsheetApp.getUi().alert('❌ MF未連携です。先にMF連携を実行してください。');
-    return;
-  }
-
   const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
-  const dateTo = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  const dateTo = Utilities.formatDate(today, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
 
-  Logger.log(`=== Daily同期開始: ${dateFrom} 〜 ${dateTo} ===`);
-
-  // 全口座の入出金を取得
-  const allTxns = fetchAllWalletTransactions(dateFrom, dateTo);
-
-  // 各口座をDailyシートに反映
-  const ss = getCfSpreadsheet();
-  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
-  if (!sheet) throw new Error('Dailyシートが見つかりません。Setupを実行してください。');
-
-  let totalAdded = 0;
-  let totalUpdated = 0;
-
-  for (const [accountKey, txns] of Object.entries(allTxns)) {
-    if (txns.length === 0) continue;
-    const result = writeTransactionsToDaily_(sheet, accountKey, txns);
-    totalAdded += result.added;
-    totalUpdated += result.updated;
-  }
-
-  // 全口座の残高を再計算
-  Object.keys(CF_CONFIG.ACCOUNTS).forEach(key => {
-    recalculateBalances(key);
-  });
-
-  // 3口座合計を更新
-  updateDailyTotals_();
-
-  // 現残高シートを更新
-  updateCurrentBalanceSheet_();
-
-  // アラートチェック
-  checkCashOutRisk();
-
-  Logger.log(`=== Daily同期完了: 追加${totalAdded}件 / 更新${totalUpdated}件 ===`);
-
-  SpreadsheetApp.getUi().alert(
-    `✅ MFデータ同期完了\n\n` +
-    `・期間: ${year}年${month}月\n` +
-    `・新規追加: ${totalAdded}件\n` +
-    `・上書更新: ${totalUpdated}件`
-  );
+  syncToDaily_(dateFrom, dateTo);
 }
 
 /**
- * MFデータ同期（ダイアログで期間指定）
+ * 期間指定でMFデータをDailyシートに同期（ダイアログ）
  */
 function syncWithDateRange() {
   const ui = SpreadsheetApp.getUi();
   const today = new Date();
   const defaultFrom = Utilities.formatDate(
     new Date(today.getFullYear(), today.getMonth(), 1),
-    CF_CONFIG.DISPLAY.TIMEZONE,
-    'yyyy/MM/dd'
+    CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy/MM/dd'
   );
   const defaultTo = Utilities.formatDate(today, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy/MM/dd');
 
   const html = HtmlService.createHtmlOutput(`
-    <html>
-    <head>
-      <base target="_top">
-      <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; font-size: 13px; }
-        label { display: block; margin-bottom: 4px; font-weight: bold; color: #555; }
-        input { width: 100%; padding: 8px; box-sizing: border-box; font-size: 14px;
-                border: 1px solid #ccc; border-radius: 4px; margin-bottom: 12px; }
-        .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
-        button { padding: 8px 20px; cursor: pointer; border-radius: 4px; font-size: 13px; }
-        .ok { background: #1a73e8; color: white; border: none; }
-        .cancel { background: white; border: 1px solid #ccc; }
-        #status { display: none; margin-top: 12px; color: #1a73e8; font-size: 12px; }
-      </style>
-    </head>
-    <body>
-      <label>開始日</label>
-      <input type="text" id="dateFrom" value="${defaultFrom}">
-      <label>終了日</label>
-      <input type="text" id="dateTo" value="${defaultTo}">
+    <html><head><base target="_top">
+    <style>
+      body { font-family: Arial, sans-serif; padding: 16px; font-size: 13px; }
+      label { display: block; margin: 8px 0 4px; font-weight: bold; }
+      input { width: 100%; padding: 6px; box-sizing: border-box; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 8px; }
+      .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+      button { padding: 8px 20px; cursor: pointer; border-radius: 4px; font-size: 13px; }
+      .ok { background: #1a73e8; color: white; border: none; }
+      .cancel { background: white; border: 1px solid #ccc; }
+      #status { display: none; margin-top: 8px; color: #1a73e8; font-size: 12px; }
+    </style></head><body>
+      <label>開始日</label><input type="text" id="dateFrom" value="${defaultFrom}">
+      <label>終了日</label><input type="text" id="dateTo" value="${defaultTo}">
       <div class="buttons">
         <button class="cancel" onclick="google.script.host.close()">キャンセル</button>
         <button class="ok" id="okBtn" onclick="submit()">同期開始</button>
@@ -151,44 +83,50 @@ function syncWithDateRange() {
             .syncDateRangeToDaily(from, to);
         }
       </script>
-    </body>
-    </html>
-  `).setWidth(380).setHeight(280);
-
+    </body></html>
+  `).setWidth(380).setHeight(250);
   ui.showModalDialog(html, 'MFデータ同期（期間指定）');
 }
 
 /**
- * 期間指定でMFデータをDailyシートに同期（ダイアログから呼ばれる）
+ * 期間指定でMFデータをDailyに同期（ダイアログから呼ばれる）
  */
 function syncDateRangeToDaily(dateFrom, dateTo) {
-  const allTxns = fetchAllWalletTransactions(dateFrom, dateTo);
+  syncToDaily_(dateFrom, dateTo);
+  SpreadsheetApp.getUi().alert(
+    `✅ MFデータ同期完了\n\n・期間: ${dateFrom} 〜 ${dateTo}`
+  );
+}
 
-  const ss = getCfSpreadsheet();
-  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
-  if (!sheet) throw new Error('Dailyシートが見つかりません。');
-
-  let totalAdded = 0;
-  let totalUpdated = 0;
-
-  for (const [accountKey, txns] of Object.entries(allTxns)) {
-    if (txns.length === 0) continue;
-    const result = writeTransactionsToDaily_(sheet, accountKey, txns);
-    totalAdded += result.added;
-    totalUpdated += result.updated;
+/**
+ * MFデータ同期の共通処理
+ */
+function syncToDaily_(dateFrom, dateTo) {
+  if (!isMfConnected()) {
+    throw new Error('MF未連携です。先にMF連携を実行してください。');
   }
 
-  Object.keys(CF_CONFIG.ACCOUNTS).forEach(key => recalculateBalances(key));
-  updateDailyTotals_();
-  updateCurrentBalanceSheet_();
-  checkCashOutRisk();
+  Logger.log(`=== Daily同期開始: ${dateFrom} 〜 ${dateTo} ===`);
 
-  SpreadsheetApp.getUi().alert(
-    `✅ MFデータ同期完了\n\n` +
-    `・期間: ${dateFrom} 〜 ${dateTo}\n` +
-    `・新規追加: ${totalAdded}件\n` +
-    `・上書更新: ${totalUpdated}件`
-  );
+  const ss = getCfSpreadsheet();
+  const allTxns = fetchAllWalletTransactions(dateFrom, dateTo);
+
+  Object.entries(allTxns).forEach(([accountKey, txns]) => {
+    if (txns.length === 0) return;
+    const sheetName = CF_CONFIG.ACCOUNTS[accountKey].dailySheet;
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      Logger.log(`⚠️ シート ${sheetName} が見つかりません`);
+      return;
+    }
+    writeTransactionsToSheet_(sheet, txns);
+    recalculateBalances_(sheet);
+  });
+
+  // 現残高シート更新
+  updateCurrentBalanceSheet_();
+
+  Logger.log('=== Daily同期完了 ===');
 }
 
 // ==============================
@@ -196,96 +134,89 @@ function syncDateRangeToDaily(dateFrom, dateTo) {
 // ==============================
 
 /**
- * トランザクション配列をDailyシートの指定口座列に書き込む
- * @param {Sheet} sheet - Dailyシート
- * @param {string} accountKey - 口座キー
- * @param {Array<Object>} transactions - 入出金データ
- * @return {Object} { added, updated }
+ * トランザクションをDailyシートに書き込む
+ * 同一日付・同一内容・同一ソースのデータは上書き
  */
-function writeTransactionsToDaily_(sheet, accountKey, transactions) {
-  const cols = CF_CONFIG.ACCOUNTS[accountKey].daily;
+function writeTransactionsToSheet_(sheet, transactions) {
+  const C = CF_CONFIG.DAILY_COLS;
   const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
-  let added = 0;
-  let updated = 0;
 
   transactions.forEach(tx => {
-    // 同じ日付・内容・ソースのデータがあれば上書き
-    const existingRow = findExistingDailyRow_(sheet, cols, tx.date, tx.content);
+    // 既存データの重複チェック
+    const existingRow = findExistingRow_(sheet, tx);
 
     if (existingRow > 0) {
-      // 既存行を更新
-      sheet.getRange(existingRow, cols.CONTENT).setValue(tx.content);
+      // 上書き更新
+      sheet.getRange(existingRow, C.CONTENT).setValue(tx.content);
       if (tx.deposit > 0) {
-        sheet.getRange(existingRow, cols.DEPOSIT).setValue(tx.deposit);
-        sheet.getRange(existingRow, cols.WITHDRAWAL).setValue('');
+        sheet.getRange(existingRow, C.DEPOSIT).setValue(tx.deposit);
+        sheet.getRange(existingRow, C.WITHDRAWAL).setValue('');
       } else {
-        sheet.getRange(existingRow, cols.DEPOSIT).setValue('');
-        sheet.getRange(existingRow, cols.WITHDRAWAL).setValue(tx.withdrawal);
+        sheet.getRange(existingRow, C.DEPOSIT).setValue('');
+        sheet.getRange(existingRow, C.WITHDRAWAL).setValue(tx.withdrawal);
       }
-      sheet.getRange(existingRow, cols.SOURCE).setValue(CF_CONFIG.SOURCE.MF);
-      updated++;
+      sheet.getRange(existingRow, C.SOURCE).setValue(tx.source);
     } else {
-      // 日付順の正しい位置に挿入
-      const insertRow = findInsertRowForDate_(sheet, cols.DATE, tx.date, headerRows);
-      sheet.insertRowAfter(Math.max(insertRow - 1, headerRows));
+      // 日付順の正しい位置に挿入（予定データの前に入れる）
+      const insertRow = findInsertRow_(sheet, tx.date);
 
-      const newRow = insertRow;
-      sheet.getRange(newRow, cols.DATE).setValue(tx.date).setNumberFormat('yyyy/MM/dd');
-      sheet.getRange(newRow, cols.CONTENT).setValue(tx.content);
-      if (tx.deposit > 0) {
-        sheet.getRange(newRow, cols.DEPOSIT).setValue(tx.deposit).setNumberFormat('#,##0');
+      // 行を挿入
+      if (insertRow <= sheet.getLastRow()) {
+        sheet.insertRowBefore(insertRow);
       }
-      if (tx.withdrawal > 0) {
-        sheet.getRange(newRow, cols.WITHDRAWAL).setValue(tx.withdrawal).setNumberFormat('#,##0');
-      }
-      sheet.getRange(newRow, cols.SOURCE).setValue(CF_CONFIG.SOURCE.MF);
-      added++;
+
+      const row = insertRow;
+      sheet.getRange(row, C.DATE).setValue(tx.date).setNumberFormat('yyyy/MM/dd');
+      sheet.getRange(row, C.CONTENT).setValue(tx.content);
+      if (tx.deposit > 0) sheet.getRange(row, C.DEPOSIT).setValue(tx.deposit).setNumberFormat('#,##0');
+      if (tx.withdrawal > 0) sheet.getRange(row, C.WITHDRAWAL).setValue(tx.withdrawal).setNumberFormat('#,##0');
+      sheet.getRange(row, C.SOURCE).setValue(tx.source);
     }
   });
-
-  return { added, updated };
 }
 
 /**
- * 既存のDailyデータから同一日付・内容の行を検索
+ * 既存の同一データを検索
  */
-function findExistingDailyRow_(sheet, cols, date, content) {
+function findExistingRow_(sheet, tx) {
+  const C = CF_CONFIG.DAILY_COLS;
   const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
   const lastRow = sheet.getLastRow();
   if (lastRow <= headerRows) return 0;
 
   const numRows = lastRow - headerRows;
-  const dateRange = sheet.getRange(headerRows + 1, cols.DATE, numRows, 1).getValues();
-  const contentRange = sheet.getRange(headerRows + 1, cols.CONTENT, numRows, 1).getValues();
-  const sourceRange = sheet.getRange(headerRows + 1, cols.SOURCE, numRows, 1).getValues();
+  const dates = sheet.getRange(headerRows + 1, C.DATE, numRows, 1).getValues();
+  const contents = sheet.getRange(headerRows + 1, C.CONTENT, numRows, 1).getValues();
+  const sources = sheet.getRange(headerRows + 1, C.SOURCE, numRows, 1).getValues();
 
-  const targetDate = Utilities.formatDate(date, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
+  const targetDate = Utilities.formatDate(tx.date, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
 
   for (let i = 0; i < numRows; i++) {
-    if (!(dateRange[i][0] instanceof Date)) continue;
-    const rowDate = Utilities.formatDate(dateRange[i][0], CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
-    const rowSource = String(sourceRange[i][0]);
+    if (!(dates[i][0] instanceof Date)) continue;
+    const rowDate = Utilities.formatDate(dates[i][0], CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
 
     if (rowDate === targetDate
-        && String(contentRange[i][0]).trim() === String(content).trim()
-        && rowSource === CF_CONFIG.SOURCE.MF) {
+        && String(contents[i][0]).trim() === String(tx.content).trim()
+        && sources[i][0] === CF_CONFIG.SOURCE.MF) {
       return i + headerRows + 1;
     }
   }
-
   return 0;
 }
 
 /**
- * 日付順の挿入位置を取得
+ * 日付順の挿入位置を見つける（予定データの手前に挿入）
  */
-function findInsertRowForDate_(sheet, dateCol, targetDate, headerRows) {
+function findInsertRow_(sheet, targetDate) {
+  const C = CF_CONFIG.DAILY_COLS;
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
   const lastRow = sheet.getLastRow();
   if (lastRow <= headerRows) return headerRows + 1;
 
-  const dates = sheet.getRange(headerRows + 1, dateCol, lastRow - headerRows, 1).getValues();
+  const numRows = lastRow - headerRows;
+  const dates = sheet.getRange(headerRows + 1, C.DATE, numRows, 1).getValues();
 
-  for (let i = 0; i < dates.length; i++) {
+  for (let i = 0; i < numRows; i++) {
     if (dates[i][0] instanceof Date && dates[i][0] > targetDate) {
       return i + headerRows + 1;
     }
@@ -299,153 +230,65 @@ function findInsertRowForDate_(sheet, dateCol, targetDate, headerRows) {
 // ==============================
 
 /**
- * 指定口座の残高を上から再計算する
- * 最初の行に残高のみ（入出金なし）があれば、それを前月繰越として起点にする
- * @param {string} accountKey - 口座キー
+ * Dailyシートの残高を上から再計算する
+ * 1行目に前月繰越（残高のみ）がある場合、それを起点にする
  */
-function recalculateBalances(accountKey) {
-  const ss = getCfSpreadsheet();
-  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
-  if (!sheet) return;
-
-  const cols = CF_CONFIG.ACCOUNTS[accountKey].daily;
+function recalculateBalances_(sheet) {
+  const C = CF_CONFIG.DAILY_COLS;
   const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
   const lastRow = sheet.getLastRow();
   if (lastRow <= headerRows) return;
 
   const numRows = lastRow - headerRows;
-  const deposits = sheet.getRange(headerRows + 1, cols.DEPOSIT, numRows, 1).getValues();
-  const withdrawals = sheet.getRange(headerRows + 1, cols.WITHDRAWAL, numRows, 1).getValues();
-  const balances = sheet.getRange(headerRows + 1, cols.BALANCE, numRows, 1).getValues();
+  const deposits = sheet.getRange(headerRows + 1, C.DEPOSIT, numRows, 1).getValues();
+  const withdrawals = sheet.getRange(headerRows + 1, C.WITHDRAWAL, numRows, 1).getValues();
+  const balances = sheet.getRange(headerRows + 1, C.BALANCE, numRows, 1).getValues();
 
   // 最初の行の残高を前月繰越として使用
   let balance = Number(balances[0][0]) || 0;
 
-  // 最初の行は前月繰越行（残高のみ）の場合、そのまま維持
-  // 入出金がある行から残高を更新
   for (let i = 0; i < numRows; i++) {
     const dep = Number(deposits[i][0]) || 0;
     const wth = Number(withdrawals[i][0]) || 0;
 
-    if (i === 0 && dep === 0 && wth === 0 && balance > 0) {
-      // 前月繰越行: 残高はそのまま
-      continue;
-    }
+    // 前月繰越行（入出金なし・残高のみ）はスキップ
+    if (i === 0 && dep === 0 && wth === 0 && balance > 0) continue;
 
     if (dep === 0 && wth === 0) continue;
 
     balance = balance + dep - wth;
-    sheet.getRange(headerRows + 1 + i, cols.BALANCE).setValue(balance).setNumberFormat('#,##0');
+    sheet.getRange(headerRows + 1 + i, C.BALANCE).setValue(balance).setNumberFormat('#,##0');
   }
+
+  // アラート色付け（PayPay 005のみ）
+  applyAlertColors_(sheet);
 }
 
 /**
- * 3口座の合計残高（A列）を更新する
- *
- * 各行の日付を確認し、その日付時点での各口座の最新残高を合算する。
- * 口座ごとにデータの行位置がずれていても、日付ベースで正確に合算される。
- *
- * ロジック:
- *  1. 全口座の日付→残高マップを構築（日付ごとの最新残高）
- *  2. 全行を走査し、各行の最大日付を取得
- *  3. その日付以前の各口座の最新残高を合算してA列に書き込み
+ * アラート色付け
  */
-function updateDailyTotals_() {
-  const ss = getCfSpreadsheet();
-  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
-  if (!sheet) return;
-
+function applyAlertColors_(sheet) {
+  const C = CF_CONFIG.DAILY_COLS;
   const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
   const lastRow = sheet.getLastRow();
   if (lastRow <= headerRows) return;
 
+  // このシートがアラート対象口座かチェック
+  const alertAccount = CF_CONFIG.ALERT.ALERT_ACCOUNT;
+  const alertSheetName = CF_CONFIG.ACCOUNTS[alertAccount].dailySheet;
+  if (sheet.getName() !== alertSheetName) return;
+
   const numRows = lastRow - headerRows;
-  const accountKeys = Object.keys(CF_CONFIG.ACCOUNTS);
-
-  // 各口座の日付・残高データを取得
-  const accountData = {};
-  accountKeys.forEach(key => {
-    const cols = CF_CONFIG.ACCOUNTS[key].daily;
-    const dates = sheet.getRange(headerRows + 1, cols.DATE, numRows, 1).getValues();
-    const balances = sheet.getRange(headerRows + 1, cols.BALANCE, numRows, 1).getValues();
-
-    // 日付順の残高リスト（日付→残高のペア、最新値を保持）
-    const dateBalanceMap = [];
-    let lastBal = 0;
-    for (let i = 0; i < numRows; i++) {
-      const d = dates[i][0];
-      const bal = Number(balances[i][0]) || 0;
-      if (d instanceof Date && bal !== 0) {
-        lastBal = bal;
-        dateBalanceMap.push({ date: d.getTime(), balance: bal });
-      }
-    }
-    accountData[key] = { dateBalanceMap, lastKnownBalance: lastBal };
-  });
-
-  // 各行の「行にある最も新しい日付」を特定し、その日付時点の3口座合計を計算
-  const allDates = {};
-  accountKeys.forEach(key => {
-    const cols = CF_CONFIG.ACCOUNTS[key].daily;
-    const dates = sheet.getRange(headerRows + 1, cols.DATE, numRows, 1).getValues();
-    for (let i = 0; i < numRows; i++) {
-      if (dates[i][0] instanceof Date) {
-        allDates[i] = allDates[i] || [];
-        allDates[i].push(dates[i][0].getTime());
-      }
-    }
-  });
-
-  const totals = [];
-  const alertBalances = []; // PayPay005の残高（アラート用）
+  const balances = sheet.getRange(headerRows + 1, C.BALANCE, numRows, 1).getValues();
 
   for (let i = 0; i < numRows; i++) {
-    const rowDates = allDates[i] || [];
-    if (rowDates.length === 0) {
-      totals.push(['']);
-      alertBalances.push(0);
-      continue;
-    }
+    const bal = Number(balances[i][0]) || 0;
+    if (bal === 0) continue;
 
-    // この行の日付（複数口座にデータがある場合は最大の日付を使用）
-    const rowDate = Math.max(...rowDates);
-
-    // 各口座のこの日付時点の最新残高を取得
-    let total = 0;
-    let cf005Balance = 0;
-
-    accountKeys.forEach(key => {
-      const data = accountData[key];
-      // この日付以前の最新残高を探す
-      let bal = 0;
-      for (let j = data.dateBalanceMap.length - 1; j >= 0; j--) {
-        if (data.dateBalanceMap[j].date <= rowDate) {
-          bal = data.dateBalanceMap[j].balance;
-          break;
-        }
-      }
-      total += bal;
-      if (key === CF_CONFIG.ALERT.ALERT_ACCOUNT) cf005Balance = bal;
-    });
-
-    totals.push([total]);
-    alertBalances.push(cf005Balance);
-  }
-
-  // A列に書き込み
-  sheet.getRange(headerRows + 1, CF_CONFIG.DAILY_TOTAL_COL, numRows, 1)
-    .setValues(totals)
-    .setNumberFormat('#,##0');
-
-  // アラート色付け（PayPay 005の残高ベース）
-  for (let i = 0; i < numRows; i++) {
-    const cell = sheet.getRange(headerRows + 1 + i, CF_CONFIG.DAILY_TOTAL_COL);
-    if (totals[i][0] === '') continue;
-
-    const cf005Bal = alertBalances[i];
-    if (cf005Bal > 0 && cf005Bal <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
+    const cell = sheet.getRange(headerRows + 1 + i, C.BALANCE);
+    if (bal <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
       cell.setBackground('#ffcdd2').setFontColor('#b71c1c').setFontWeight('bold');
-    } else if (cf005Bal > 0 && cf005Bal <= CF_CONFIG.ALERT.WARNING_THRESHOLD) {
+    } else if (bal <= CF_CONFIG.ALERT.WARNING_THRESHOLD) {
       cell.setBackground('#fff9c4').setFontColor('#f57f17').setFontWeight('bold');
     } else {
       cell.setBackground(null).setFontColor('#000000').setFontWeight('normal');
@@ -458,58 +301,41 @@ function updateDailyTotals_() {
 // ==============================
 
 /**
- * 入出金予定を手入力するダイアログを表示する
+ * 入出金予定を手入力するダイアログ
  */
 function addPlannedTransaction() {
+  const accountOptions = Object.entries(CF_CONFIG.ACCOUNTS)
+    .map(([key, acct]) => `<option value="${key}">${acct.shortName}</option>`)
+    .join('');
+
   const html = HtmlService.createHtmlOutput(`
-    <html>
-    <head>
-      <base target="_top">
-      <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 16px; font-size: 13px; }
-        label { display: block; margin: 8px 0 4px; font-weight: bold; color: #555; font-size: 12px; }
-        input, select { width: 100%; padding: 6px 8px; box-sizing: border-box;
-                        font-size: 13px; border: 1px solid #ccc; border-radius: 4px; }
-        .row { display: flex; gap: 8px; }
-        .row > div { flex: 1; }
-        .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-        button { padding: 8px 20px; cursor: pointer; border-radius: 4px; font-size: 13px; }
-        .ok { background: #1a73e8; color: white; border: none; }
-        .cancel { background: white; border: 1px solid #ccc; }
-      </style>
-    </head>
-    <body>
+    <html><head><base target="_top">
+    <style>
+      body { font-family: Arial, sans-serif; padding: 16px; font-size: 13px; }
+      label { display: block; margin: 8px 0 4px; font-weight: bold; color: #555; font-size: 12px; }
+      input, select { width: 100%; padding: 6px; box-sizing: border-box; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; }
+      .row { display: flex; gap: 8px; }
+      .row > div { flex: 1; }
+      .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+      button { padding: 8px 20px; cursor: pointer; border-radius: 4px; font-size: 13px; }
+      .ok { background: #1a73e8; color: white; border: none; }
+      .cancel { background: white; border: 1px solid #ccc; }
+    </style></head><body>
       <h3 style="margin:0 0 12px; color:#1a73e8;">📝 入出金予定の登録</h3>
-
       <label>口座</label>
-      <select id="account">
-        <option value="CF005">PayPay 005（ビジネス営業部）</option>
-        <option value="CF003">PayPay 003（はやぶさ支店）</option>
-        <option value="SEIBU">西武信金（阿佐ヶ谷支店）</option>
-      </select>
-
+      <select id="account">${accountOptions}</select>
       <label>日付</label>
       <input type="text" id="date" placeholder="yyyy/MM/dd">
-
       <label>内容</label>
       <input type="text" id="content" placeholder="例: Amazon売上、家賃、JALカード">
-
       <div class="row">
-        <div>
-          <label>入金額</label>
-          <input type="text" id="deposit" placeholder="0">
-        </div>
-        <div>
-          <label>出金額</label>
-          <input type="text" id="withdrawal" placeholder="0">
-        </div>
+        <div><label>入金額</label><input type="text" id="deposit" placeholder="0"></div>
+        <div><label>出金額</label><input type="text" id="withdrawal" placeholder="0"></div>
       </div>
-
       <div class="buttons">
         <button class="cancel" onclick="google.script.host.close()">閉じる</button>
         <button class="ok" onclick="submit()">登録</button>
       </div>
-
       <script>
         function submit() {
           var data = {
@@ -521,7 +347,6 @@ function addPlannedTransaction() {
           };
           google.script.run
             .withSuccessHandler(function() {
-              // フォームをリセットして続けて入力可能に
               document.getElementById('date').value = '';
               document.getElementById('content').value = '';
               document.getElementById('deposit').value = '';
@@ -532,47 +357,94 @@ function addPlannedTransaction() {
             .savePlannedTransaction(data);
         }
       </script>
-    </body>
-    </html>
+    </body></html>
   `).setWidth(400).setHeight(380);
-
   SpreadsheetApp.getUi().showModalDialog(html, '入出金予定の登録');
 }
 
 /**
- * 予定データをDailyシートに保存する（ダイアログから呼ばれる）
- * @param {Object} data - { account, date, content, deposit, withdrawal }
+ * 予定データをDailyシートに保存する
  */
 function savePlannedTransaction(data) {
   const ss = getCfSpreadsheet();
-  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
-  if (!sheet) throw new Error('Dailyシートが見つかりません。');
+  const sheetName = CF_CONFIG.ACCOUNTS[data.account].dailySheet;
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error(`シート ${sheetName} が見つかりません。`);
 
-  const cols = CF_CONFIG.ACCOUNTS[data.account].daily;
+  const C = CF_CONFIG.DAILY_COLS;
   const date = new Date(data.date.replace(/\//g, '-'));
   if (isNaN(date.getTime())) throw new Error('日付の形式が正しくありません。');
 
   const deposit = parseInt(String(data.deposit).replace(/[,、]/g, '')) || 0;
   const withdrawal = parseInt(String(data.withdrawal).replace(/[,、]/g, '')) || 0;
-
   if (deposit === 0 && withdrawal === 0) throw new Error('入金額または出金額を入力してください。');
 
   // 日付順の正しい位置に挿入
-  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
-  const insertRow = findInsertRowForDate_(sheet, cols.DATE, date, headerRows);
-  sheet.insertRowAfter(Math.max(insertRow - 1, headerRows));
+  const insertRow = findInsertRow_(sheet, date);
+  if (insertRow <= sheet.getLastRow()) {
+    sheet.insertRowBefore(insertRow);
+  }
 
-  sheet.getRange(insertRow, cols.DATE).setValue(date).setNumberFormat('yyyy/MM/dd');
-  sheet.getRange(insertRow, cols.CONTENT).setValue(data.content);
-  if (deposit > 0) sheet.getRange(insertRow, cols.DEPOSIT).setValue(deposit).setNumberFormat('#,##0');
-  if (withdrawal > 0) sheet.getRange(insertRow, cols.WITHDRAWAL).setValue(withdrawal).setNumberFormat('#,##0');
-  sheet.getRange(insertRow, cols.SOURCE).setValue(CF_CONFIG.SOURCE.PLANNED);
+  sheet.getRange(insertRow, C.DATE).setValue(date).setNumberFormat('yyyy/MM/dd');
+  sheet.getRange(insertRow, C.CONTENT).setValue(data.content);
+  if (deposit > 0) sheet.getRange(insertRow, C.DEPOSIT).setValue(deposit).setNumberFormat('#,##0');
+  if (withdrawal > 0) sheet.getRange(insertRow, C.WITHDRAWAL).setValue(withdrawal).setNumberFormat('#,##0');
+  sheet.getRange(insertRow, C.SOURCE).setValue(CF_CONFIG.SOURCE.PLANNED);
 
-  // 背景色を予定用に変更（薄い黄色）
-  sheet.getRange(insertRow, cols.DATE, 1, cols.SOURCE - cols.DATE + 1)
-    .setBackground('#fff9c4');
+  // 予定行は薄い黄色
+  sheet.getRange(insertRow, C.DATE, 1, 6).setBackground('#fff9c4');
 
   // 残高再計算
-  recalculateBalances(data.account);
-  updateDailyTotals_();
+  recalculateBalances_(sheet);
+}
+
+// ==============================
+// ヘルパー関数
+// ==============================
+
+/**
+ * 指定口座のDailyシートから前月繰越残高を取得
+ */
+function getCarryForwardBalance_(accountKey) {
+  const ss = getCfSpreadsheet();
+  const sheetName = CF_CONFIG.ACCOUNTS[accountKey].dailySheet;
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return 0;
+
+  const C = CF_CONFIG.DAILY_COLS;
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  if (sheet.getLastRow() <= headerRows) return 0;
+
+  const firstBalance = sheet.getRange(headerRows + 1, C.BALANCE).getValue();
+  const firstDeposit = sheet.getRange(headerRows + 1, C.DEPOSIT).getValue();
+  const firstWithdrawal = sheet.getRange(headerRows + 1, C.WITHDRAWAL).getValue();
+
+  if ((!firstDeposit || firstDeposit === 0) && (!firstWithdrawal || firstWithdrawal === 0) && firstBalance > 0) {
+    return Number(firstBalance);
+  }
+  return 0;
+}
+
+/**
+ * 指定口座のDailyシートから最新残高を取得
+ */
+function getLatestBalance_(accountKey) {
+  const ss = getCfSpreadsheet();
+  const sheetName = CF_CONFIG.ACCOUNTS[accountKey].dailySheet;
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return 0;
+
+  const C = CF_CONFIG.DAILY_COLS;
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= headerRows) return 0;
+
+  const numRows = lastRow - headerRows;
+  const balances = sheet.getRange(headerRows + 1, C.BALANCE, numRows, 1).getValues();
+
+  for (let i = numRows - 1; i >= 0; i--) {
+    const val = Number(balances[i][0]);
+    if (val && val !== 0) return val;
+  }
+  return 0;
 }

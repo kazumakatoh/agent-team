@@ -146,15 +146,12 @@ function updateCurrentBalanceSheet_() {
   const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.CURRENT_BAL);
   if (!sheet) return;
 
-  const dailySheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
   const now = Utilities.formatDate(new Date(), CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy/MM/dd HH:mm');
   let row = 2;
 
   Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
-    // Dailyシートの最新残高を取得
-    const balance = dailySheet
-      ? getLatestDailyBalance_(dailySheet, CF_CONFIG.ACCOUNTS[key].daily)
-      : 0;
+    // 各口座のDailyシートから最新残高を取得
+    const balance = getLatestBalance_(key);
 
     sheet.getRange(row, 2).setValue(balance).setNumberFormat('#,##0');
     sheet.getRange(row, 3).setValue(now);
@@ -176,25 +173,6 @@ function updateCurrentBalanceSheet_() {
     }
     row++;
   });
-}
-
-/**
- * Dailyシートから指定口座の最新残高を取得
- */
-function getLatestDailyBalance_(sheet, cols) {
-  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= headerRows) return 0;
-
-  const numRows = lastRow - headerRows;
-  const balances = sheet.getRange(headerRows + 1, cols.BALANCE, numRows, 1).getValues();
-
-  // 最後から探して最初に見つかった非ゼロの残高を返す
-  for (let i = numRows - 1; i >= 0; i--) {
-    const val = Number(balances[i][0]);
-    if (val && val !== 0) return val;
-  }
-  return 0;
 }
 
 // ==============================

@@ -138,19 +138,20 @@ function updateMonthlySheet(year) {
  */
 function aggregateDailyForMonth_(accountKey, year, month) {
   const ss = getCfSpreadsheet();
-  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
+  const sheetName = CF_CONFIG.ACCOUNTS[accountKey].dailySheet;
+  const sheet = ss.getSheetByName(sheetName);
 
   const result = { totalIncome: 0, totalExpense: 0 };
 
-  if (!sheet || sheet.getLastRow() <= CF_CONFIG.DAILY_HEADER_ROWS) return result;
-
-  const cols = CF_CONFIG.ACCOUNTS[accountKey].daily;
+  const C = CF_CONFIG.DAILY_COLS;
   const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  if (!sheet || sheet.getLastRow() <= headerRows) return result;
+
   const numRows = sheet.getLastRow() - headerRows;
 
-  const dates = sheet.getRange(headerRows + 1, cols.DATE, numRows, 1).getValues();
-  const deposits = sheet.getRange(headerRows + 1, cols.DEPOSIT, numRows, 1).getValues();
-  const withdrawals = sheet.getRange(headerRows + 1, cols.WITHDRAWAL, numRows, 1).getValues();
+  const dates = sheet.getRange(headerRows + 1, C.DATE, numRows, 1).getValues();
+  const deposits = sheet.getRange(headerRows + 1, C.DEPOSIT, numRows, 1).getValues();
+  const withdrawals = sheet.getRange(headerRows + 1, C.WITHDRAWAL, numRows, 1).getValues();
 
   for (let i = 0; i < numRows; i++) {
     const d = dates[i][0];
@@ -164,63 +165,7 @@ function aggregateDailyForMonth_(accountKey, year, month) {
   return result;
 }
 
-// ==============================
-// ヘルパー関数
-// ==============================
-
-/**
- * Dailyシートから前月繰越残高を取得する
- */
-function getCarryForwardBalance_(accountKey) {
-  const ss = getCfSpreadsheet();
-  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
-  if (!sheet) return 0;
-
-  const cols = CF_CONFIG.ACCOUNTS[accountKey].daily;
-  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= headerRows) return 0;
-
-  const firstBalance = sheet.getRange(headerRows + 1, cols.BALANCE).getValue();
-  const firstDeposit = sheet.getRange(headerRows + 1, cols.DEPOSIT).getValue();
-  const firstWithdrawal = sheet.getRange(headerRows + 1, cols.WITHDRAWAL).getValue();
-
-  if ((!firstDeposit || firstDeposit === 0) && (!firstWithdrawal || firstWithdrawal === 0) && firstBalance > 0) {
-    return Number(firstBalance);
-  }
-
-  return 0;
-}
-
-/**
- * 指定口座の月末残高をDailyシートから取得
- */
-function getMonthEndBalance_(accountKey, year, month) {
-  const ss = getCfSpreadsheet();
-  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
-  if (!sheet) return 0;
-
-  const cols = CF_CONFIG.ACCOUNTS[accountKey].daily;
-  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= headerRows) return 0;
-
-  const numRows = lastRow - headerRows;
-  const dates = sheet.getRange(headerRows + 1, cols.DATE, numRows, 1).getValues();
-  const balances = sheet.getRange(headerRows + 1, cols.BALANCE, numRows, 1).getValues();
-
-  let lastBalance = 0;
-  for (let i = 0; i < numRows; i++) {
-    const d = dates[i][0];
-    if (!(d instanceof Date)) continue;
-    if (d.getFullYear() === year && d.getMonth() + 1 === month) {
-      const bal = Number(balances[i][0]) || 0;
-      if (bal !== 0) lastBalance = bal;
-    }
-  }
-
-  return lastBalance;
-}
+// ヘルパー関数 getCarryForwardBalance_, getLatestBalance_ は DailySheet.gs に定義済み
 
 // ==============================
 // 全シート一括更新

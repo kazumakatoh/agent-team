@@ -24,7 +24,11 @@ function runSetup() {
 
   const ss = getCfSpreadsheet();
 
-  createDailySheet_(ss);
+  // 口座別Dailyシートを作成
+  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
+    createAccountDailySheet_(ss, account.dailySheet, account.shortName);
+  });
+
   createMonthlySheet_(ss);
   createSettingsSheet_(ss);
   createCurrentBalanceSheet_(ss);
@@ -33,97 +37,37 @@ function runSetup() {
 }
 
 /**
- * Dailyシートを作成する
+ * 口座別Dailyシートを作成する
  */
-function createDailySheet_(ss) {
-  const name = CF_CONFIG.SHEETS.DAILY;
-  let sheet = ss.getSheetByName(name);
+function createAccountDailySheet_(ss, sheetName, accountName) {
+  let sheet = ss.getSheetByName(sheetName);
   if (sheet) {
-    Logger.log(`${name}シートは既に存在します。スキップ。`);
+    Logger.log(`${sheetName}は既に存在します。スキップ。`);
     return;
   }
 
-  sheet = ss.insertSheet(name);
+  sheet = ss.insertSheet(sheetName);
 
-  // ヘッダー行
-  const headers = [
-    ['合計', '日付', '', '内容', '入金', '出金', '残高', 'ソース', '',
-     '日付', '内容', '入金', '出金', '残高', 'ソース', '',
-     '日付', '内容', '入金', '出金', '残高', 'ソース']
-  ];
+  const headers = [['日付', '内容', '入金', '出金', '残高', 'ソース']];
+  sheet.getRange(1, 1, 1, 6).setValues(headers);
+  sheet.getRange(1, 1, 1, 6)
+    .setBackground('#1a73e8').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
 
-  sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
+  sheet.setColumnWidth(1, 90);   // 日付
+  sheet.setColumnWidth(2, 200);  // 内容
+  sheet.setColumnWidth(3, 100);  // 入金
+  sheet.setColumnWidth(4, 100);  // 出金
+  sheet.setColumnWidth(5, 110);  // 残高
+  sheet.setColumnWidth(6, 55);   // ソース
 
-  // 口座名のマージヘッダー（行0に追加）
-  sheet.insertRowBefore(1);
-  sheet.getRange(1, 2).setValue(CF_CONFIG.ACCOUNTS.CF005.shortName);
-  sheet.getRange(1, 2, 1, 7).merge()
-    .setBackground('#1565c0').setFontColor('#ffffff').setFontWeight('bold')
-    .setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
 
-  sheet.getRange(1, 10).setValue(CF_CONFIG.ACCOUNTS.CF003.shortName);
-  sheet.getRange(1, 10, 1, 6).merge()
-    .setBackground('#2e7d32').setFontColor('#ffffff').setFontWeight('bold')
-    .setHorizontalAlignment('center');
-
-  sheet.getRange(1, 17).setValue(CF_CONFIG.ACCOUNTS.SEIBU.shortName);
-  sheet.getRange(1, 17, 1, 6).merge()
-    .setBackground('#e65100').setFontColor('#ffffff').setFontWeight('bold')
-    .setHorizontalAlignment('center');
-
-  // 合計列のヘッダー
-  sheet.getRange(1, 1, 1, 1)
-    .setValue('3口座合計')
-    .setBackground('#37474f').setFontColor('#ffffff').setFontWeight('bold')
-    .setHorizontalAlignment('center');
-
-  // サブヘッダー行のスタイル
-  sheet.getRange(2, 1, 1, 22)
-    .setBackground('#e3f2fd').setFontWeight('bold')
-    .setHorizontalAlignment('center');
-
-  // 列幅設定
-  sheet.setColumnWidth(1, 100);  // 合計
-
-  // PayPay 005
-  sheet.setColumnWidth(2, 85);   // 日付
-  sheet.setColumnWidth(3, 10);   // 空白
-  sheet.setColumnWidth(4, 150);  // 内容
-  sheet.setColumnWidth(5, 100);  // 入金
-  sheet.setColumnWidth(6, 100);  // 出金
-  sheet.setColumnWidth(7, 100);  // 残高
-  sheet.setColumnWidth(8, 50);   // ソース
-
-  sheet.setColumnWidth(9, 10);   // 空白
-
-  // PayPay 003
-  sheet.setColumnWidth(10, 85);
-  sheet.setColumnWidth(11, 150);
-  sheet.setColumnWidth(12, 100);
-  sheet.setColumnWidth(13, 100);
-  sheet.setColumnWidth(14, 100);
-  sheet.setColumnWidth(15, 50);
-
-  sheet.setColumnWidth(16, 10);  // 空白
-
-  // 西武信金
-  sheet.setColumnWidth(17, 85);
-  sheet.setColumnWidth(18, 150);
-  sheet.setColumnWidth(19, 100);
-  sheet.setColumnWidth(20, 100);
-  sheet.setColumnWidth(21, 100);
-  sheet.setColumnWidth(22, 50);
-
-  // ヘッダー行を固定（マージヘッダー + サブヘッダー = 2行）
-  sheet.setFrozenRows(2);
-  sheet.setFrozenColumns(1);
-
-  // DAILY_HEADER_ROWS を2に更新（実行時）
-  Logger.log('Dailyシート作成完了（ヘッダー2行）');
+  Logger.log(`${sheetName}シート作成完了`);
 }
 
 /**
- * 口座別月次シートを作成する
+ * （廃止）口座別月次シートを作成する
  */
 function createAccountSheet_(ss, sheetName) {
   let sheet = ss.getSheetByName(sheetName);
