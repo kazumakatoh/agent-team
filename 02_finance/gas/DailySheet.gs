@@ -126,6 +126,9 @@ function syncToDaily_(dateFrom, dateTo) {
   // 現残高シート更新
   updateCurrentBalanceSheet_();
 
+  // 日別サマリー更新
+  updateDailySummary();
+
   Logger.log('=== Daily同期完了 ===');
 }
 
@@ -447,4 +450,134 @@ function getLatestBalance_(accountKey) {
     if (val && val !== 0) return val;
   }
   return 0;
+}
+
+// ==============================
+// 日別サマリーシート
+// ==============================
+
+/**
+ * 日別サマリーシートを更新する
+ *
+ * 3口座のDailyシートから全日付を収集し、日付ごとに
+ * 入金合計・出金合計・各口座残高・全体残高を表示する。
+ *
+ * 列: A:日付 / B:入金合計 / C:出金合計 / D:全体残高 / E:PayPay005残高 / F:PayPay003残高 / G:西武信金残高
+ */
+function updateDailySummary() {
+  const ss = getCfSpreadsheet();
+  let sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY_SUMMARY);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(CF_CONFIG.SHEETS.DAILY_SUMMARY);
+  }
+
+  const headers = ['日付', '入金合計', '出金合計', '全体残高',
+    'PayPay 005\n残高', 'PayPay 003\n残高', '西武信用金庫\n残高'];
+
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length)
+    .setBackground('#1a73e8').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center')
+    .setWrap(true);
+
+  const C = CF_CONFIG.DAILY_COLS;
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  const accountKeys = Object.keys(CF_CONFIG.ACCOUNTS);
+
+  // 全口座のデータを日付→{入金, 出金, 残高}のマップに集約
+  const dateMap = {};
+  const allDates = new Set();
+
+  accountKeys.forEach(key => {
+    const acctSheet = ss.getSheetByName(CF_CONFIG.ACCOUNTS[key].dailySheet);
+    if (!acctSheet || acctSheet.getLastRow() <= headerRows) return;
+
+    const numRows = acctSheet.getLastRow() - headerRows;
+    const dates = acctSheet.getRange(headerRows + 1, C.DATE, numRows, 1).getValues();
+    const deposits = acctSheet.getRange(headerRows + 1, C.DEPOSIT, numRows, 1).getValues();
+    const withdrawals = acctSheet.getRange(headerRows + 1, C.WITHDRAWAL, numRows, 1).getValues();
+    const balances = acctSheet.getRange(headerRows + 1, C.BALANCE, numRows, 1).getValues();
+
+    for (let i = 0; i < numRows; i++) {
+      const d = dates[i][0];
+      if (!(d instanceof Date)) continue;
+
+      const dateKey = Utilities.formatDate(d, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
+      allDates.add(dateKey);
+
+      if (!dateMap[dateKey]) {
+        dateMap[dateKey] = { date: d, deposits: {}, withdrawals: {}, balances: {} };
+      }
+
+      const dep = Number(deposits[i][0]) || 0;
+      const wth = Number(withdrawals[i][0]) || 0;
+      dateMap[dateKey].deposits[key] = (dateMap[dateKey].deposits[key] || 0) + dep;
+      dateMap[dateKey].withdrawals[key] = (dateMap[dateKey].withdrawals[key] || 0) + wth;
+
+      const bal = Number(balances[i][0]) || 0;
+      if (bal !== 0) dateMap[dateKey].balances[key] = bal;
+    }
+  });
+
+  // 日付順にソート
+  const sortedDates = Array.from(allDates).sort();
+  if (sortedDates.length === 0) return;
+
+  // 各口座の前回残高を追跡
+  const latestBalance = {};
+  accountKeys.forEach(key => { latestBalance[key] = 0; });
+
+  const rows = [];
+
+  sortedDates.forEach(dateKey => {
+    const data = dateMap[dateKey];
+    let totalDeposit = 0;
+    let totalWithdrawal = 0;
+
+    accountKeys.forEach(key => {
+      totalDeposit += data.deposits[key] || 0;
+      totalWithdrawal += data.withdrawals[key] || 0;
+      if (data.balances[key] !== undefined) {
+        latestBalance[key] = data.balances[key];
+      }
+    });
+
+    const totalBalance = accountKeys.reduce((sum, key) => sum + latestBalance[key], 0);
+
+    rows.push([
+      data.date,
+      totalDeposit || '',
+      totalWithdrawal || '',
+      totalBalance,
+      latestBalance.CF005,
+      latestBalance.CF003,
+      latestBalance.SEIBU
+    ]);
+  });
+
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    sheet.getRange(2, 1, rows.length, 1).setNumberFormat('yyyy/MM/dd');
+    sheet.getRange(2, 2, rows.length, headers.length - 1).setNumberFormat('#,##0');
+
+    // アラート色付け（PayPay005残高ベース）
+    for (let i = 0; i < rows.length; i++) {
+      const cf005Bal = rows[i][4];
+      const totalCell = sheet.getRange(i + 2, 4);
+
+      if (cf005Bal > 0 && cf005Bal <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
+        totalCell.setBackground('#ffcdd2').setFontColor('#b71c1c').setFontWeight('bold');
+      } else if (cf005Bal > 0 && cf005Bal <= CF_CONFIG.ALERT.WARNING_THRESHOLD) {
+        totalCell.setBackground('#fff9c4').setFontColor('#f57f17').setFontWeight('bold');
+      }
+    }
+  }
+
+  sheet.setColumnWidth(1, 90);
+  for (let i = 2; i <= headers.length; i++) sheet.setColumnWidth(i, 110);
+  sheet.setFrozenRows(1);
+
+  Logger.log(`日別サマリー更新完了: ${rows.length}日分`);
 }

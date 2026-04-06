@@ -15,6 +15,7 @@ const CF_CONFIG = {
 
   SHEETS: {
     MONTHLY:     '月別',        // 月次集計（3口座集約）
+    DAILY_SUMMARY: '日別サマリー', // 日別の3口座合計
     SETTINGS:    '設定',        // カテゴリマスタ・設定
     CURRENT_BAL: '現残高'       // 各口座の現在残高
   },
