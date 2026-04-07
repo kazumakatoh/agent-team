@@ -57,6 +57,9 @@ function fetchWalletTransactions(accountKey, dateFrom, dateTo) {
     if (journals.length === 0) break;
 
     journals.forEach(journal => {
+      // 開始仕訳（期首残高振替）はスキップ
+      if (journal.entered_by === 'JOURNAL_TYPE_OPENING') return;
+
       const branches = journal.branches || [];
 
       branches.forEach(branch => {
@@ -191,6 +194,9 @@ function fetchDeals(dateFrom, dateTo) {
     if (journals.length === 0) break;
 
     journals.forEach(journal => {
+      // 開始仕訳（期首残高振替）はスキップ
+      if (journal.entered_by === 'JOURNAL_TYPE_OPENING') return;
+
       const branches = journal.branches || [];
       branches.forEach(branch => {
         const debitor = branch.debitor || {};
