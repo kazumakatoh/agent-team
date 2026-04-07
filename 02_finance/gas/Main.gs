@@ -26,6 +26,7 @@ function onOpen() {
     // 集計
     .addItem('📊 月次集計を更新', 'updateAllMonthlySheets')
     .addItem('📅 日別サマリーを更新', 'updateDailySummary')
+    .addItem('💰 実口座残高を更新', 'updateRealBalance')
     .addItem('💹 残高サマリー', 'showBalanceSummary')
     .addItem('⚠️ アラートチェック', 'checkCashOutRisk')
     .addSeparator()

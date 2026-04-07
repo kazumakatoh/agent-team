@@ -535,3 +535,119 @@ function updateDailySummary() {
 
   Logger.log(`日別サマリー更新完了: ${rows.length}日分`);
 }
+
+// ==============================
+// 実口座残高の自動更新
+// ==============================
+
+/**
+ * 実口座残高シートの指定月にMFの残高試算表データを自動入力する
+ *
+ * MF API: GET /reports/trial_balance_bs
+ * 取得項目: 普通預金, 売掛金, 未払金, 未払費用, 預り金, 商品（棚卸資産）, 長期借入金
+ */
+function updateRealBalance() {
+  const ui = SpreadsheetApp.getUi();
+  const today = new Date();
+  const defaultYear = today.getFullYear();
+  const defaultMonth = today.getMonth(); // 前月
+
+  const result = ui.prompt(
+    '実口座残高の更新',
+    `更新する年月を入力してください（例: 2026/03）\nMF会計の残高試算表から自動取得します。`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (result.getSelectedButton() !== ui.Button.OK) return;
+
+  const input = result.getResponseText().trim();
+  const parts = input.split(/[\/\-]/);
+  if (parts.length !== 2) {
+    ui.alert('⚠️ 年月の形式が正しくありません（例: 2026/03）');
+    return;
+  }
+  const year = parseInt(parts[0]);
+  const month = parseInt(parts[1]);
+
+  if (!isMfConnected()) {
+    ui.alert('❌ MF未連携です。先にMF連携を実行してください。');
+    return;
+  }
+
+  try {
+    // MFの残高試算表（BS）を取得
+    const bsData = mfApiRequest_('/reports/trial_balance_bs', {
+      start_date: `${year}-${String(month).padStart(2, '0')}-01`,
+      end_date: `${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`
+    });
+
+    const balanceMap = extractBalancesFromRows_(bsData.rows || []);
+    Logger.log('BS残高マップ: ' + JSON.stringify(balanceMap).substring(0, 500));
+
+    // 必要な科目の残高を取得
+    const deposits = (balanceMap['普通預金'] || 0);
+    const receivables = (balanceMap['売掛金'] || 0);
+    const payables = (balanceMap['未払金'] || 0);
+    const accruedExpenses = (balanceMap['未払費用'] || 0);
+    const depositsReceived = (balanceMap['預り金'] || 0);
+    const inventory = (balanceMap['商品'] || balanceMap['商品及び製品'] || 0);
+    const longTermDebt = (balanceMap['長期借入金'] || 0);
+
+    // 実口座残高シートの該当行を特定
+    const ss = getCfSpreadsheet();
+    const sheet = ss.getSheetByName('実口座残高');
+    if (!sheet) throw new Error('実口座残高シートが見つかりません。');
+
+    const targetRow = findRealBalanceRow_(sheet, year, month);
+    if (targetRow === 0) throw new Error(`${year}年${month}月の行が見つかりません。`);
+
+    // 自動入力（MFデータ）
+    sheet.getRange(targetRow, 3).setValue(deposits);    // C: 普通預金
+    sheet.getRange(targetRow, 4).setValue(receivables);  // D: 売掛金
+    sheet.getRange(targetRow, 6).setValue(payables);     // F: 未払金
+    sheet.getRange(targetRow, 7).setValue(accruedExpenses); // G: 未払費用
+    sheet.getRange(targetRow, 8).setValue(depositsReceived); // H: 預り金
+    sheet.getRange(targetRow, 10).setValue(inventory);   // J: 商品在庫
+    sheet.getRange(targetRow, 15).setValue(longTermDebt); // O: 融資残高
+
+    ui.alert(
+      `✅ ${year}年${month}月の実口座残高を更新しました\n\n` +
+      `・普通預金: ¥${deposits.toLocaleString()}\n` +
+      `・売掛金: ¥${receivables.toLocaleString()}\n` +
+      `・未払金: ¥${payables.toLocaleString()}\n` +
+      `・未払費用: ¥${accruedExpenses.toLocaleString()}\n` +
+      `・預り金: ¥${depositsReceived.toLocaleString()}\n` +
+      `・商品在庫: ¥${inventory.toLocaleString()}\n` +
+      `・融資残高: ¥${longTermDebt.toLocaleString()}\n\n` +
+      `※ Amazon残高・想定売上・入金割合は手入力してください。`
+    );
+
+  } catch (e) {
+    ui.alert(`❌ エラー\n\n${e.message}`);
+    Logger.log(`実口座残高更新エラー: ${e.message}\n${e.stack}`);
+  }
+}
+
+/**
+ * 実口座残高シートから指定年月の行を検索
+ */
+function findRealBalanceRow_(sheet, year, month) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 2) return 0;
+
+  // 月ラベルを検索
+  const monthLabel = `${month}月末`;
+  const yearLabel = `${year}年`;
+
+  const colA = sheet.getRange(3, 1, lastRow - 2, 1).getValues();
+  const colB = sheet.getRange(3, 2, lastRow - 2, 1).getValues();
+
+  let currentYear = '';
+  for (let i = 0; i < colA.length; i++) {
+    if (String(colA[i][0]).includes('年')) currentYear = String(colA[i][0]);
+    if (currentYear === yearLabel && String(colB[i][0]) === monthLabel) {
+      return i + 3;
+    }
+  }
+
+  return 0;
+}
