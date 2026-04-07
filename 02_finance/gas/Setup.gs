@@ -31,6 +31,7 @@ function runSetup() {
 
   createMonthlySheet_(ss);
   createFixedCostSheet_(ss);
+  createRealBalanceSheet_(ss);
   createSettingsSheet_(ss);
   createCurrentBalanceSheet_(ss);
 
@@ -191,6 +192,165 @@ function createFixedCostSheet_(ss) {
   sheet.setFrozenRows(1);
 
   Logger.log('固定費・融資シート作成完了');
+}
+
+/**
+ * 実口座残高管理シートを作成する
+ *
+ * ① 実口座残高（現実的）= 普通預金残高 − 未払金 − 未払費用 − 役員貸付金 + 売掛金 + Amazon未入金残高
+ * ② 実口座残高（MAX）= ① + 在庫全売却想定入金額
+ * ③ 実口座残高（無借金）= ② − 長期借入金
+ */
+function createRealBalanceSheet_(ss) {
+  const name = '実口座残高';
+  let sheet = ss.getSheetByName(name);
+  if (sheet) {
+    Logger.log(`${name}は既に存在します。スキップ。`);
+    return;
+  }
+
+  sheet = ss.insertSheet(name);
+
+  // タイトル
+  sheet.getRange(1, 1, 1, 4).merge()
+    .setValue('実口座残高管理')
+    .setBackground('#1a73e8').setFontColor('#ffffff')
+    .setFontWeight('bold').setFontSize(14).setHorizontalAlignment('center');
+
+  sheet.getRange(2, 1, 1, 4).merge()
+    .setValue('作成日: ')
+    .setHorizontalAlignment('right').setFontSize(10).setFontColor('#666666');
+
+  // ===== 基礎データ セクション =====
+  const baseRow = 4;
+  sheet.getRange(baseRow, 1, 1, 4).setValues([['基礎データ', '', '金額', '備考']]);
+  sheet.getRange(baseRow, 1, 1, 4)
+    .setBackground('#37474f').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
+
+  const baseData = [
+    ['普通預金残高（3口座合計）', '', 0, '現残高シートの合計値を転記'],
+    ['', '', '', ''],
+    ['  PayPay 005', '', 0, ''],
+    ['  PayPay 003', '', 0, ''],
+    ['  西武信用金庫', '', 0, ''],
+  ];
+  sheet.getRange(baseRow + 1, 1, baseData.length, 4).setValues(baseData);
+  sheet.getRange(baseRow + 1, 3, baseData.length, 1).setNumberFormat('#,##0');
+  sheet.getRange(baseRow + 1, 1, 1, 4).setBackground('#e3f2fd').setFontWeight('bold');
+
+  // ===== 実口座残高① セクション =====
+  const sec1Row = baseRow + baseData.length + 2;
+  sheet.getRange(sec1Row, 1, 1, 4).setValues([['実口座残高①（現実的）', '', '金額', '備考']]);
+  sheet.getRange(sec1Row, 1, 1, 4)
+    .setBackground('#2e7d32').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
+
+  const sec1Data = [
+    ['普通預金残高', '', 0, '上記の合計値'],
+    ['', '', '', ''],
+    ['【マイナス項目】', '', '', ''],
+    ['(−) 未払金', '', 0, 'MF会計のBS → 未払金'],
+    ['(−) 未払費用', '', 0, 'MF会計のBS → 未払費用'],
+    ['(−) 役員貸付金', '', 0, 'MF会計のBS → 役員貸付金'],
+    ['', '', '', ''],
+    ['【プラス項目】', '', '', ''],
+    ['(+) 売掛金', '', 0, 'MF会計のBS → 売掛金'],
+    ['(+) Amazon未入金残高', '', 0, 'セラーセントラルの残高'],
+    ['', '', '', ''],
+  ];
+  sheet.getRange(sec1Row + 1, 1, sec1Data.length, 4).setValues(sec1Data);
+  sheet.getRange(sec1Row + 1, 3, sec1Data.length, 1).setNumberFormat('#,##0');
+
+  // ①の計算結果行
+  const result1Row = sec1Row + sec1Data.length + 1;
+  sheet.getRange(result1Row, 1).setValue('★ 実口座残高①').setFontWeight('bold').setFontSize(12);
+  sheet.getRange(result1Row, 3)
+    .setFormula(`=C${sec1Row+1}-C${sec1Row+4}-C${sec1Row+5}-C${sec1Row+6}+C${sec1Row+9}+C${sec1Row+10}`)
+    .setNumberFormat('#,##0').setFontWeight('bold').setFontSize(12);
+  sheet.getRange(result1Row, 1, 1, 4).setBackground('#c8e6c9');
+  sheet.getRange(result1Row, 4).setValue('現実的な手元資金');
+
+  // ===== 実口座残高② セクション =====
+  const sec2Row = result1Row + 3;
+  sheet.getRange(sec2Row, 1, 1, 4).setValues([['実口座残高②（MAX）', '', '金額', '備考']]);
+  sheet.getRange(sec2Row, 1, 1, 4)
+    .setBackground('#1565c0').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
+
+  const sec2Data = [
+    ['実口座残高①', '', 0, '上記①の値を転記'],
+    ['', '', '', ''],
+    ['【在庫全売却想定】', '', '', ''],
+    ['(+) 在庫原価', '', 0, 'MF会計のBS → 商品'],
+    ['(+) 想定売価（原価×掛け率）', '', 0, '掛け率は右に入力 →'],
+    ['(−) Amazon手数料想定', '', 0, '手数料率は右に入力 →'],
+    ['(=) 在庫売却後の想定入金額', '', 0, '売価 − 手数料'],
+    ['', '', '', ''],
+  ];
+  sheet.getRange(sec2Row + 1, 1, sec2Data.length, 4).setValues(sec2Data);
+  sheet.getRange(sec2Row + 1, 3, sec2Data.length, 1).setNumberFormat('#,##0');
+
+  // 掛け率・手数料率入力セル
+  sheet.getRange(sec2Row + 5, 4).setValue('掛け率: ');
+  sheet.getRange(sec2Row + 5, 5).setValue(2.5).setNumberFormat('0.0').setBackground('#fff9c4');
+  sheet.getRange(sec2Row + 6, 4).setValue('手数料率: ');
+  sheet.getRange(sec2Row + 6, 5).setValue(0.15).setNumberFormat('0%').setBackground('#fff9c4');
+
+  // ②の計算結果行
+  const result2Row = sec2Row + sec2Data.length + 1;
+  sheet.getRange(result2Row, 1).setValue('★ 実口座残高②').setFontWeight('bold').setFontSize(12);
+  sheet.getRange(result2Row, 3).setValue(0)
+    .setNumberFormat('#,##0').setFontWeight('bold').setFontSize(12);
+  sheet.getRange(result2Row, 1, 1, 4).setBackground('#bbdefb');
+  sheet.getRange(result2Row, 4).setValue('在庫含むMAX手元資金');
+
+  // ===== 実口座残高③ セクション =====
+  const sec3Row = result2Row + 3;
+  sheet.getRange(sec3Row, 1, 1, 4).setValues([['実口座残高③（無借金指標）', '', '金額', '備考']]);
+  sheet.getRange(sec3Row, 1, 1, 4)
+    .setBackground('#b71c1c').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
+
+  const sec3Data = [
+    ['実口座残高②', '', 0, '上記②の値を転記'],
+    ['', '', '', ''],
+    ['(−) 長期借入金', '', 0, '融資シートの残高合計を転記'],
+    ['', '', '', ''],
+  ];
+  sheet.getRange(sec3Row + 1, 1, sec3Data.length, 4).setValues(sec3Data);
+  sheet.getRange(sec3Row + 1, 3, sec3Data.length, 1).setNumberFormat('#,##0');
+
+  // ③の計算結果行
+  const result3Row = sec3Row + sec3Data.length + 1;
+  sheet.getRange(result3Row, 1).setValue('★ 実口座残高③').setFontWeight('bold').setFontSize(12);
+  sheet.getRange(result3Row, 3)
+    .setFormula(`=C${sec3Row+1}-C${sec3Row+3}`)
+    .setNumberFormat('#,##0').setFontWeight('bold').setFontSize(12);
+  sheet.getRange(result3Row, 1, 1, 4).setBackground('#ffcdd2');
+  sheet.getRange(result3Row, 4).setValue('全額返済後の残高（実質無借金指標）');
+
+  // ===== 判定セクション =====
+  const judgeRow = result3Row + 3;
+  sheet.getRange(judgeRow, 1, 1, 4).setValues([['判定', '', '結果', '']]);
+  sheet.getRange(judgeRow, 1, 1, 4)
+    .setBackground('#37474f').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
+
+  sheet.getRange(judgeRow + 1, 1).setValue('③がプラス → 実質無借金経営');
+  sheet.getRange(judgeRow + 2, 1).setValue('③がマイナス → 借入超過額');
+  sheet.getRange(judgeRow + 2, 3)
+    .setFormula(`=IF(C${result3Row}>=0,"✅ 実質無借金","❌ 借入超過 "&TEXT(ABS(C${result3Row}),"#,##0")&"円")`)
+    .setFontWeight('bold').setFontSize(11);
+
+  // 列幅
+  sheet.setColumnWidth(1, 240);
+  sheet.setColumnWidth(2, 30);
+  sheet.setColumnWidth(3, 130);
+  sheet.setColumnWidth(4, 200);
+  sheet.setColumnWidth(5, 80);
+
+  Logger.log('実口座残高シート作成完了');
 }
 
 /**
