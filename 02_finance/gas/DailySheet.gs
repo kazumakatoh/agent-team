@@ -554,15 +554,21 @@ function updateRealBalance() {
 
   const result = ui.prompt(
     '実口座残高の更新',
-    `更新する年月を入力してください（例: 2026/03）\nMF会計の残高試算表から自動取得します。`,
+    `更新する年月を入力してください（例: 2026/03）\n\n全期間一括更新する場合は「ALL」と入力\n\nMF会計の残高試算表から自動取得します。`,
     ui.ButtonSet.OK_CANCEL
   );
   if (result.getSelectedButton() !== ui.Button.OK) return;
 
   const input = result.getResponseText().trim();
-  const parts = input.split(/[\/\-]/);
+
+  if (input.toUpperCase() === 'ALL') {
+    updateRealBalanceAll_();
+    return;
+  }
+
+  const parts = input.split(/[\/\-\.]/);
   if (parts.length !== 2) {
-    ui.alert('⚠️ 年月の形式が正しくありません（例: 2026/03）');
+    ui.alert('⚠️ 年月の形式が正しくありません（例: 2026/03 または ALL）');
     return;
   }
   const year = parseInt(parts[0]);
@@ -630,6 +636,63 @@ function updateRealBalance() {
 /**
  * 実口座残高シートから指定年月の行を検索
  */
+/**
+ * 全期間の実口座残高を一括更新する
+ * MFの会計年度ごとに残高試算表を取得して各月に反映
+ */
+function updateRealBalanceAll_() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = getCfSpreadsheet();
+  const sheet = ss.getSheetByName('実口座残高');
+  if (!sheet) throw new Error('実口座残高シートが見つかりません。');
+
+  // 実口座残高シートの全行を走査して年月を取得
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 2) return;
+
+  const labels = sheet.getRange(3, 1, lastRow - 2, 1).getValues();
+  let updated = 0;
+
+  for (let i = 0; i < labels.length; i++) {
+    const label = String(labels[i][0]);
+    const match = label.match(/^(\d{4})\.(\d{2})$/);
+    if (!match) continue;
+
+    const year = parseInt(match[1]);
+    const month = parseInt(match[2]);
+    const row = i + 3;
+
+    try {
+      const lastDay = new Date(year, month, 0).getDate();
+      const bsData = mfApiRequest_('/reports/trial_balance_bs', {
+        start_date: `${year}-${String(month).padStart(2, '0')}-01`,
+        end_date: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+      });
+
+      const balanceMap = extractBalancesFromRows_(bsData.rows || []);
+
+      sheet.getRange(row, 3).setValue(balanceMap['普通預金'] || 0);
+      sheet.getRange(row, 4).setValue(balanceMap['売掛金'] || 0);
+      sheet.getRange(row, 6).setValue(balanceMap['未払金'] || 0);
+      sheet.getRange(row, 7).setValue(balanceMap['未払費用'] || 0);
+      sheet.getRange(row, 8).setValue(balanceMap['預り金'] || 0);
+      sheet.getRange(row, 10).setValue(balanceMap['商品'] || balanceMap['商品及び製品'] || 0);
+      sheet.getRange(row, 15).setValue(balanceMap['長期借入金'] || 0);
+
+      updated++;
+      Logger.log(`${label}: 更新完了`);
+
+      // レート制限対策
+      Utilities.sleep(500);
+    } catch (e) {
+      Logger.log(`${label}: エラー - ${e.message}`);
+      // 会計年度外の月はスキップ
+    }
+  }
+
+  ui.alert(`✅ 実口座残高を一括更新しました\n\n・更新: ${updated}ヶ月分\n\n※ Amazon残高・入金割合は手入力してください。`);
+}
+
 function findRealBalanceRow_(sheet, year, month) {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 2) return 0;

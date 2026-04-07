@@ -261,35 +261,20 @@ function createRealBalanceSheet_(ss) {
   // 在庫残高シートは5行/月構成: 在庫→見込売上→棚卸原価→仕入原価→販売単価
   // 見込売上の合計はD列
 
-  const allMonths = [
-    // [年月ラベル, 在庫シートの見込売上行番号（後で手動設定）]
-    { label: '2025.04', year: 2025, month: 4 },
-    { label: '2025.05', year: 2025, month: 5 },
-    { label: '2025.06', year: 2025, month: 6 },
-    { label: '2025.07', year: 2025, month: 7 },
-    { label: '2025.08', year: 2025, month: 8 },
-    { label: '2025.09', year: 2025, month: 9 },
-    { label: '2025.10', year: 2025, month: 10 },
-    { label: '2025.11', year: 2025, month: 11 },
-    { label: '2025.12', year: 2025, month: 12 },
-    { label: '2026.01', year: 2026, month: 1 },
-    { label: '2026.02', year: 2026, month: 2 },
-    { label: '2026.03', year: 2026, month: 3 },
-    { label: '2026.04', year: 2026, month: 4 },
-    { label: '2026.05', year: 2026, month: 5 },
-    { label: '2026.06', year: 2026, month: 6 },
-    { label: '2026.07', year: 2026, month: 7 },
-    { label: '2026.08', year: 2026, month: 8 },
-    { label: '2026.09', year: 2026, month: 9 },
-    { label: '2026.10', year: 2026, month: 10 },
-    { label: '2026.11', year: 2026, month: 11 },
-    { label: '2026.12', year: 2026, month: 12 },
-    { label: '2027.01', year: 2027, month: 1 },
-    { label: '2027.02', year: 2027, month: 2 },
-    { label: '2027.03', year: 2027, month: 3 },
-    { label: '2027.04', year: 2027, month: 4 },
-    { label: '2027.05', year: 2027, month: 5 },
-  ];
+  // 2023.03 〜 2027.05 を自動生成
+  const allMonths = [];
+  const startYear = 2023, startMonth = 3;
+  const endYear = 2027, endMonth = 5;
+  let y = startYear, mo = startMonth;
+  while (y < endYear || (y === endYear && mo <= endMonth)) {
+    allMonths.push({
+      label: `${y}.${String(mo).padStart(2, '0')}`,
+      year: y,
+      month: mo
+    });
+    mo++;
+    if (mo > 12) { mo = 1; y++; }
+  }
 
   // 在庫残高シートの見込売上行マップ（年月 → 行番号）
   // 在庫残高シートは5行/月: 在庫(+0), 見込売上(+1), 棚卸原価(+2), 仕入原価(+3), 販売単価(+4)
