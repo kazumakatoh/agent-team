@@ -31,6 +31,7 @@ from config import (
     MA_PERIODS,
     TOP_N_SYMBOLS,
     REFRESH_INTERVAL,
+    USD_JPY_RATE,
 )
 from mexc_api import get_top_symbols, get_klines, get_klines_batch
 from analyzer import add_moving_averages, analyze_symbol
@@ -60,6 +61,20 @@ def load_data(timeframe="1d", top_n=TOP_N_SYMBOLS):
     for symbol, df in klines_data.items():
         signal = analyze_symbol(df)
         info = symbol_info.get(symbol, {})
+
+        # 24h出来高（USDT建て）
+        volume_usdt = info.get("volume", 0)
+        # 日本円換算
+        volume_jpy = volume_usdt * USD_JPY_RATE
+
+        # 30日平均1日あたり出来高（ローソク足データから計算）
+        avg_volume_30d_jpy = 0
+        if len(df) >= 30 and "volume" in df.columns:
+            # 日足: 直近30本の出来高平均 × 現在値 × JPYレート
+            last_30 = df.tail(30)
+            avg_vol_coins = last_30["volume"].mean()
+            avg_volume_30d_jpy = avg_vol_coins * signal["close"] * USD_JPY_RATE
+
         results.append({
             "symbol": symbol,
             "symbol_display": symbol.replace("USDT", "/USDT"),
@@ -68,7 +83,9 @@ def load_data(timeframe="1d", top_n=TOP_N_SYMBOLS):
             "signal_label": SIGNAL_LABELS.get(signal["signal"], "不明"),
             "trend_strength": signal["trend_strength"],
             "detail": signal["detail"],
-            "volume": info.get("volume", 0),
+            "volume_usdt": volume_usdt,
+            "volume_jpy": volume_jpy,
+            "avg_volume_30d_jpy": avg_volume_30d_jpy,
             "change_pct": info.get("priceChangePercent", 0),
             "ma5": signal["ma_values"].get(5, 0),
             "ma10": signal["ma_values"].get(10, 0),
@@ -364,7 +381,8 @@ HTML_TEMPLATE = """
                 <table>
                     <thead><tr>
                         <th>銘柄</th><th>シグナル</th><th>現在値</th>
-                        <th>強度(%)</th><th>24h変動(%)</th><th>判定理由</th>
+                        <th>24h出来高(円)</th><th>30日平均/日(円)</th>
+                        <th>乖離率(%)</th><th>24h変動(%)</th><th>判定理由</th>
                     </tr></thead>
                     <tbody>`;
 
@@ -374,6 +392,8 @@ HTML_TEMPLATE = """
                     <td><strong>${d.symbol_display}</strong></td>
                     <td><span class="signal-badge signal-${d.signal}">${d.signal_label}</span></td>
                     <td>${formatPrice(d.price)}</td>
+                    <td>${formatJPY(d.volume_jpy)}</td>
+                    <td>${formatJPY(d.avg_volume_30d_jpy)}</td>
                     <td>${d.trend_strength.toFixed(2)}</td>
                     <td class="${changeClass}">${d.change_pct >= 0 ? '+' : ''}${d.change_pct.toFixed(2)}%</td>
                     <td style="font-size:12px;color:#aaa">${d.detail}</td>
@@ -410,6 +430,13 @@ HTML_TEMPLATE = """
             if (p >= 1000) return p.toFixed(2);
             if (p >= 1) return p.toFixed(4);
             return p.toFixed(6);
+        }
+
+        function formatJPY(v) {
+            if (v >= 1e12) return (v / 1e12).toFixed(1) + '兆円';
+            if (v >= 1e8) return (v / 1e8).toFixed(1) + '億円';
+            if (v >= 1e4) return (v / 1e4).toFixed(0) + '万円';
+            return Math.round(v).toLocaleString() + '円';
         }
 
         async function showChart(symbol) {
@@ -471,7 +498,7 @@ HTML_TEMPLATE = """
                         <div>
                             <strong>シグナル:</strong> <span class="signal-badge signal-${info.signal}">${info.signal_label}</span><br><br>
                             <strong>判定理由:</strong> ${info.detail}<br>
-                            <strong>トレンド強度:</strong> ${info.trend_strength.toFixed(2)}%
+                            <strong>MA乖離率:</strong> ${info.trend_strength.toFixed(2)}%
                         </div>`;
                 }
             } catch(e) {

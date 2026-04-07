@@ -37,5 +37,8 @@ SIGNAL_LABELS = {
     "sideways": "⚪ 横ばい（様子見）",
 }
 
+# === 為替レート ===
+USD_JPY_RATE = 150  # 1ドル = 150円（概算）
+
 # === LINE通知（Phase 4で実装） ===
 LINE_NOTIFY_TOKEN = ""  # LINE Notify トークンをここに設定
