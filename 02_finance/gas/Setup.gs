@@ -222,14 +222,14 @@ function createRealBalanceSheet_(ss) {
   const headers = [
     '年月',
     '', // B列予備
-    '普通預金', '売掛金', 'Amazon残高',  // 資産
-    '未払金', '未払費用', '預り金',       // 負債
-    '実質残高①',                         // ①
-    '商品在庫', '想定売上', '入金割合', '想定入金',  // 在庫関連
-    '実質残高②',                         // ②
-    '融資残高',                           // 借入金
-    '実質残高③',                         // ③
-    '判定①', '判定②', '判定③'           // 判定3つ
+    '普通預金', '売掛金',                 // 資産 C,D
+    '未払金', '未払費用', '預り金',       // 負債 E,F,G
+    '実質残高①',                         // H = C-E-F-G+D
+    '商品在庫', '想定売上', '入金割合', '想定入金',  // 在庫関連 I,J,K,L
+    '実質残高②',                         // M = H+L
+    '融資残高',                           // N
+    '実質残高③',                         // O = M-N
+    '判定①', '判定②', '判定③'           // P,Q,R
   ];
 
   sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
@@ -240,19 +240,19 @@ function createRealBalanceSheet_(ss) {
 
   // 色分け
   // 自動入力（MF）= 濃い青
-  [3,4,6,7,8,10,15].forEach(col => {
+  [3,4,5,6,7,9,14].forEach(col => {
     sheet.getRange(2, col).setBackground('#1565c0');
   });
-  // 手入力 = オレンジ
-  [5,11,12].forEach(col => {
+  // 手入力 = オレンジ（入金割合のみ）
+  [11].forEach(col => {
     sheet.getRange(2, col).setBackground('#e65100');
   });
   // 計算結果 = 緑
-  [9,13,14,16].forEach(col => {
+  [8,12,13,15].forEach(col => {
     sheet.getRange(2, col).setBackground('#2e7d32');
   });
   // 判定 = 濃いグレー
-  [17,18,19].forEach(col => {
+  [16,17,18].forEach(col => {
     sheet.getRange(2, col).setBackground('#37474f');
   });
 
@@ -299,49 +299,49 @@ function createRealBalanceSheet_(ss) {
 
     // B列は空（旧「月末」列を廃止、A列に統合）
 
-    // 在庫残高シートの見込売上を自動参照（K列: 想定売上）
+    // 在庫残高シートの見込売上を自動参照（J列: 想定売上）
     const salesRow = getInventorySalesRow(m.year, m.month);
-    sheet.getRange(row, 11).setFormula(`='在庫残高'!D${salesRow}`);
+    sheet.getRange(row, 10).setFormula(`='在庫残高'!D${salesRow}`);
 
-    // ① 実質残高 = C - F - G - H + D + E
-    sheet.getRange(row, 9).setFormula(`=C${row}-F${row}-G${row}-H${row}+D${row}+E${row}`)
+    // H: ① 実質残高 = C - E - F - G + D
+    sheet.getRange(row, 8).setFormula(`=C${row}-E${row}-F${row}-G${row}+D${row}`)
       .setNumberFormat('#,##0').setBackground('#e8f5e9');
 
-    // 想定入金 = K × L
-    sheet.getRange(row, 13).setFormula(`=K${row}*L${row}`).setNumberFormat('#,##0');
+    // L: 想定入金 = J × K
+    sheet.getRange(row, 12).setFormula(`=J${row}*K${row}`).setNumberFormat('#,##0');
 
-    // ② 実質残高 = ① + 想定入金
-    sheet.getRange(row, 14).setFormula(`=I${row}+M${row}`)
+    // M: ② 実質残高 = ① + 想定入金
+    sheet.getRange(row, 13).setFormula(`=H${row}+L${row}`)
       .setNumberFormat('#,##0').setBackground('#e8f5e9');
 
-    // ③ 実質残高 = ② - 融資残高
-    sheet.getRange(row, 16).setFormula(`=N${row}-O${row}`)
+    // O: ③ 実質残高 = ② - 融資残高
+    sheet.getRange(row, 15).setFormula(`=M${row}-N${row}`)
       .setNumberFormat('#,##0').setBackground('#e8f5e9');
 
-    // 判定① 実質残高① vs 融資残高
+    // P: 判定① 実質残高① vs 融資残高
+    sheet.getRange(row, 16).setFormula(
+      `=IF(N${row}=0,"",IF(H${row}>=N${row},"✅","❌ "&TEXT(N${row}-H${row},"#,##0")))`
+    );
+
+    // Q: 判定② 実質残高② vs 融資残高
     sheet.getRange(row, 17).setFormula(
-      `=IF(O${row}=0,"",IF(I${row}>=O${row},"✅","❌ "&TEXT(O${row}-I${row},"#,##0")))`
+      `=IF(N${row}=0,"",IF(M${row}>=N${row},"✅","❌ "&TEXT(N${row}-M${row},"#,##0")))`
     );
 
-    // 判定② 実質残高② vs 融資残高
+    // R: 判定③ 実質残高③
     sheet.getRange(row, 18).setFormula(
-      `=IF(O${row}=0,"",IF(N${row}>=O${row},"✅","❌ "&TEXT(O${row}-N${row},"#,##0")))`
-    );
-
-    // 判定③ 実質残高③
-    sheet.getRange(row, 19).setFormula(
-      `=IF(O${row}=0,"",IF(P${row}>=0,"✅ 無借金","❌ "&TEXT(ABS(P${row}),"#,##0")))`
+      `=IF(N${row}=0,"",IF(O${row}>=0,"✅ 無借金","❌ "&TEXT(ABS(O${row}),"#,##0")))`
     );
 
     // 金額フォーマット
-    [3,4,5,6,7,8,10,15].forEach(col => {
+    [3,4,5,6,7,9,14].forEach(col => {
       sheet.getRange(row, col).setNumberFormat('#,##0');
     });
-    sheet.getRange(row, 11).setNumberFormat('#,##0'); // 想定売上
-    sheet.getRange(row, 12).setNumberFormat('0.0%');
+    sheet.getRange(row, 10).setNumberFormat('#,##0'); // 想定売上
+    sheet.getRange(row, 11).setNumberFormat('0.0%');  // 入金割合
 
-    // 手入力セルの背景色（Amazon残高、入金割合のみ。想定売上は在庫シートから自動）
-    [5, 12].forEach(col => {
+    // 手入力セルの背景色（入金割合のみ）
+    [11].forEach(col => {
       sheet.getRange(row, col).setBackground('#fff9c4');
     });
 
@@ -349,23 +349,23 @@ function createRealBalanceSheet_(ss) {
   });
 
   // 列幅
-  sheet.setColumnWidth(1, 60);
-  sheet.setColumnWidth(2, 55);
-  [3,4,5,6,7,8].forEach(col => sheet.setColumnWidth(col, 90));
-  sheet.setColumnWidth(9, 100);  // ①
-  sheet.setColumnWidth(10, 90);
-  sheet.setColumnWidth(11, 90);
-  sheet.setColumnWidth(12, 60);
-  sheet.setColumnWidth(13, 90);
-  sheet.setColumnWidth(14, 100); // ②
-  sheet.setColumnWidth(15, 100);
-  sheet.setColumnWidth(16, 110); // ③
-  sheet.setColumnWidth(17, 100); // 判定①
-  sheet.setColumnWidth(18, 100); // 判定②
-  sheet.setColumnWidth(19, 110); // 判定③
+  sheet.setColumnWidth(1, 60);  // 年月
+  sheet.setColumnWidth(2, 30);  // 予備
+  [3,4,5,6,7].forEach(col => sheet.setColumnWidth(col, 90));
+  sheet.setColumnWidth(8, 100);  // ①
+  sheet.setColumnWidth(9, 90);   // 商品在庫
+  sheet.setColumnWidth(10, 90);  // 想定売上
+  sheet.setColumnWidth(11, 60);  // 入金割合
+  sheet.setColumnWidth(12, 90);  // 想定入金
+  sheet.setColumnWidth(13, 100); // ②
+  sheet.setColumnWidth(14, 100); // 融資残高
+  sheet.setColumnWidth(15, 110); // ③
+  sheet.setColumnWidth(16, 100); // 判定①
+  sheet.setColumnWidth(17, 100); // 判定②
+  sheet.setColumnWidth(18, 110); // 判定③
 
   sheet.setFrozenRows(2);
-  sheet.setFrozenColumns(2);
+  sheet.setFrozenColumns(1);
 
   Logger.log('実口座残高シート作成完了（月次推移形式）');
 }

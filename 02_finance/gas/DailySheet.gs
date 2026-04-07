@@ -606,14 +606,14 @@ function updateRealBalance() {
     const targetRow = findRealBalanceRow_(sheet, year, month);
     if (targetRow === 0) throw new Error(`${year}年${month}月の行が見つかりません。`);
 
-    // 自動入力（MFデータ）
-    sheet.getRange(targetRow, 3).setValue(deposits);    // C: 普通預金
-    sheet.getRange(targetRow, 4).setValue(receivables);  // D: 売掛金
-    sheet.getRange(targetRow, 6).setValue(payables);     // F: 未払金
-    sheet.getRange(targetRow, 7).setValue(accruedExpenses); // G: 未払費用
-    sheet.getRange(targetRow, 8).setValue(depositsReceived); // H: 預り金
-    sheet.getRange(targetRow, 10).setValue(inventory);   // J: 商品在庫
-    sheet.getRange(targetRow, 15).setValue(longTermDebt); // O: 融資残高
+    // 自動入力（MFデータ）※Amazon残高列削除後の列番号
+    sheet.getRange(targetRow, 3).setValue(deposits);         // C: 普通預金
+    sheet.getRange(targetRow, 4).setValue(receivables);      // D: 売掛金
+    sheet.getRange(targetRow, 5).setValue(payables);         // E: 未払金
+    sheet.getRange(targetRow, 6).setValue(accruedExpenses);  // F: 未払費用
+    sheet.getRange(targetRow, 7).setValue(depositsReceived); // G: 預り金
+    sheet.getRange(targetRow, 9).setValue(inventory);        // I: 商品在庫
+    sheet.getRange(targetRow, 14).setValue(longTermDebt);    // N: 融資残高
 
     ui.alert(
       `✅ ${year}年${month}月の実口座残高を更新しました\n\n` +
@@ -671,13 +671,13 @@ function updateRealBalanceAll_() {
 
       const balanceMap = extractBalancesFromRows_(bsData.rows || []);
 
-      sheet.getRange(row, 3).setValue(balanceMap['普通預金'] || 0);
-      sheet.getRange(row, 4).setValue(balanceMap['売掛金'] || 0);
-      sheet.getRange(row, 6).setValue(balanceMap['未払金'] || 0);
-      sheet.getRange(row, 7).setValue(balanceMap['未払費用'] || 0);
-      sheet.getRange(row, 8).setValue(balanceMap['預り金'] || 0);
-      sheet.getRange(row, 10).setValue(balanceMap['商品'] || balanceMap['商品及び製品'] || 0);
-      sheet.getRange(row, 15).setValue(balanceMap['長期借入金'] || 0);
+      sheet.getRange(row, 3).setValue(balanceMap['普通預金'] || 0);         // C
+      sheet.getRange(row, 4).setValue(balanceMap['売掛金'] || 0);         // D
+      sheet.getRange(row, 5).setValue(balanceMap['未払金'] || 0);         // E
+      sheet.getRange(row, 6).setValue(balanceMap['未払費用'] || 0);       // F
+      sheet.getRange(row, 7).setValue(balanceMap['預り金'] || 0);         // G
+      sheet.getRange(row, 9).setValue(balanceMap['商品'] || balanceMap['商品及び製品'] || 0);  // I
+      sheet.getRange(row, 14).setValue(balanceMap['長期借入金'] || 0);    // N
 
       updated++;
       Logger.log(`${label}: 更新完了`);
