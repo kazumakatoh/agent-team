@@ -1,7 +1,6 @@
-# 認証情報・トークン
-02_finance/資金繰り表/config.json
-
-# 一般的な除外
+# 認証情報
 .env
 *.secret
+
+# Python
 __pycache__/
