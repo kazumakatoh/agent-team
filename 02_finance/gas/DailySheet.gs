@@ -180,6 +180,7 @@ function writeTransactionsToSheet_(sheet, transactions) {
 
 /**
  * 既存の同一データを検索
+ * 日付 + 内容 + 金額 + ソース で重複判定
  */
 function findExistingRow_(sheet, tx) {
   const C = CF_CONFIG.DAILY_COLS;
@@ -190,17 +191,27 @@ function findExistingRow_(sheet, tx) {
   const numRows = lastRow - headerRows;
   const dates = sheet.getRange(headerRows + 1, C.DATE, numRows, 1).getValues();
   const contents = sheet.getRange(headerRows + 1, C.CONTENT, numRows, 1).getValues();
+  const deposits = sheet.getRange(headerRows + 1, C.DEPOSIT, numRows, 1).getValues();
+  const withdrawals = sheet.getRange(headerRows + 1, C.WITHDRAWAL, numRows, 1).getValues();
   const sources = sheet.getRange(headerRows + 1, C.SOURCE, numRows, 1).getValues();
 
   const targetDate = Utilities.formatDate(tx.date, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
+  const txAmount = tx.deposit > 0 ? tx.deposit : tx.withdrawal;
 
   for (let i = 0; i < numRows; i++) {
     if (!(dates[i][0] instanceof Date)) continue;
     const rowDate = Utilities.formatDate(dates[i][0], CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
 
-    if (rowDate === targetDate
-        && String(contents[i][0]).trim() === String(tx.content).trim()
-        && sources[i][0] === CF_CONFIG.SOURCE.MF) {
+    if (rowDate !== targetDate) continue;
+    if (String(contents[i][0]).trim() !== String(tx.content).trim()) continue;
+    if (sources[i][0] !== CF_CONFIG.SOURCE.MF) continue;
+
+    // 金額も一致するか確認
+    const rowDeposit = Number(deposits[i][0]) || 0;
+    const rowWithdrawal = Number(withdrawals[i][0]) || 0;
+    const rowAmount = rowDeposit > 0 ? rowDeposit : rowWithdrawal;
+
+    if (rowAmount === txAmount) {
       return i + headerRows + 1;
     }
   }
