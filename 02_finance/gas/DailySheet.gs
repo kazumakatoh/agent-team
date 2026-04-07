@@ -138,84 +138,27 @@ function syncToDaily_(dateFrom, dateTo) {
 
 /**
  * トランザクションをDailyシートに書き込む
- * 同一日付・同一内容・同一ソースのデータは上書き
+ * MFの仕訳を素直に全件追加する（重複チェックなし）
+ * ダブりの管理はMF会計側で行う方針
  */
 function writeTransactionsToSheet_(sheet, transactions) {
   const C = CF_CONFIG.DAILY_COLS;
   const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
 
   transactions.forEach(tx => {
-    // 既存データの重複チェック
-    const existingRow = findExistingRow_(sheet, tx);
+    // 日付順の正しい位置に挿入
+    const insertRow = findInsertRow_(sheet, tx.date);
 
-    if (existingRow > 0) {
-      // 上書き更新
-      sheet.getRange(existingRow, C.CONTENT).setValue(tx.content);
-      if (tx.deposit > 0) {
-        sheet.getRange(existingRow, C.DEPOSIT).setValue(tx.deposit);
-        sheet.getRange(existingRow, C.WITHDRAWAL).setValue('');
-      } else {
-        sheet.getRange(existingRow, C.DEPOSIT).setValue('');
-        sheet.getRange(existingRow, C.WITHDRAWAL).setValue(tx.withdrawal);
-      }
-      sheet.getRange(existingRow, C.SOURCE).setValue(tx.source);
-    } else {
-      // 日付順の正しい位置に挿入（予定データの前に入れる）
-      const insertRow = findInsertRow_(sheet, tx.date);
-
-      // 行を挿入
-      if (insertRow <= sheet.getLastRow()) {
-        sheet.insertRowBefore(insertRow);
-      }
-
-      const row = insertRow;
-      sheet.getRange(row, C.DATE).setValue(tx.date).setNumberFormat('yyyy/MM/dd');
-      sheet.getRange(row, C.CONTENT).setValue(tx.content);
-      if (tx.deposit > 0) sheet.getRange(row, C.DEPOSIT).setValue(tx.deposit).setNumberFormat('#,##0');
-      if (tx.withdrawal > 0) sheet.getRange(row, C.WITHDRAWAL).setValue(tx.withdrawal).setNumberFormat('#,##0');
-      sheet.getRange(row, C.SOURCE).setValue(tx.source);
+    if (insertRow <= sheet.getLastRow()) {
+      sheet.insertRowBefore(insertRow);
     }
+
+    sheet.getRange(insertRow, C.DATE).setValue(tx.date).setNumberFormat('yyyy/MM/dd');
+    sheet.getRange(insertRow, C.CONTENT).setValue(tx.content);
+    if (tx.deposit > 0) sheet.getRange(insertRow, C.DEPOSIT).setValue(tx.deposit).setNumberFormat('#,##0');
+    if (tx.withdrawal > 0) sheet.getRange(insertRow, C.WITHDRAWAL).setValue(tx.withdrawal).setNumberFormat('#,##0');
+    sheet.getRange(insertRow, C.SOURCE).setValue(tx.source);
   });
-}
-
-/**
- * 既存の同一データを検索
- * 日付 + 内容 + 金額 + ソース で重複判定
- */
-function findExistingRow_(sheet, tx) {
-  const C = CF_CONFIG.DAILY_COLS;
-  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= headerRows) return 0;
-
-  const numRows = lastRow - headerRows;
-  const dates = sheet.getRange(headerRows + 1, C.DATE, numRows, 1).getValues();
-  const contents = sheet.getRange(headerRows + 1, C.CONTENT, numRows, 1).getValues();
-  const deposits = sheet.getRange(headerRows + 1, C.DEPOSIT, numRows, 1).getValues();
-  const withdrawals = sheet.getRange(headerRows + 1, C.WITHDRAWAL, numRows, 1).getValues();
-  const sources = sheet.getRange(headerRows + 1, C.SOURCE, numRows, 1).getValues();
-
-  const targetDate = Utilities.formatDate(tx.date, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
-  const txAmount = tx.deposit > 0 ? tx.deposit : tx.withdrawal;
-
-  for (let i = 0; i < numRows; i++) {
-    if (!(dates[i][0] instanceof Date)) continue;
-    const rowDate = Utilities.formatDate(dates[i][0], CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
-
-    if (rowDate !== targetDate) continue;
-    if (String(contents[i][0]).trim() !== String(tx.content).trim()) continue;
-    if (sources[i][0] !== CF_CONFIG.SOURCE.MF) continue;
-
-    // 金額も一致するか確認
-    const rowDeposit = Number(deposits[i][0]) || 0;
-    const rowWithdrawal = Number(withdrawals[i][0]) || 0;
-    const rowAmount = rowDeposit > 0 ? rowDeposit : rowWithdrawal;
-
-    if (rowAmount === txAmount) {
-      return i + headerRows + 1;
-    }
-  }
-  return 0;
 }
 
 /**
