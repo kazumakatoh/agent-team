@@ -1,19 +1,91 @@
 /**
  * MoneyForward クラウド会計 認証管理
  *
- * OAuth2ライブラリを使わず、スクリプトプロパティでトークンを管理。
- *
  * セットアップ:
- *   1. MF会計 > API連携 > アプリ管理 で新規アプリ作成
- *   2. リダイレクトURIに https://script.google.com/macros/d/{SCRIPT_ID}/usercallback を登録
- *   3. スプシの MF連携 > 「MF認証情報を設定」で Client ID / Secret を入力
- *   4. MF連携 > 「MF認証を実行」→ ログに表示されるURLを開いて認証
- *   5. 表示される認可コードを MF連携 > 「認可コードを入力」で入力
+ *   1. MF会計 > アプリポータル > APIキー管理 でアプリのClient ID / Secretを確認
+ *   2. MFアプリのリダイレクトURIに、MF連携 > 「リダイレクトURIを確認」で表示されるURLを登録
+ *   3. スプシの MF連携 > 「① MF認証情報を設定」で Client ID / Secret を入力
+ *   4. MF連携 > 「② MF認証を実行」→ 表示されるURLを開いて認証
+ *   5. リダイレクトされたURLのcodeパラメータをコピーし、③で入力
  */
 
 var MF_API_BASE  = 'https://accounting.moneyforward.com/api/v3';
 var MF_AUTH_URL  = 'https://accounting.moneyforward.com/oauth/authorize';
 var MF_TOKEN_URL = 'https://accounting.moneyforward.com/oauth/token';
+
+/**
+ * リダイレクトURIを取得（MFアプリに登録する）
+ */
+function getRedirectUri() {
+  var url = ScriptApp.getService().getUrl();
+  if (!url) {
+    SpreadsheetApp.getUi().alert(
+      'ウェブアプリのデプロイが必要です。\n\n'
+      + '手順：\n'
+      + '1. Apps Script エディタ > デプロイ > 新しいデプロイ\n'
+      + '2. 種類：ウェブアプリ\n'
+      + '3. アクセスできるユーザー：自分のみ\n'
+      + '4. デプロイ後、再度この関数を実行してください'
+    );
+    return;
+  }
+  SpreadsheetApp.getUi().alert(
+    'このURLをMFアプリのリダイレクトURIに登録してください：\n\n' + url
+  );
+  Logger.log('リダイレクトURI: ' + url);
+}
+
+/**
+ * ウェブアプリのコールバック（MF認証後のリダイレクト先）
+ */
+function doGet(e) {
+  var code = e.parameter.code;
+  if (code) {
+    // 認可コードを受け取った → トークン交換
+    var props = PropertiesService.getScriptProperties();
+    var redirectUri = ScriptApp.getService().getUrl();
+
+    var response = UrlFetchApp.fetch(MF_TOKEN_URL, {
+      method: 'post',
+      payload: {
+        grant_type: 'authorization_code',
+        client_id: props.getProperty('MF_CLIENT_ID'),
+        client_secret: props.getProperty('MF_CLIENT_SECRET'),
+        redirect_uri: redirectUri,
+        code: code
+      },
+      muteHttpExceptions: true
+    });
+
+    if (response.getResponseCode() === 200) {
+      var tokenData = JSON.parse(response.getContentText());
+      props.setProperty('MF_ACCESS_TOKEN', tokenData.access_token);
+      if (tokenData.refresh_token) {
+        props.setProperty('MF_REFRESH_TOKEN', tokenData.refresh_token);
+      }
+      // 事業所IDも取得
+      try { fetchAndSaveOfficeId_(); } catch(err) {}
+
+      return HtmlService.createHtmlOutput(
+        '<h2>✅ MF認証成功</h2>'
+        + '<p>このタブを閉じて、スプレッドシートに戻ってください。</p>'
+        + '<p>MF連携 > 「資金繰り表_2025 を同期」でデータを取得できます。</p>'
+      );
+    } else {
+      return HtmlService.createHtmlOutput(
+        '<h2>❌ 認証失敗</h2>'
+        + '<p>エラー: ' + response.getContentText() + '</p>'
+        + '<p>MF連携 > 「認証をリセット」してやり直してください。</p>'
+      );
+    }
+  }
+
+  // codeパラメータなし → 手動入力用画面
+  return HtmlService.createHtmlOutput(
+    '<h2>資金繰り表 MF連携</h2>'
+    + '<p>認証はスプレッドシートの「MF連携」メニューから実行してください。</p>'
+  );
+}
 
 /**
  * client_id / client_secret をスクリプトプロパティに保存
@@ -28,7 +100,7 @@ function setMFCredentials() {
   var props = PropertiesService.getScriptProperties();
   props.setProperty('MF_CLIENT_ID', r1.getResponseText().trim());
   props.setProperty('MF_CLIENT_SECRET', r2.getResponseText().trim());
-  ui.alert('認証情報を保存しました。次に「MF認証を実行」してください。');
+  ui.alert('認証情報を保存しました。\n\n次のステップ：\n1. 「リダイレクトURIを確認」でURLを取得\n2. MFアプリにそのURLを登録\n3. 「MF認証を実行」で認証');
 }
 
 /**
@@ -42,7 +114,15 @@ function authorize() {
     return;
   }
 
-  var redirectUri = 'urn:ietf:wg:oauth:2.0:oob';
+  var redirectUri = ScriptApp.getService().getUrl();
+  if (!redirectUri) {
+    SpreadsheetApp.getUi().alert(
+      'ウェブアプリのデプロイが必要です。\n\n'
+      + 'Apps Script > デプロイ > 新しいデプロイ > ウェブアプリ で作成してください。'
+    );
+    return;
+  }
+
   var authUrl = MF_AUTH_URL
     + '?client_id=' + encodeURIComponent(clientId)
     + '&redirect_uri=' + encodeURIComponent(redirectUri)
@@ -50,54 +130,12 @@ function authorize() {
     + '&scope=' + encodeURIComponent('office:read account:read journal:read report:read');
 
   var html = HtmlService.createHtmlOutput(
-    '<p>以下のURLをブラウザで開いて認証してください：</p>'
-    + '<p><a href="' + authUrl + '" target="_blank">' + authUrl + '</a></p>'
-    + '<p>認証後に表示される認可コードをコピーし、<br>MF連携 > 「認可コードを入力」で貼り付けてください。</p>'
-  ).setWidth(600).setHeight(200);
+    '<p>以下のリンクをクリックしてMF認証してください：</p>'
+    + '<p><a href="' + authUrl + '" target="_blank" style="font-size:14px;">MF認証を開始する</a></p>'
+    + '<p>認証後、自動的にトークンが保存されます。</p>'
+  ).setWidth(500).setHeight(150);
 
   SpreadsheetApp.getUi().showModalDialog(html, 'MF認証');
-}
-
-/**
- * 認可コードを入力してトークンを取得
- */
-function inputAuthCode() {
-  var ui = SpreadsheetApp.getUi();
-  var result = ui.prompt('MF認証', '認可コードを入力してください：', ui.ButtonSet.OK_CANCEL);
-  if (result.getSelectedButton() !== ui.Button.OK) return;
-
-  var code = result.getResponseText().trim();
-  var props = PropertiesService.getScriptProperties();
-  var clientId = props.getProperty('MF_CLIENT_ID');
-  var clientSecret = props.getProperty('MF_CLIENT_SECRET');
-
-  var response = UrlFetchApp.fetch(MF_TOKEN_URL, {
-    method: 'post',
-    payload: {
-      grant_type: 'authorization_code',
-      client_id: clientId,
-      client_secret: clientSecret,
-      redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
-      code: code
-    },
-    muteHttpExceptions: true
-  });
-
-  if (response.getResponseCode() !== 200) {
-    ui.alert('トークン取得に失敗しました: ' + response.getContentText());
-    return;
-  }
-
-  var tokenData = JSON.parse(response.getContentText());
-  props.setProperty('MF_ACCESS_TOKEN', tokenData.access_token);
-  if (tokenData.refresh_token) {
-    props.setProperty('MF_REFRESH_TOKEN', tokenData.refresh_token);
-  }
-
-  // 事業所IDも取得・保存
-  fetchAndSaveOfficeId_();
-
-  ui.alert('認証成功！MFデータの同期が可能になりました。');
 }
 
 /**
@@ -107,7 +145,7 @@ function refreshToken_() {
   var props = PropertiesService.getScriptProperties();
   var refreshToken = props.getProperty('MF_REFRESH_TOKEN');
   if (!refreshToken) {
-    throw new Error('リフレッシュトークンがありません。「MF認証を実行」からやり直してください。');
+    throw new Error('リフレッシュトークンがありません。MF連携メニューから再認証してください。');
   }
 
   var response = UrlFetchApp.fetch(MF_TOKEN_URL, {
@@ -156,7 +194,6 @@ function mfApiGet_(endpoint, params) {
     muteHttpExceptions: true
   });
 
-  // 401 → トークンリフレッシュして再試行
   if (response.getResponseCode() === 401) {
     token = refreshToken_();
     response = UrlFetchApp.fetch(url, {
@@ -186,9 +223,6 @@ function fetchAndSaveOfficeId_() {
   throw new Error('事業所が見つかりません');
 }
 
-/**
- * 事業所IDを取得
- */
 function getOfficeId_() {
   var officeId = PropertiesService.getScriptProperties().getProperty('MF_OFFICE_ID');
   if (officeId) return officeId;

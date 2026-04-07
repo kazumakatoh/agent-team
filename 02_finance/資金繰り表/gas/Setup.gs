@@ -15,8 +15,8 @@
 function onOpen() {
   SpreadsheetApp.getActiveSpreadsheet().addMenu('MF連携', [
     { name: '① MF認証情報を設定', functionName: 'setMFCredentials' },
+    { name: 'リダイレクトURIを確認', functionName: 'getRedirectUri' },
     { name: '② MF認証を実行', functionName: 'authorize' },
-    { name: '③ 認可コードを入力', functionName: 'inputAuthCode' },
     null,
     { name: '資金繰り表_2025 を同期', functionName: 'sync2025' },
     { name: '資金繰り表_2026 を同期', functionName: 'sync2026' },
