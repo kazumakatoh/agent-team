@@ -1,98 +1,146 @@
 /**
- * MoneyForward クラウド会計 OAuth2認証
+ * MoneyForward クラウド会計 認証管理
  *
- * 初回セットアップ:
+ * OAuth2ライブラリを使わず、スクリプトプロパティでトークンを管理。
+ *
+ * セットアップ:
  *   1. MF会計 > API連携 > アプリ管理 で新規アプリ作成
- *   2. 下記の CLIENT_ID / CLIENT_SECRET を設定
- *   3. リダイレクトURIに getRedirectUri() の結果を登録
- *   4. authorize() を実行 → ブラウザで認証
- *
- * OAuth2ライブラリの追加が必要:
- *   Apps Script エディタ > ライブラリ > 「+」
- *   スクリプトID: 1B7FSrk5Zi6L1rSxxTDgDEUsPzlukDsi4KGuTMorsTQHhGBzBkMun4iDF
- *   バージョン: 最新を選択
+ *   2. リダイレクトURIに https://script.google.com/macros/d/{SCRIPT_ID}/usercallback を登録
+ *   3. スプシの MF連携 > 「MF認証情報を設定」で Client ID / Secret を入力
+ *   4. MF連携 > 「MF認証を実行」→ ログに表示されるURLを開いて認証
+ *   5. 表示される認可コードを MF連携 > 「認可コードを入力」で入力
  */
 
-// ==============================
-// 設定
-// ==============================
-const MF_API_BASE = 'https://accounting.moneyforward.com/api/v3';
-const MF_AUTH_URL = 'https://accounting.moneyforward.com/oauth/authorize';
-const MF_TOKEN_URL = 'https://accounting.moneyforward.com/oauth/token';
+var MF_API_BASE  = 'https://accounting.moneyforward.com/api/v3';
+var MF_AUTH_URL  = 'https://accounting.moneyforward.com/oauth/authorize';
+var MF_TOKEN_URL = 'https://accounting.moneyforward.com/oauth/token';
 
-function getMFClientId_() {
-  return PropertiesService.getScriptProperties().getProperty('MF_CLIENT_ID') || '';
-}
-function getMFClientSecret_() {
-  return PropertiesService.getScriptProperties().getProperty('MF_CLIENT_SECRET') || '';
-}
+/**
+ * client_id / client_secret をスクリプトプロパティに保存
+ */
+function setMFCredentials() {
+  var ui = SpreadsheetApp.getUi();
+  var r1 = ui.prompt('MF Client ID を入力');
+  if (r1.getSelectedButton() !== ui.Button.OK) return;
+  var r2 = ui.prompt('MF Client Secret を入力');
+  if (r2.getSelectedButton() !== ui.Button.OK) return;
 
-// ==============================
-// OAuth2サービス
-// ==============================
-
-function getMFService_() {
-  return OAuth2.createService('moneyforward')
-    .setAuthorizationBaseUrl(MF_AUTH_URL)
-    .setTokenUrl(MF_TOKEN_URL)
-    .setClientId(getMFClientId_())
-    .setClientSecret(getMFClientSecret_())
-    .setCallbackFunction('authCallback')
-    .setPropertyStore(PropertiesService.getUserProperties())
-    .setScope('office:read account:read journal:read report:read')
-    .setParam('access_type', 'offline');
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('MF_CLIENT_ID', r1.getResponseText().trim());
+  props.setProperty('MF_CLIENT_SECRET', r2.getResponseText().trim());
+  ui.alert('認証情報を保存しました。次に「MF認証を実行」してください。');
 }
 
 /**
- * 認証を開始（この関数を実行してログに表示されるURLを開く）
+ * 認証URLを表示
  */
 function authorize() {
-  const service = getMFService_();
-  if (service.hasAccess()) {
-    Logger.log('既に認証済みです。');
-  } else {
-    const authUrl = service.getAuthorizationUrl();
-    Logger.log('以下のURLをブラウザで開いて認証してください:');
-    Logger.log(authUrl);
+  var props = PropertiesService.getScriptProperties();
+  var clientId = props.getProperty('MF_CLIENT_ID');
+  if (!clientId) {
+    SpreadsheetApp.getUi().alert('先に「MF認証情報を設定」でClient IDを設定してください。');
+    return;
   }
+
+  var redirectUri = 'urn:ietf:wg:oauth:2.0:oob';
+  var authUrl = MF_AUTH_URL
+    + '?client_id=' + encodeURIComponent(clientId)
+    + '&redirect_uri=' + encodeURIComponent(redirectUri)
+    + '&response_type=code'
+    + '&scope=' + encodeURIComponent('office:read account:read journal:read report:read');
+
+  var html = HtmlService.createHtmlOutput(
+    '<p>以下のURLをブラウザで開いて認証してください：</p>'
+    + '<p><a href="' + authUrl + '" target="_blank">' + authUrl + '</a></p>'
+    + '<p>認証後に表示される認可コードをコピーし、<br>MF連携 > 「認可コードを入力」で貼り付けてください。</p>'
+  ).setWidth(600).setHeight(200);
+
+  SpreadsheetApp.getUi().showModalDialog(html, 'MF認証');
 }
 
 /**
- * OAuth2コールバック
+ * 認可コードを入力してトークンを取得
  */
-function authCallback(request) {
-  const service = getMFService_();
-  const authorized = service.handleCallback(request);
-  if (authorized) {
-    return HtmlService.createHtmlOutput('認証成功！このタブを閉じてください。');
-  } else {
-    return HtmlService.createHtmlOutput('認証失敗。もう一度お試しください。');
+function inputAuthCode() {
+  var ui = SpreadsheetApp.getUi();
+  var result = ui.prompt('MF認証', '認可コードを入力してください：', ui.ButtonSet.OK_CANCEL);
+  if (result.getSelectedButton() !== ui.Button.OK) return;
+
+  var code = result.getResponseText().trim();
+  var props = PropertiesService.getScriptProperties();
+  var clientId = props.getProperty('MF_CLIENT_ID');
+  var clientSecret = props.getProperty('MF_CLIENT_SECRET');
+
+  var response = UrlFetchApp.fetch(MF_TOKEN_URL, {
+    method: 'post',
+    payload: {
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
+      code: code
+    },
+    muteHttpExceptions: true
+  });
+
+  if (response.getResponseCode() !== 200) {
+    ui.alert('トークン取得に失敗しました: ' + response.getContentText());
+    return;
   }
+
+  var tokenData = JSON.parse(response.getContentText());
+  props.setProperty('MF_ACCESS_TOKEN', tokenData.access_token);
+  if (tokenData.refresh_token) {
+    props.setProperty('MF_REFRESH_TOKEN', tokenData.refresh_token);
+  }
+
+  // 事業所IDも取得・保存
+  fetchAndSaveOfficeId_();
+
+  ui.alert('認証成功！MFデータの同期が可能になりました。');
 }
 
 /**
- * リダイレクトURIを取得（MFアプリ設定に登録する）
+ * アクセストークンをリフレッシュ
  */
-function getRedirectUri() {
-  Logger.log('リダイレクトURI:');
-  Logger.log(OAuth2.getRedirectUri());
-}
+function refreshToken_() {
+  var props = PropertiesService.getScriptProperties();
+  var refreshToken = props.getProperty('MF_REFRESH_TOKEN');
+  if (!refreshToken) {
+    throw new Error('リフレッシュトークンがありません。「MF認証を実行」からやり直してください。');
+  }
 
-/**
- * 認証をリセット
- */
-function resetAuth() {
-  getMFService_().reset();
-  Logger.log('認証をリセットしました。authorize() を再実行してください。');
+  var response = UrlFetchApp.fetch(MF_TOKEN_URL, {
+    method: 'post',
+    payload: {
+      grant_type: 'refresh_token',
+      client_id: props.getProperty('MF_CLIENT_ID'),
+      client_secret: props.getProperty('MF_CLIENT_SECRET'),
+      refresh_token: refreshToken
+    },
+    muteHttpExceptions: true
+  });
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error('トークンリフレッシュ失敗: ' + response.getContentText());
+  }
+
+  var tokenData = JSON.parse(response.getContentText());
+  props.setProperty('MF_ACCESS_TOKEN', tokenData.access_token);
+  if (tokenData.refresh_token) {
+    props.setProperty('MF_REFRESH_TOKEN', tokenData.refresh_token);
+  }
+  return tokenData.access_token;
 }
 
 /**
  * MF APIにGETリクエスト
  */
 function mfApiGet_(endpoint, params) {
-  const service = getMFService_();
-  if (!service.hasAccess()) {
-    throw new Error('MF未認証です。authorize() を実行してください。');
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty('MF_ACCESS_TOKEN');
+  if (!token) {
+    throw new Error('MF未認証です。MF連携メニューから認証してください。');
   }
 
   var url = MF_API_BASE + endpoint;
@@ -104,49 +152,56 @@ function mfApiGet_(endpoint, params) {
   }
 
   var response = UrlFetchApp.fetch(url, {
-    headers: { 'Authorization': 'Bearer ' + service.getAccessToken() },
+    headers: { 'Authorization': 'Bearer ' + token },
     muteHttpExceptions: true
   });
 
-  var code = response.getResponseCode();
-  if (code !== 200) {
-    throw new Error('MF API error (' + code + '): ' + response.getContentText());
+  // 401 → トークンリフレッシュして再試行
+  if (response.getResponseCode() === 401) {
+    token = refreshToken_();
+    response = UrlFetchApp.fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+  }
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error('MF API error (' + response.getResponseCode() + '): ' + response.getContentText());
   }
 
   return JSON.parse(response.getContentText());
 }
 
 /**
- * 事業所IDを取得・保存
+ * 事業所IDを取得して保存
  */
-function getOfficeId_() {
-  var props = PropertiesService.getScriptProperties();
-  var officeId = props.getProperty('MF_OFFICE_ID');
-  if (officeId) return officeId;
-
+function fetchAndSaveOfficeId_() {
   var data = mfApiGet_('/offices');
   if (data.offices && data.offices.length > 0) {
-    officeId = data.offices[0].id;
-    props.setProperty('MF_OFFICE_ID', officeId);
-    Logger.log('事業所ID: ' + officeId + ' を保存しました');
+    var officeId = data.offices[0].id;
+    PropertiesService.getScriptProperties().setProperty('MF_OFFICE_ID', officeId);
+    Logger.log('事業所ID: ' + officeId);
     return officeId;
   }
   throw new Error('事業所が見つかりません');
 }
 
 /**
- * client_id / client_secret をスクリプトプロパティに保存
- * 初回セットアップ用（手動実行）
+ * 事業所IDを取得
  */
-function setMFCredentials() {
-  var ui = SpreadsheetApp.getUi();
-  var clientId = ui.prompt('MF Client ID を入力').getResponseText();
-  var clientSecret = ui.prompt('MF Client Secret を入力').getResponseText();
+function getOfficeId_() {
+  var officeId = PropertiesService.getScriptProperties().getProperty('MF_OFFICE_ID');
+  if (officeId) return officeId;
+  return fetchAndSaveOfficeId_();
+}
 
-  if (clientId && clientSecret) {
-    var props = PropertiesService.getScriptProperties();
-    props.setProperty('MF_CLIENT_ID', clientId);
-    props.setProperty('MF_CLIENT_SECRET', clientSecret);
-    Logger.log('認証情報を保存しました。authorize() を実行してください。');
-  }
+/**
+ * 認証をリセット
+ */
+function resetAuth() {
+  var props = PropertiesService.getScriptProperties();
+  props.deleteProperty('MF_ACCESS_TOKEN');
+  props.deleteProperty('MF_REFRESH_TOKEN');
+  props.deleteProperty('MF_OFFICE_ID');
+  SpreadsheetApp.getUi().alert('認証をリセットしました。');
 }
