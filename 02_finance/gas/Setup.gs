@@ -294,8 +294,8 @@ function createRealBalanceSheet_(ss) {
   allMonths.forEach(m => {
     const row = currentRow;
 
-    // A列: 年月ラベル（2025.04形式）
-    sheet.getRange(row, 1).setValue(m.label);
+    // A列: 年月ラベル（2025.04形式）テキストとして設定
+    sheet.getRange(row, 1).setNumberFormat('@').setValue(m.label);
 
     // B列は空（旧「月末」列を廃止、A列に統合）
 
