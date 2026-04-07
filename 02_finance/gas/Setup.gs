@@ -228,7 +228,7 @@ function createRealBalanceSheet_(ss) {
     '実質残高②',                         // ②
     '融資残高',                           // 借入金
     '実質残高③',                         // ③
-    '判定'                               // 判定
+    '判定①', '判定②', '判定③'           // 判定3つ
   ];
 
   sheet.getRange(2, 1, 1, headers.length).setValues([headers]);
@@ -238,7 +238,7 @@ function createRealBalanceSheet_(ss) {
     .setWrap(true);
 
   // 色分け
-  // 自動入力（MF）= 薄い青
+  // 自動入力（MF）= 濃い青
   [3,4,6,7,8,10,15].forEach(col => {
     sheet.getRange(2, col).setBackground('#1565c0');
   });
@@ -247,8 +247,12 @@ function createRealBalanceSheet_(ss) {
     sheet.getRange(2, col).setBackground('#e65100');
   });
   // 計算結果 = 緑
-  [9,13,14,16,17].forEach(col => {
+  [9,13,14,16].forEach(col => {
     sheet.getRange(2, col).setBackground('#2e7d32');
+  });
+  // 判定 = 濃いグレー
+  [17,18,19].forEach(col => {
+    sheet.getRange(2, col).setBackground('#37474f');
   });
 
   // ===== 2025年度 + 2026年度 =====
@@ -285,12 +289,21 @@ function createRealBalanceSheet_(ss) {
       sheet.getRange(row, 16).setFormula(`=N${row}-O${row}`).setNumberFormat('#,##0');
       sheet.getRange(row, 16).setBackground('#e8f5e9');
 
-      // 判定
+      // 判定① 実質残高① vs 融資残高
       sheet.getRange(row, 17).setFormula(
-        `=IF(P${row}=0,"",IF(P${row}>=0,"✅ 無借金","❌ "&TEXT(ABS(P${row}),"#,##0")))`
+        `=IF(O${row}=0,"",IF(I${row}>=O${row},"✅","❌ "&TEXT(O${row}-I${row},"#,##0")))`
       );
 
-      // ③がマイナスなら赤文字
+      // 判定② 実質残高② vs 融資残高
+      sheet.getRange(row, 18).setFormula(
+        `=IF(O${row}=0,"",IF(N${row}>=O${row},"✅","❌ "&TEXT(O${row}-N${row},"#,##0")))`
+      );
+
+      // 判定③ 実質残高③（= ② - 融資残高）
+      sheet.getRange(row, 19).setFormula(
+        `=IF(O${row}=0,"",IF(P${row}>=0,"✅ 無借金","❌ "&TEXT(ABS(P${row}),"#,##0")))`
+      );
+
       // 金額列のフォーマット
       [3,4,5,6,7,8,10,11,15].forEach(col => {
         sheet.getRange(row, col).setNumberFormat('#,##0');
@@ -318,7 +331,9 @@ function createRealBalanceSheet_(ss) {
   sheet.setColumnWidth(14, 100); // ②
   sheet.setColumnWidth(15, 100);
   sheet.setColumnWidth(16, 110); // ③
-  sheet.setColumnWidth(17, 100);
+  sheet.setColumnWidth(17, 100); // 判定①
+  sheet.setColumnWidth(18, 100); // 判定②
+  sheet.setColumnWidth(19, 110); // 判定③
 
   sheet.setFrozenRows(2);
   sheet.setFrozenColumns(2);
