@@ -1,0 +1,7 @@
+{
+  "name": "cashflow-gas",
+  "scripts": {
+    "deploy": "clasp push",
+    "open": "clasp open"
+  }
+}
