@@ -217,7 +217,7 @@ function fetchAndSaveOfficeId_() {
   if (data.accounting_periods || data.id || data.display_name) {
     const officeId = String(data.id || 'default');
     PropertiesService.getUserProperties().setProperty('MF_OFFICE_ID', officeId);
-    Logger.log('事業所データ取得成功: ' + JSON.stringify(data).substring(0, 200));
+    Logger.log('事業所データ取得成功');
   } else if (data.offices && data.offices.length > 0) {
     // リスト形式で返る場合のフォールバック
     const officeId = String(data.offices[0].id);
@@ -241,8 +241,6 @@ function fetchAndSaveOfficeId_() {
 function fetchAndSaveWalletIds_() {
   const data = mfApiRequest_('/accounts');
   const accounts = data.accounts || [];
-
-  Logger.log('取得した勘定科目数: ' + accounts.length);
 
   // CASH_AND_DEPOSITS カテゴリの勘定科目と補助科目を抽出
   const bankAccounts = [];
@@ -272,9 +270,6 @@ function fetchAndSaveWalletIds_() {
     }
   });
 
-  Logger.log('銀行口座候補数: ' + bankAccounts.length);
-  bankAccounts.forEach(b => Logger.log(`  口座: ${b.name} (account: ${b.accountName}, subId: ${b.subAccountId})`));
-
   // 口座名でマッチング（部分一致）
   const walletMap = {};
   const matchPatterns = {
@@ -296,7 +291,6 @@ function fetchAndSaveWalletIds_() {
             subAccountName: b.subAccountName || '',
             name: searchName
           };
-          Logger.log(`  → ${accountKey} にマッチ: ${searchName}`);
           break;
         }
       }

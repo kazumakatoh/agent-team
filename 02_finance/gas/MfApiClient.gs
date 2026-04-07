@@ -42,7 +42,7 @@ function fetchWalletTransactions(accountKey, dateFrom, dateTo) {
   let page = 1;
   const perPage = 500;
 
-  Logger.log(`[${accountKey}] 口座マッチング情報: accountId=${walletInfo.accountId}, subAccountId=${walletInfo.subAccountId}, name=${walletInfo.name}`);
+  Logger.log(`[${accountKey}] 口座マッチング: ${walletInfo.name}`);
 
   while (true) {
     const data = mfApiRequest_('/journals', {
@@ -53,7 +53,6 @@ function fetchWalletTransactions(accountKey, dateFrom, dateTo) {
     });
 
     const journals = data.journals || [];
-    Logger.log(`[${accountKey}] page ${page}: ${journals.length}件の仕訳取得`);
     if (journals.length === 0) break;
 
     journals.forEach(journal => {
@@ -117,7 +116,6 @@ function isMatchingAccount_(side, walletInfo) {
   // sub_account_idでマッチ（最も正確）
   if (walletInfo.subAccountId && side.sub_account_id) {
     const match = String(side.sub_account_id) === String(walletInfo.subAccountId);
-    if (match) Logger.log(`  ✓ マッチ: ${side.sub_account_name || side.account_name} (subId一致)`);
     return match;
   }
 

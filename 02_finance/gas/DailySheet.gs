@@ -587,7 +587,7 @@ function updateRealBalance() {
     });
 
     const balanceMap = extractBalancesFromRows_(bsData.rows || []);
-    Logger.log('BS残高マップ: ' + JSON.stringify(balanceMap).substring(0, 500));
+    // BS残高データ取得完了
 
     // 必要な科目の残高を取得
     const deposits = (balanceMap['普通預金'] || 0);
