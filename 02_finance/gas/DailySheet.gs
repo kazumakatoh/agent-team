@@ -634,17 +634,13 @@ function findRealBalanceRow_(sheet, year, month) {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 2) return 0;
 
-  // 月ラベルを検索
-  const monthLabel = `${month}月末`;
-  const yearLabel = `${year}年`;
+  // 年月ラベル（2025.04形式）で検索
+  const targetLabel = `${year}.${String(month).padStart(2, '0')}`;
 
   const colA = sheet.getRange(3, 1, lastRow - 2, 1).getValues();
-  const colB = sheet.getRange(3, 2, lastRow - 2, 1).getValues();
 
-  let currentYear = '';
   for (let i = 0; i < colA.length; i++) {
-    if (String(colA[i][0]).includes('年')) currentYear = String(colA[i][0]);
-    if (currentYear === yearLabel && String(colB[i][0]) === monthLabel) {
+    if (String(colA[i][0]) === targetLabel) {
       return i + 3;
     }
   }

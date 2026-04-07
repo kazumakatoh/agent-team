@@ -220,7 +220,8 @@ function createRealBalanceSheet_(ss) {
 
   // ===== ヘッダー行2: 列ラベル =====
   const headers = [
-    '', '月末',
+    '年月',
+    '', // B列予備
     '普通預金', '売掛金', 'Amazon残高',  // 資産
     '未払金', '未払費用', '預り金',       // 負債
     '実質残高①',                         // ①
@@ -255,68 +256,111 @@ function createRealBalanceSheet_(ss) {
     sheet.getRange(2, col).setBackground('#37474f');
   });
 
-  // ===== 2025年度 + 2026年度 =====
-  const months2025 = ['2025年', ['4月末','5月末','6月末','7月末','8月末','9月末','10月末','11月末','12月末']];
-  const months2026 = ['2026年', ['1月末','2月末','3月末','4月末','5月末','6月末','7月末','8月末','9月末','10月末','11月末','12月末']];
+  // ===== 2025年度(4月〜2月) + 2026年度(3月〜) =====
+  // 在庫残高シートの年月表示（2025.04形式）に統一
+  // 在庫残高シートは5行/月構成: 在庫→見込売上→棚卸原価→仕入原価→販売単価
+  // 見込売上の合計はD列
+
+  const allMonths = [
+    // [年月ラベル, 在庫シートの見込売上行番号（後で手動設定）]
+    { label: '2025.04', year: 2025, month: 4 },
+    { label: '2025.05', year: 2025, month: 5 },
+    { label: '2025.06', year: 2025, month: 6 },
+    { label: '2025.07', year: 2025, month: 7 },
+    { label: '2025.08', year: 2025, month: 8 },
+    { label: '2025.09', year: 2025, month: 9 },
+    { label: '2025.10', year: 2025, month: 10 },
+    { label: '2025.11', year: 2025, month: 11 },
+    { label: '2025.12', year: 2025, month: 12 },
+    { label: '2026.01', year: 2026, month: 1 },
+    { label: '2026.02', year: 2026, month: 2 },
+    { label: '2026.03', year: 2026, month: 3 },
+    { label: '2026.04', year: 2026, month: 4 },
+    { label: '2026.05', year: 2026, month: 5 },
+    { label: '2026.06', year: 2026, month: 6 },
+    { label: '2026.07', year: 2026, month: 7 },
+    { label: '2026.08', year: 2026, month: 8 },
+    { label: '2026.09', year: 2026, month: 9 },
+    { label: '2026.10', year: 2026, month: 10 },
+    { label: '2026.11', year: 2026, month: 11 },
+    { label: '2026.12', year: 2026, month: 12 },
+    { label: '2027.01', year: 2027, month: 1 },
+    { label: '2027.02', year: 2027, month: 2 },
+    { label: '2027.03', year: 2027, month: 3 },
+    { label: '2027.04', year: 2027, month: 4 },
+    { label: '2027.05', year: 2027, month: 5 },
+  ];
+
+  // 在庫残高シートの見込売上行マップ（年月 → 行番号）
+  // 在庫残高シートは5行/月: 在庫(+0), 見込売上(+1), 棚卸原価(+2), 仕入原価(+3), 販売単価(+4)
+  // 2023.03が行3開始、各月5行 → 年月からの行番号計算
+  // 基点: 2023.03 = 行3
+  const inventoryBaseRow = 3;
+  const inventoryBaseYear = 2023;
+  const inventoryBaseMonth = 3;
+
+  function getInventorySalesRow(year, month) {
+    const monthsFromBase = (year - inventoryBaseYear) * 12 + (month - inventoryBaseMonth);
+    return inventoryBaseRow + monthsFromBase * 5 + 1; // +1 で見込売上行
+  }
 
   let currentRow = 3;
 
-  [months2025, months2026].forEach(([yearLabel, months]) => {
-    months.forEach((monthLabel, idx) => {
-      const row = currentRow;
+  allMonths.forEach(m => {
+    const row = currentRow;
 
-      // 年ラベル（最初の月のみ）
-      if (idx === 0) {
-        sheet.getRange(row, 1).setValue(yearLabel).setFontWeight('bold');
-      }
+    // A列: 年月ラベル（2025.04形式）
+    sheet.getRange(row, 1).setValue(m.label);
 
-      // 月ラベル
-      sheet.getRange(row, 2).setValue(monthLabel);
+    // B列は空（旧「月末」列を廃止、A列に統合）
 
-      // ① 実質残高 = C - F - G - H + D + E
-      const formula1 = `=C${row}-F${row}-G${row}-H${row}+D${row}+E${row}`;
-      sheet.getRange(row, 9).setFormula(formula1).setNumberFormat('#,##0');
-      sheet.getRange(row, 9).setBackground('#e8f5e9');
+    // 在庫残高シートの見込売上を自動参照（K列: 想定売上）
+    const salesRow = getInventorySalesRow(m.year, m.month);
+    sheet.getRange(row, 11).setFormula(`='在庫残高'!D${salesRow}`);
 
-      // 想定入金 = K × L
-      sheet.getRange(row, 13).setFormula(`=K${row}*L${row}`).setNumberFormat('#,##0');
+    // ① 実質残高 = C - F - G - H + D + E
+    sheet.getRange(row, 9).setFormula(`=C${row}-F${row}-G${row}-H${row}+D${row}+E${row}`)
+      .setNumberFormat('#,##0').setBackground('#e8f5e9');
 
-      // ② 実質残高 = ① + 想定入金
-      sheet.getRange(row, 14).setFormula(`=I${row}+M${row}`).setNumberFormat('#,##0');
-      sheet.getRange(row, 14).setBackground('#e8f5e9');
+    // 想定入金 = K × L
+    sheet.getRange(row, 13).setFormula(`=K${row}*L${row}`).setNumberFormat('#,##0');
 
-      // ③ 実質残高 = ② - 融資残高
-      sheet.getRange(row, 16).setFormula(`=N${row}-O${row}`).setNumberFormat('#,##0');
-      sheet.getRange(row, 16).setBackground('#e8f5e9');
+    // ② 実質残高 = ① + 想定入金
+    sheet.getRange(row, 14).setFormula(`=I${row}+M${row}`)
+      .setNumberFormat('#,##0').setBackground('#e8f5e9');
 
-      // 判定① 実質残高① vs 融資残高
-      sheet.getRange(row, 17).setFormula(
-        `=IF(O${row}=0,"",IF(I${row}>=O${row},"✅","❌ "&TEXT(O${row}-I${row},"#,##0")))`
-      );
+    // ③ 実質残高 = ② - 融資残高
+    sheet.getRange(row, 16).setFormula(`=N${row}-O${row}`)
+      .setNumberFormat('#,##0').setBackground('#e8f5e9');
 
-      // 判定② 実質残高② vs 融資残高
-      sheet.getRange(row, 18).setFormula(
-        `=IF(O${row}=0,"",IF(N${row}>=O${row},"✅","❌ "&TEXT(O${row}-N${row},"#,##0")))`
-      );
+    // 判定① 実質残高① vs 融資残高
+    sheet.getRange(row, 17).setFormula(
+      `=IF(O${row}=0,"",IF(I${row}>=O${row},"✅","❌ "&TEXT(O${row}-I${row},"#,##0")))`
+    );
 
-      // 判定③ 実質残高③（= ② - 融資残高）
-      sheet.getRange(row, 19).setFormula(
-        `=IF(O${row}=0,"",IF(P${row}>=0,"✅ 無借金","❌ "&TEXT(ABS(P${row}),"#,##0")))`
-      );
+    // 判定② 実質残高② vs 融資残高
+    sheet.getRange(row, 18).setFormula(
+      `=IF(O${row}=0,"",IF(N${row}>=O${row},"✅","❌ "&TEXT(O${row}-N${row},"#,##0")))`
+    );
 
-      // 金額列のフォーマット
-      [3,4,5,6,7,8,10,11,15].forEach(col => {
-        sheet.getRange(row, col).setNumberFormat('#,##0');
-      });
-      sheet.getRange(row, 12).setNumberFormat('0.0%');
+    // 判定③ 実質残高③
+    sheet.getRange(row, 19).setFormula(
+      `=IF(O${row}=0,"",IF(P${row}>=0,"✅ 無借金","❌ "&TEXT(ABS(P${row}),"#,##0")))`
+    );
 
-      // 手入力セルの背景色
-      [5,11,12].forEach(col => {
-        sheet.getRange(row, col).setBackground('#fff9c4');
-      });
-
-      currentRow++;
+    // 金額フォーマット
+    [3,4,5,6,7,8,10,15].forEach(col => {
+      sheet.getRange(row, col).setNumberFormat('#,##0');
     });
+    sheet.getRange(row, 11).setNumberFormat('#,##0'); // 想定売上
+    sheet.getRange(row, 12).setNumberFormat('0.0%');
+
+    // 手入力セルの背景色（Amazon残高、入金割合のみ。想定売上は在庫シートから自動）
+    [5, 12].forEach(col => {
+      sheet.getRange(row, col).setBackground('#fff9c4');
+    });
+
+    currentRow++;
   });
 
   // 列幅
