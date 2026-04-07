@@ -14,14 +14,18 @@
  */
 
 // ==============================
-// 設定（※要変更）
+// 設定
 // ==============================
-const MF_CLIENT_ID     = PropertiesService.getScriptProperties().getProperty('MF_CLIENT_ID') || '';
-const MF_CLIENT_SECRET = PropertiesService.getScriptProperties().getProperty('MF_CLIENT_SECRET') || '';
-
 const MF_API_BASE = 'https://accounting.moneyforward.com/api/v3';
 const MF_AUTH_URL = 'https://accounting.moneyforward.com/oauth/authorize';
 const MF_TOKEN_URL = 'https://accounting.moneyforward.com/oauth/token';
+
+function getMFClientId_() {
+  return PropertiesService.getScriptProperties().getProperty('MF_CLIENT_ID') || '';
+}
+function getMFClientSecret_() {
+  return PropertiesService.getScriptProperties().getProperty('MF_CLIENT_SECRET') || '';
+}
 
 // ==============================
 // OAuth2サービス
@@ -31,8 +35,8 @@ function getMFService_() {
   return OAuth2.createService('moneyforward')
     .setAuthorizationBaseUrl(MF_AUTH_URL)
     .setTokenUrl(MF_TOKEN_URL)
-    .setClientId(MF_CLIENT_ID)
-    .setClientSecret(MF_CLIENT_SECRET)
+    .setClientId(getMFClientId_())
+    .setClientSecret(getMFClientSecret_())
     .setCallbackFunction('authCallback')
     .setPropertyStore(PropertiesService.getUserProperties())
     .setScope('office:read account:read journal:read report:read')
