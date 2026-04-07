@@ -8,6 +8,27 @@
  * 3. setupAllSheets() を実行
  */
 
+// ==============================
+// メニュー（スプシを開いた時に自動実行）
+// ==============================
+
+function onOpen() {
+  try {
+    SpreadsheetApp.getActiveSpreadsheet().addMenu('MF連携', [
+      { name: 'MF認証情報を設定', functionName: 'setMFCredentials' },
+      { name: 'MF認証を実行', functionName: 'authorize' },
+      { name: 'リダイレクトURIを確認', functionName: 'getRedirectUri' },
+      null,
+      { name: '資金繰り表_2025 を同期', functionName: 'sync2025' },
+      { name: '資金繰り表_2026 を同期', functionName: 'sync2026' },
+      null,
+      { name: '認証をリセット', functionName: 'resetAuth' }
+    ]);
+  } catch (e) {
+    Logger.log('メニュー追加エラー: ' + e.message);
+  }
+}
+
 /** 作成するシート（年度 = 決算年） */
 const SHEETS_TO_CREATE = [2025, 2026];
 

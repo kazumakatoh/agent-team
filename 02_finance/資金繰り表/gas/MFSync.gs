@@ -9,23 +9,6 @@
  *   スプシ上部の「MF連携」メニューから同期可能
  */
 
-// ==============================
-// メニュー
-// ==============================
-
-function onOpen() {
-  SpreadsheetApp.getActiveSpreadsheet().addMenu('MF連携', [
-    { name: 'MF認証情報を設定', functionName: 'setMFCredentials' },
-    { name: 'MF認証を実行', functionName: 'authorize' },
-    { name: 'リダイレクトURIを確認', functionName: 'getRedirectUri' },
-    null,
-    { name: '資金繰り表_2025 を同期', functionName: 'sync2025' },
-    { name: '資金繰り表_2026 を同期', functionName: 'sync2026' },
-    null,
-    { name: '認証をリセット', functionName: 'resetAuth' }
-  ]);
-}
-
 function sync2025() { syncFromMF(2025); }
 function sync2026() { syncFromMF(2026); }
 
