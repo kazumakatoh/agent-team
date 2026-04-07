@@ -75,11 +75,19 @@ def get_klines(symbol: str, interval: str, limit: int = KLINE_LIMIT) -> pd.DataF
     if not data:
         return pd.DataFrame()
 
-    df = pd.DataFrame(data, columns=[
+    # MEXCのklineは8カラム: [timestamp, open, high, low, close, volume, close_time, quote_volume]
+    col_names = [
         "timestamp", "open", "high", "low", "close",
         "volume", "close_time", "quote_volume",
-        "trades", "taker_buy_volume", "taker_buy_quote_volume", "ignore",
-    ])
+    ]
+    # カラム数が異なる場合に対応
+    actual_cols = len(data[0]) if data else 0
+    if actual_cols < len(col_names):
+        col_names = col_names[:actual_cols]
+    elif actual_cols > len(col_names):
+        col_names += [f"extra_{i}" for i in range(actual_cols - len(col_names))]
+
+    df = pd.DataFrame(data, columns=col_names)
 
     # 数値型に変換
     for col in ["open", "high", "low", "close", "volume"]:
