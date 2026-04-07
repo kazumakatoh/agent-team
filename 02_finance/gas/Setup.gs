@@ -30,6 +30,7 @@ function runSetup() {
   });
 
   createMonthlySheet_(ss);
+  createFixedCostSheet_(ss);
   createSettingsSheet_(ss);
   createCurrentBalanceSheet_(ss);
 
@@ -64,6 +65,132 @@ function createAccountDailySheet_(ss, sheetName, accountName) {
   sheet.setFrozenRows(1);
 
   Logger.log(`${sheetName}シート作成完了`);
+}
+
+/**
+ * 固定費・融資シートを作成する
+ */
+function createFixedCostSheet_(ss) {
+  const name = '固定費・融資';
+  let sheet = ss.getSheetByName(name);
+  if (sheet) {
+    Logger.log(`${name}は既に存在します。スキップ。`);
+    return;
+  }
+
+  sheet = ss.insertSheet(name);
+
+  // ===== 固定費セクション =====
+  sheet.getRange(1, 1, 1, 3).setValues([['固定費', '月額（税込）', '備考']]);
+  sheet.getRange(1, 1, 1, 3)
+    .setBackground('#1a73e8').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
+
+  const fixedCosts = [
+    ['融資返済', 757000, '下記融資一覧参照'],
+    ['役員報酬①', 50000, ''],
+    ['役員報酬②', 50000, ''],
+    ['Amazonコンサル', 44000, ''],
+    ['税理士報酬', 50000, '風間良光税理士事務所'],
+    ['Amazon販売', 5500, ''],
+    ['MF会計', 5654, ''],
+    ['zoom', 2200, ''],
+    ['サーバー', 1500, ''],
+    ['固定電話', 1000, ''],
+    ['山本さんコンサル', 33000, ''],
+    ['Keepa', 2284, ''],
+    ['Google One', 3033, ''],
+    ['PLAUD', 1000, ''],
+    ['Canva', 1500, ''],
+    ['ChatGPT', 2000, ''],
+    ['Adobe Pro', 1980, ''],
+    ['MindMeister', 1340, ''],
+    ['Genspark', 0, ''],
+    ['Seller Sprite', 0, ''],
+    ['CKB', 20860, ''],
+    ['セゾンプラチナ年会費', 1833, '年額÷12'],
+    ['楽天ビジネス年会費', 182, '年額÷12'],
+    ['三井住友VISA', 0, ''],
+    ['Marriott Bonvoy 年会費', 6875, '年額÷12'],
+    ['JAL LC 年会費', 20167, '年額÷12'],
+    ['不動産コミュニティ', 5500, ''],
+    ['PL保険 日本', 2567, ''],
+    ['交通費', 5000, ''],
+    ['振込手数料', 1000, ''],
+    ['支払利息', 80000, '']
+  ];
+
+  sheet.getRange(2, 1, fixedCosts.length, 3).setValues(fixedCosts);
+  sheet.getRange(2, 2, fixedCosts.length, 1).setNumberFormat('#,##0');
+
+  // 合計行
+  const totalRow = fixedCosts.length + 2;
+  sheet.getRange(totalRow, 1).setValue('合計').setFontWeight('bold');
+  sheet.getRange(totalRow, 2)
+    .setFormula(`=SUM(B2:B${totalRow - 1})`)
+    .setNumberFormat('#,##0').setFontWeight('bold');
+  sheet.getRange(totalRow, 1, 1, 3).setBackground('#e8eaf6');
+
+  // 月額経費（融資返済除く）
+  sheet.getRange(totalRow + 1, 1).setValue('月額経費（融資返済除く）').setFontWeight('bold');
+  sheet.getRange(totalRow + 1, 2)
+    .setFormula(`=B${totalRow}-B2`)
+    .setNumberFormat('#,##0').setFontWeight('bold');
+
+  // ===== 融資情報セクション =====
+  const loanStartRow = totalRow + 4;
+
+  sheet.getRange(loanStartRow, 1, 1, 10).setValues([[
+    '金融機関', '内容', '融資額', '残高', '実質利率', '月額返済', '完済時期', '残年', '残月', '備考'
+  ]]);
+  sheet.getRange(loanStartRow, 1, 1, 10)
+    .setBackground('#e65100').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
+
+  const loans = [
+    ['東京東信用金庫', '創業融資', '200万円', 0, '', 0, '済', '', '', '完済'],
+    ['日本政策金融公庫', '創業融資', '300万円', 0, '', 50000, '済', '', '', '完済'],
+    ['東京東信用金庫', '創業融資', '1,000万円', 0, '', 170000, '済', '', '', '完済'],
+    ['日本政策金融公庫', '資本性ローン', '700万円', 7000000, '', 0, '2031年8月', 5, 5, '一括返済'],
+    ['日本政策金融公庫', '新企業育成', '2,000万円', 16560000, '', 345000, '2030年2月', 3, 11, ''],
+    ['西武信用金庫', '制度融資', '300万円', 1632000, '', 38000, '2029年7月', 3, 5, ''],
+    ['西武信用金庫', '制度融資', '1,000万円', 8581000, '', 129000, '2031年8月', 5, 6, ''],
+    ['西武信用金庫', '制度融資', '900万円', 9000000, 0.60, 116000, '2032年12月', 6, 9, ''],
+    ['西武信用金庫', '制度融資', '1,000万円', 10000000, 1.33, 129000, '2032年12月', 6, 9, '']
+  ];
+
+  sheet.getRange(loanStartRow + 1, 1, loans.length, 10).setValues(loans);
+
+  // 金額フォーマット
+  sheet.getRange(loanStartRow + 1, 4, loans.length, 1).setNumberFormat('#,##0');
+  sheet.getRange(loanStartRow + 1, 6, loans.length, 1).setNumberFormat('#,##0');
+
+  // 融資合計行
+  const loanTotalRow = loanStartRow + loans.length + 1;
+  sheet.getRange(loanTotalRow, 1).setValue('合計').setFontWeight('bold');
+  sheet.getRange(loanTotalRow, 4)
+    .setFormula(`=SUM(D${loanStartRow + 1}:D${loanTotalRow - 1})`)
+    .setNumberFormat('#,##0').setFontWeight('bold');
+  sheet.getRange(loanTotalRow, 6)
+    .setFormula(`=SUM(F${loanStartRow + 1}:F${loanTotalRow - 1})`)
+    .setNumberFormat('#,##0').setFontWeight('bold');
+  sheet.getRange(loanTotalRow, 1, 1, 10).setBackground('#e8eaf6');
+
+  // 列幅
+  sheet.setColumnWidth(1, 160);
+  sheet.setColumnWidth(2, 100);
+  sheet.setColumnWidth(3, 90);
+  sheet.setColumnWidth(4, 110);
+  sheet.setColumnWidth(5, 70);
+  sheet.setColumnWidth(6, 100);
+  sheet.setColumnWidth(7, 90);
+  sheet.setColumnWidth(8, 40);
+  sheet.setColumnWidth(9, 40);
+  sheet.setColumnWidth(10, 100);
+
+  sheet.setFrozenRows(1);
+
+  Logger.log('固定費・融資シート作成完了');
 }
 
 /**
