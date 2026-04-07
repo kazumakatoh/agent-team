@@ -1,23 +1,29 @@
 """
-トレードシグナル ダッシュボード
-=================================
+トレードシグナル ダッシュボード (Flask版)
+==========================================
 MEXC取引高上位銘柄を移動平均線ロジックでスクリーニングし、
 トレードシグナルを一覧表示する。
 
 起動方法:
   cd 13_trade_signals
   pip install -r requirements.txt
-  streamlit run app.py
+  python app.py
+
+ブラウザで http://localhost:5000 を開く
 """
 
 import sys
 import os
+import json
+import time
+from datetime import datetime
+from threading import Thread, Lock
+
 sys.path.insert(0, os.path.dirname(__file__))
 
-import streamlit as st
-import pandas as pd
+from flask import Flask, render_template_string, jsonify, request
+import plotly
 import plotly.graph_objects as go
-from datetime import datetime
 
 from config import (
     SIGNAL_LABELS,
@@ -29,246 +35,538 @@ from config import (
 from mexc_api import get_top_symbols, get_klines, get_klines_batch
 from analyzer import add_moving_averages, analyze_symbol
 
-# === ページ設定 ===
-st.set_page_config(
-    page_title="トレードシグナル",
-    page_icon="📊",
-    layout="wide",
-)
+app = Flask(__name__)
 
-st.title("📊 トレードシグナル ダッシュボード")
-st.caption(f"MEXC 取引高上位{TOP_N_SYMBOLS}銘柄 | 自動更新: {REFRESH_INTERVAL // 60}分ごと")
-
-
-# === サイドバー ===
-with st.sidebar:
-    st.header("⚙️ 設定")
-
-    timeframe = st.selectbox(
-        "時間足",
-        options=list(TIMEFRAMES.keys()),
-        format_func=lambda x: {"4h": "4時間足", "1d": "日足"}[x],
-        index=1,  # デフォルト: 日足
-    )
-
-    top_n = st.slider("対象銘柄数", min_value=10, max_value=100, value=TOP_N_SYMBOLS, step=10)
-
-    signal_filter = st.multiselect(
-        "シグナルフィルタ",
-        options=list(SIGNAL_LABELS.keys()),
-        format_func=lambda x: SIGNAL_LABELS[x],
-        default=None,
-        help="選択したシグナルのみ表示。空欄なら全表示。",
-    )
-
-    if st.button("🔄 データ更新", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-    st.divider()
-    st.markdown("### 📖 シグナル凡例")
-    for key, label in SIGNAL_LABELS.items():
-        st.markdown(f"- {label}")
-
-    st.divider()
-    st.markdown(
-        "**⚠️ 暫定ロジック**\n\n"
-        "パーフェクトオーダー＋\n"
-        "ゴールデンクロス/デッドクロス\n\n"
-        "相場師朗ロジックは\nPDF受領後に差し替え予定"
-    )
+# === データキャッシュ ===
+cache = {
+    "data": None,
+    "klines": None,
+    "last_update": None,
+    "loading": False,
+    "error": None,
+}
+cache_lock = Lock()
 
 
-# === データ取得・分析 ===
-@st.cache_data(ttl=REFRESH_INTERVAL)
-def load_data(tf: str, n: int):
-    """データ取得→分析を実行してキャッシュする。"""
-
-    # 1. 取引高上位銘柄を取得
-    top_symbols = get_top_symbols(n)
+def load_data(timeframe="1d", top_n=TOP_N_SYMBOLS):
+    """データ取得→分析を実行する。"""
+    top_symbols = get_top_symbols(top_n)
     symbol_list = [s["symbol"] for s in top_symbols]
     symbol_info = {s["symbol"]: s for s in top_symbols}
 
-    # 2. ローソク足を一括取得
-    klines_data = get_klines_batch(symbol_list, TIMEFRAMES[tf])
+    klines_data = get_klines_batch(symbol_list, TIMEFRAMES[timeframe])
 
-    # 3. 各銘柄を分析
     results = []
     for symbol, df in klines_data.items():
         signal = analyze_symbol(df)
         info = symbol_info.get(symbol, {})
         results.append({
-            "銘柄": symbol.replace("USDT", "/USDT"),
-            "symbol_raw": symbol,
-            "現在値": signal["close"],
-            "シグナル": signal["signal"],
-            "シグナル表示": SIGNAL_LABELS.get(signal["signal"], "不明"),
-            "トレンド強度(%)": signal["trend_strength"],
-            "判定理由": signal["detail"],
-            "24h出来高(USDT)": info.get("volume", 0),
-            "24h変動率(%)": info.get("priceChangePercent", 0),
-            "MA5": signal["ma_values"].get(5, 0),
-            "MA10": signal["ma_values"].get(10, 0),
-            "MA30": signal["ma_values"].get(30, 0),
-            "MA50": signal["ma_values"].get(50, 0),
-            "MA100": signal["ma_values"].get(100, 0),
+            "symbol": symbol,
+            "symbol_display": symbol.replace("USDT", "/USDT"),
+            "price": signal["close"],
+            "signal": signal["signal"],
+            "signal_label": SIGNAL_LABELS.get(signal["signal"], "不明"),
+            "trend_strength": signal["trend_strength"],
+            "detail": signal["detail"],
+            "volume": info.get("volume", 0),
+            "change_pct": info.get("priceChangePercent", 0),
+            "ma5": signal["ma_values"].get(5, 0),
+            "ma10": signal["ma_values"].get(10, 0),
+            "ma30": signal["ma_values"].get(30, 0),
+            "ma50": signal["ma_values"].get(50, 0),
+            "ma100": signal["ma_values"].get(100, 0),
         })
 
-    return pd.DataFrame(results), klines_data
+    # シグナル優先度順にソート
+    signal_order = ["strong_bull", "bull", "bull_hint", "bear_hint", "bear", "strong_bear", "sideways"]
+    results.sort(key=lambda r: signal_order.index(r["signal"]) if r["signal"] in signal_order else 99)
+
+    return results, klines_data
 
 
-# データ読み込み
-with st.spinner("📡 MEXC APIからデータ取得中...（初回は1〜2分かかります）"):
+def refresh_cache(timeframe="1d", top_n=TOP_N_SYMBOLS):
+    """バックグラウンドでデータを更新する。"""
+    with cache_lock:
+        if cache["loading"]:
+            return
+        cache["loading"] = True
+        cache["error"] = None
+
     try:
-        df_results, klines_data = load_data(timeframe, top_n)
+        results, klines_data = load_data(timeframe, top_n)
+        with cache_lock:
+            cache["data"] = results
+            cache["klines"] = klines_data
+            cache["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
-        st.error(f"データ取得に失敗しました: {e}")
-        st.stop()
+        with cache_lock:
+            cache["error"] = str(e)
+    finally:
+        with cache_lock:
+            cache["loading"] = False
 
-# === シグナルフィルタ適用 ===
-if signal_filter:
-    df_display = df_results[df_results["シグナル"].isin(signal_filter)]
-else:
-    df_display = df_results
 
-# === サマリー表示 ===
-st.markdown(f"**最終更新:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | **時間足:** {'日足' if timeframe == '1d' else '4時間足'}")
+# === HTMLテンプレート ===
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>トレードシグナル</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'Meiryo', sans-serif;
+            background: #0e1117;
+            color: #fafafa;
+        }
+        .header {
+            background: #1a1d23;
+            padding: 20px 30px;
+            border-bottom: 1px solid #333;
+        }
+        .header h1 { font-size: 24px; }
+        .header .sub { color: #888; font-size: 13px; margin-top: 4px; }
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            padding: 15px 30px;
+            background: #1a1d23;
+            border-bottom: 1px solid #333;
+            flex-wrap: wrap;
+        }
+        .controls select, .controls button {
+            padding: 8px 16px;
+            background: #262730;
+            color: #fafafa;
+            border: 1px solid #444;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .controls button { background: #ff4b4b; border-color: #ff4b4b; font-weight: bold; }
+        .controls button:hover { background: #ff6b6b; }
+        .controls button:disabled { background: #555; border-color: #555; cursor: wait; }
+        .summary {
+            display: flex;
+            gap: 15px;
+            padding: 20px 30px;
+            flex-wrap: wrap;
+        }
+        .summary-card {
+            background: #1a1d23;
+            border-radius: 8px;
+            padding: 15px 20px;
+            flex: 1;
+            min-width: 140px;
+            text-align: center;
+        }
+        .summary-card .num { font-size: 28px; font-weight: bold; }
+        .summary-card .label { font-size: 12px; color: #888; margin-top: 4px; }
+        .content { padding: 0 30px 30px; }
+        .section-title { font-size: 18px; margin: 25px 0 12px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #1a1d23;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th {
+            background: #262730;
+            padding: 12px 15px;
+            text-align: left;
+            font-size: 13px;
+            color: #888;
+            white-space: nowrap;
+        }
+        td {
+            padding: 10px 15px;
+            border-top: 1px solid #262730;
+            font-size: 14px;
+        }
+        tr:hover td { background: #1e2028; }
+        .signal-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .signal-strong_bull { background: #00c853; color: #000; }
+        .signal-bull { background: #2979ff; color: #fff; }
+        .signal-bull_hint { background: #ffd600; color: #000; }
+        .signal-bear_hint { background: #ff9100; color: #000; }
+        .signal-bear { background: #ff1744; color: #fff; }
+        .signal-strong_bear { background: #424242; color: #fff; }
+        .signal-sideways { background: #616161; color: #fff; }
+        .positive { color: #00c853; }
+        .negative { color: #ff1744; }
+        #chart-container {
+            background: #1a1d23;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 10px;
+        }
+        .alert-box {
+            background: #1a1d23;
+            border-left: 4px solid #ffd600;
+            padding: 12px 20px;
+            margin: 5px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .alert-box.bear-alert { border-left-color: #ff9100; }
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #888;
+            font-size: 18px;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #555;
+            font-size: 12px;
+        }
+        .ma-info { display: flex; gap: 30px; padding: 15px; flex-wrap: wrap; }
+        .ma-info div { flex: 1; min-width: 200px; }
+        .ma-info ul { list-style: none; margin-top: 8px; }
+        .ma-info li { padding: 2px 0; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 トレードシグナル ダッシュボード</h1>
+        <div class="sub">MEXC 取引高上位銘柄 | 移動平均線分析 | <span id="last-update">--</span></div>
+    </div>
 
-col1, col2, col3, col4, col5 = st.columns(5)
+    <div class="controls">
+        <label>時間足:
+            <select id="timeframe">
+                <option value="1d" selected>日足</option>
+                <option value="4h">4時間足</option>
+            </select>
+        </label>
+        <label>銘柄数:
+            <select id="topn">
+                <option value="20">20</option>
+                <option value="30">30</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+            </select>
+        </label>
+        <label>フィルタ:
+            <select id="signal-filter">
+                <option value="">全て表示</option>
+                <option value="strong_bull">🟢 強い上昇</option>
+                <option value="bull">🔵 上昇</option>
+                <option value="bull_hint">🟡 上昇の兆し</option>
+                <option value="bear_hint">🟠 下落の兆し</option>
+                <option value="bear">🔴 下落</option>
+                <option value="strong_bear">⚫ 強い下落</option>
+                <option value="sideways">⚪ 横ばい</option>
+            </select>
+        </label>
+        <button id="refresh-btn" onclick="refreshData()">🔄 データ更新</button>
+    </div>
 
-signal_counts = df_results["シグナル"].value_counts()
+    <div id="main-content">
+        <div class="loading" id="loading-msg">📡 データ取得中...（初回は1〜2分かかります）</div>
+    </div>
 
-with col1:
-    bull_count = signal_counts.get("strong_bull", 0) + signal_counts.get("bull", 0)
-    st.metric("🟢🔵 上昇相場", f"{bull_count} 銘柄")
+    <div class="footer">
+        ⚠️ このツールは投資助言ではありません。投資判断は自己責任でお願いします。<br>
+        📌 ロジックは暫定版です。相場師朗ロジックのPDF受領後に差し替えます。
+    </div>
 
-with col2:
-    st.metric("🟡 上昇の兆し", f"{signal_counts.get('bull_hint', 0)} 銘柄")
+    <script>
+        let allData = [];
+        let symbolList = [];
 
-with col3:
-    st.metric("⚪ 横ばい", f"{signal_counts.get('sideways', 0)} 銘柄")
+        async function refreshData() {
+            const btn = document.getElementById('refresh-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ 取得中...';
+            document.getElementById('main-content').innerHTML =
+                '<div class="loading">📡 データ取得中...（1〜2分かかります）</div>';
 
-with col4:
-    st.metric("🟠 下落の兆し", f"{signal_counts.get('bear_hint', 0)} 銘柄")
+            const tf = document.getElementById('timeframe').value;
+            const n = document.getElementById('topn').value;
 
-with col5:
-    bear_count = signal_counts.get("strong_bear", 0) + signal_counts.get("bear", 0)
-    st.metric("🔴⚫ 下落相場", f"{bear_count} 銘柄")
+            try {
+                const resp = await fetch(`/api/refresh?timeframe=${tf}&topn=${n}`);
+                const result = await resp.json();
+                if (result.error) {
+                    document.getElementById('main-content').innerHTML =
+                        `<div class="loading">❌ エラー: ${result.error}</div>`;
+                } else {
+                    loadDashboard();
+                }
+            } catch(e) {
+                document.getElementById('main-content').innerHTML =
+                    `<div class="loading">❌ 通信エラー: ${e.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 データ更新';
+            }
+        }
 
-st.divider()
+        async function loadDashboard() {
+            try {
+                const resp = await fetch('/api/data');
+                const result = await resp.json();
 
-# === シグナル一覧テーブル ===
-st.subheader("📋 シグナル一覧")
+                if (!result.data || result.data.length === 0) {
+                    if (result.loading) {
+                        document.getElementById('main-content').innerHTML =
+                            '<div class="loading">📡 データ取得中...</div>';
+                        setTimeout(loadDashboard, 3000);
+                        return;
+                    }
+                    refreshData();
+                    return;
+                }
 
-# シグナル優先度順にソート
-signal_order = ["strong_bull", "bull", "bull_hint", "bear_hint", "bear", "strong_bear", "sideways"]
-df_display = df_display.copy()
-df_display["_sort"] = df_display["シグナル"].map({s: i for i, s in enumerate(signal_order)})
-df_display = df_display.sort_values("_sort").drop(columns=["_sort"])
+                allData = result.data;
+                symbolList = allData.map(d => d.symbol);
+                document.getElementById('last-update').textContent = result.last_update || '--';
+                renderDashboard();
+            } catch(e) {
+                document.getElementById('main-content').innerHTML =
+                    `<div class="loading">❌ ${e.message}</div>`;
+            }
+        }
 
-# 表示用カラム
-display_cols = ["銘柄", "シグナル表示", "現在値", "トレンド強度(%)", "24h変動率(%)", "判定理由"]
-st.dataframe(
-    df_display[display_cols],
-    use_container_width=True,
-    hide_index=True,
-    height=600,
-    column_config={
-        "銘柄": st.column_config.TextColumn("銘柄", width="small"),
-        "シグナル表示": st.column_config.TextColumn("シグナル", width="medium"),
-        "現在値": st.column_config.NumberColumn("現在値", format="%.6f"),
-        "トレンド強度(%)": st.column_config.NumberColumn("強度(%)", format="%.2f"),
-        "24h変動率(%)": st.column_config.NumberColumn("24h変動(%)", format="%.2f"),
-        "判定理由": st.column_config.TextColumn("判定理由", width="large"),
-    },
-)
+        function renderDashboard() {
+            const filter = document.getElementById('signal-filter').value;
+            const data = filter ? allData.filter(d => d.signal === filter) : allData;
 
-# === 個別チャート ===
-st.divider()
-st.subheader("📈 個別チャート")
+            // サマリー集計
+            const counts = {};
+            allData.forEach(d => { counts[d.signal] = (counts[d.signal] || 0) + 1; });
+            const bullCount = (counts.strong_bull || 0) + (counts.bull || 0);
+            const bearCount = (counts.strong_bear || 0) + (counts.bear || 0);
 
-chart_symbol = st.selectbox(
-    "銘柄を選択",
-    options=df_results["symbol_raw"].tolist(),
-    format_func=lambda x: x.replace("USDT", "/USDT"),
-)
+            let html = `
+            <div class="summary">
+                <div class="summary-card"><div class="num positive">${bullCount}</div><div class="label">🟢🔵 上昇相場</div></div>
+                <div class="summary-card"><div class="num" style="color:#ffd600">${counts.bull_hint || 0}</div><div class="label">🟡 上昇の兆し</div></div>
+                <div class="summary-card"><div class="num">${counts.sideways || 0}</div><div class="label">⚪ 横ばい</div></div>
+                <div class="summary-card"><div class="num" style="color:#ff9100">${counts.bear_hint || 0}</div><div class="label">🟠 下落の兆し</div></div>
+                <div class="summary-card"><div class="num negative">${bearCount}</div><div class="label">🔴⚫ 下落相場</div></div>
+            </div>
+            <div class="content">
+                <h2 class="section-title">📋 シグナル一覧（${data.length}銘柄）</h2>
+                <table>
+                    <thead><tr>
+                        <th>銘柄</th><th>シグナル</th><th>現在値</th>
+                        <th>強度(%)</th><th>24h変動(%)</th><th>判定理由</th>
+                    </tr></thead>
+                    <tbody>`;
 
-if chart_symbol and chart_symbol in klines_data:
-    df_chart = klines_data[chart_symbol].copy()
-    df_chart = add_moving_averages(df_chart)
+            data.forEach(d => {
+                const changeClass = d.change_pct >= 0 ? 'positive' : 'negative';
+                html += `<tr onclick="showChart('${d.symbol}')" style="cursor:pointer">
+                    <td><strong>${d.symbol_display}</strong></td>
+                    <td><span class="signal-badge signal-${d.signal}">${d.signal_label}</span></td>
+                    <td>${formatPrice(d.price)}</td>
+                    <td>${d.trend_strength.toFixed(2)}</td>
+                    <td class="${changeClass}">${d.change_pct >= 0 ? '+' : ''}${d.change_pct.toFixed(2)}%</td>
+                    <td style="font-size:12px;color:#aaa">${d.detail}</td>
+                </tr>`;
+            });
 
-    fig = go.Figure()
+            html += `</tbody></table>
 
-    # ローソク足
-    fig.add_trace(go.Candlestick(
-        x=df_chart["timestamp"],
-        open=df_chart["open"],
-        high=df_chart["high"],
-        low=df_chart["low"],
-        close=df_chart["close"],
-        name="ローソク足",
-    ))
+                <h2 class="section-title">📈 個別チャート</h2>
+                <select id="chart-select" onchange="showChart(this.value)" style="padding:8px 16px;background:#262730;color:#fafafa;border:1px solid #444;border-radius:6px;font-size:14px;margin-bottom:10px">
+                    ${symbolList.map(s => `<option value="${s}">${s.replace('USDT','/USDT')}</option>`).join('')}
+                </select>
+                <div id="chart-container"><div style="text-align:center;padding:40px;color:#888">銘柄を選択またはテーブルの行をクリック</div></div>
+                <div id="ma-details" class="ma-info"></div>
 
-    # 移動平均線
-    ma_colors = {5: "#FF6B6B", 10: "#4ECDC4", 30: "#45B7D1", 50: "#FFA07A", 100: "#9B59B6"}
-    for period in MA_PERIODS:
-        if f"MA{period}" in df_chart.columns:
-            fig.add_trace(go.Scatter(
-                x=df_chart["timestamp"],
-                y=df_chart[f"MA{period}"],
-                mode="lines",
-                name=f"MA{period}",
-                line=dict(color=ma_colors.get(period, "#888"), width=1.5),
-            ))
+                <h2 class="section-title">🔔 注目銘柄（シグナル変化あり）</h2>`;
 
-    fig.update_layout(
-        title=f"{chart_symbol.replace('USDT', '/USDT')} - {'日足' if timeframe == '1d' else '4時間足'}",
-        xaxis_title="日時",
-        yaxis_title="価格 (USDT)",
-        template="plotly_dark",
-        height=600,
-        xaxis_rangeslider_visible=False,
-    )
+            const alerts = allData.filter(d => d.signal === 'bull_hint' || d.signal === 'bear_hint');
+            if (alerts.length === 0) {
+                html += '<p style="color:#888;padding:10px 0">現在、シグナル変化のある銘柄はありません。</p>';
+            } else {
+                alerts.forEach(d => {
+                    const cls = d.signal === 'bull_hint' ? '' : 'bear-alert';
+                    const icon = d.signal === 'bull_hint' ? '🟡' : '🟠';
+                    html += `<div class="alert-box ${cls}">${icon} <strong>${d.symbol_display}</strong> | 現在値: ${formatPrice(d.price)} | ${d.detail}</div>`;
+                });
+            }
 
-    st.plotly_chart(fig, use_container_width=True)
+            html += '</div>';
+            document.getElementById('main-content').innerHTML = html;
+        }
 
-    # MA値の詳細表示
-    signal_info = df_results[df_results["symbol_raw"] == chart_symbol].iloc[0]
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown("**移動平均線の値:**")
-        for period in MA_PERIODS:
-            st.markdown(f"- MA{period}: `{signal_info[f'MA{period}']:.6f}`")
-    with col_b:
-        st.markdown(f"**シグナル:** {signal_info['シグナル表示']}")
-        st.markdown(f"**判定理由:** {signal_info['判定理由']}")
-        st.markdown(f"**トレンド強度:** {signal_info['トレンド強度(%)']:.2f}%")
+        function formatPrice(p) {
+            if (p >= 1000) return p.toFixed(2);
+            if (p >= 1) return p.toFixed(4);
+            return p.toFixed(6);
+        }
 
-# === アラートログ ===
-st.divider()
-st.subheader("🔔 注目銘柄（シグナル変化あり）")
-st.info(
-    "ゴールデンクロス・デッドクロスが直近で発生した銘柄を表示します。\n"
-    "ロング準備・ショート準備のシグナルが出ている銘柄に注目してください。"
-)
+        async function showChart(symbol) {
+            const sel = document.getElementById('chart-select');
+            if (sel) sel.value = symbol;
 
-alert_signals = ["bull_hint", "bear_hint"]
-df_alerts = df_results[df_results["シグナル"].isin(alert_signals)]
+            const tf = document.getElementById('timeframe').value;
+            const tfLabel = tf === '1d' ? '日足' : '4時間足';
 
-if df_alerts.empty:
-    st.write("現在、シグナル変化のある銘柄はありません。")
-else:
-    for _, row in df_alerts.iterrows():
-        icon = "🟡" if row["シグナル"] == "bull_hint" else "🟠"
-        st.markdown(
-            f"{icon} **{row['銘柄']}** | "
-            f"現在値: {row['現在値']:.6f} | "
-            f"{row['判定理由']}"
-        )
+            try {
+                const resp = await fetch(`/api/chart?symbol=${symbol}&timeframe=${tf}`);
+                const result = await resp.json();
 
-# === フッター ===
-st.divider()
-st.caption(
-    "⚠️ このツールは投資助言ではありません。投資判断は自己責任でお願いします。\n"
-    "📌 ロジックは暫定版です。相場師朗ロジックのPDF受領後に差し替えます。"
-)
+                if (result.error) {
+                    document.getElementById('chart-container').innerHTML = `<p style="color:red">${result.error}</p>`;
+                    return;
+                }
+
+                const d = result.data;
+                const traces = [{
+                    x: d.timestamp, open: d.open, high: d.high, low: d.low, close: d.close,
+                    type: 'candlestick', name: 'ローソク足'
+                }];
+
+                const maColors = {5:'#FF6B6B',10:'#4ECDC4',30:'#45B7D1',50:'#FFA07A',100:'#9B59B6'};
+                [5,10,30,50,100].forEach(p => {
+                    if (d['MA'+p]) {
+                        traces.push({x:d.timestamp, y:d['MA'+p], type:'scatter', mode:'lines',
+                            name:'MA'+p, line:{color:maColors[p],width:1.5}});
+                    }
+                });
+
+                const layout = {
+                    title: `${symbol.replace('USDT','/USDT')} - ${tfLabel}`,
+                    template: 'plotly_dark',
+                    paper_bgcolor: '#1a1d23', plot_bgcolor: '#1a1d23',
+                    xaxis: {title:'日時', rangeslider:{visible:false}},
+                    yaxis: {title:'価格 (USDT)'},
+                    height: 500,
+                    margin: {l:60,r:20,t:40,b:40},
+                };
+
+                Plotly.newPlot('chart-container', traces, layout, {responsive:true});
+
+                // MA詳細
+                const info = allData.find(x => x.symbol === symbol);
+                if (info) {
+                    document.getElementById('ma-details').innerHTML = `
+                        <div>
+                            <strong>移動平均線の値:</strong>
+                            <ul>
+                                <li style="color:#FF6B6B">MA5: ${formatPrice(info.ma5)}</li>
+                                <li style="color:#4ECDC4">MA10: ${formatPrice(info.ma10)}</li>
+                                <li style="color:#45B7D1">MA30: ${formatPrice(info.ma30)}</li>
+                                <li style="color:#FFA07A">MA50: ${formatPrice(info.ma50)}</li>
+                                <li style="color:#9B59B6">MA100: ${formatPrice(info.ma100)}</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <strong>シグナル:</strong> <span class="signal-badge signal-${info.signal}">${info.signal_label}</span><br><br>
+                            <strong>判定理由:</strong> ${info.detail}<br>
+                            <strong>トレンド強度:</strong> ${info.trend_strength.toFixed(2)}%
+                        </div>`;
+                }
+            } catch(e) {
+                document.getElementById('chart-container').innerHTML = `<p style="color:red">チャート取得エラー: ${e.message}</p>`;
+            }
+        }
+
+        // フィルタ変更時に再描画
+        document.getElementById('signal-filter').addEventListener('change', renderDashboard);
+
+        // 初回読み込み
+        loadDashboard();
+
+        // 自動更新
+        setInterval(loadDashboard, {{ refresh_interval }} * 1000);
+    </script>
+</body>
+</html>
+"""
+
+
+@app.route("/")
+def index():
+    return render_template_string(HTML_TEMPLATE, refresh_interval=REFRESH_INTERVAL)
+
+
+@app.route("/api/data")
+def api_data():
+    with cache_lock:
+        return jsonify({
+            "data": cache["data"],
+            "last_update": cache["last_update"],
+            "loading": cache["loading"],
+            "error": cache["error"],
+        })
+
+
+@app.route("/api/refresh")
+def api_refresh():
+    tf = request.args.get("timeframe", "1d")
+    n = int(request.args.get("topn", TOP_N_SYMBOLS))
+
+    # バックグラウンドで更新
+    thread = Thread(target=refresh_cache, args=(tf, n))
+    thread.start()
+    thread.join(timeout=180)  # 最大3分待つ
+
+    with cache_lock:
+        if cache["error"]:
+            return jsonify({"error": cache["error"]})
+        return jsonify({"status": "ok"})
+
+
+@app.route("/api/chart")
+def api_chart():
+    symbol = request.args.get("symbol")
+    tf = request.args.get("timeframe", "1d")
+
+    with cache_lock:
+        klines = cache.get("klines")
+
+    if not klines or symbol not in klines:
+        # キャッシュにない場合は直接取得
+        try:
+            df = get_klines(symbol, TIMEFRAMES[tf])
+        except Exception as e:
+            return jsonify({"error": str(e)})
+    else:
+        df = klines[symbol]
+
+    if df.empty:
+        return jsonify({"error": "データなし"})
+
+    df = add_moving_averages(df)
+
+    data = {
+        "timestamp": df["timestamp"].astype(str).tolist(),
+        "open": df["open"].tolist(),
+        "high": df["high"].tolist(),
+        "low": df["low"].tolist(),
+        "close": df["close"].tolist(),
+    }
+    for p in MA_PERIODS:
+        col = f"MA{p}"
+        if col in df.columns:
+            data[col] = df[col].tolist()
+
+    return jsonify({"data": data})
+
+
+if __name__ == "__main__":
+    print("=" * 50)
+    print("📊 トレードシグナル ダッシュボード")
+    print("=" * 50)
+    print(f"ブラウザで http://localhost:5000 を開いてください")
+    print(f"終了するには Ctrl+C を押してください")
+    print("=" * 50)
+    app.run(host="0.0.0.0", port=5000, debug=False)
