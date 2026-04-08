@@ -15,15 +15,16 @@ function sync2026() { syncFromMF(2026); }
 // ==============================
 
 function fiscalDates_(year) {
-  return { startYear: year - 1, endYear: year };
+  // 資金繰り表_2025 → MF fiscal_year=2025（2025年度=2025/3〜2026/2）
+  return { startYear: year, endYear: year + 1, fiscalYear: year };
 }
 
 function monthKeys_(year) {
   var fy = fiscalDates_(year);
   var keys = [];
   for (var m = 3; m <= 12; m++) keys.push(fy.startYear + '-' + padZero_(m));
-  keys.push(year + '-01');
-  keys.push(year + '-02');
+  keys.push((fy.startYear + 1) + '-01');
+  keys.push((fy.startYear + 1) + '-02');
   return keys;
 }
 
@@ -71,7 +72,7 @@ function extractTransitionAccount_(data, accountName, monthKeys) {
   function search(rows) {
     if (!rows) return;
     rows.forEach(function(row) {
-      if (row.name === accountName && row.type === 'account' && row.values) {
+      if (row.name === accountName && row.values) {
         row.values.forEach(function(val, idx) {
           if (colToYM[idx] !== undefined) {
             result[colToYM[idx]] = val || 0;
@@ -107,7 +108,7 @@ function extractTransitionSum_(data, accountNames, monthKeys) {
 function fetchJournals_(year) {
   var fy = fiscalDates_(year);
   var startDate = fy.startYear + '-03-01';
-  var endDate = fy.endYear + '-02-28';
+  var endDate = (fy.startYear + 1) + '-02-28';
   var allJournals = [];
   var page = 1;
 
@@ -223,7 +224,8 @@ function syncFromMF(year) {
   if (!sheet) throw new Error('資金繰り表_' + year + ' シートが見つかりません');
 
   var keys = monthKeys_(year);
-  var fiscalYear = year - 1; // 第7期(2025) → fiscal_year=2024
+  var fy = fiscalDates_(year);
+  var fiscalYear = fy.fiscalYear;
   ss.toast('推移表・仕訳データ取得中...', '同期開始');
 
   // --- 推移表（PL/BS）取得 ---
@@ -252,9 +254,20 @@ function syncFromMF(year) {
 
   // === PL推移表から取得する項目 ===
   if (plData) {
-    // 行3: 売上（今期）
-    var sales = extractTransitionAccount_(plData, '売上高', keys);
+    // 行3: 売上（今期）※ MF上は「売上高合計」（financial_statement_item）
+    var sales = extractTransitionAccount_(plData, '売上高合計', keys);
     sheet.getRange('C3:N3').setValues([monthlyToK(sales)]);
+
+    // 行4: 売上（前期）
+    try {
+      var prevFY = fiscalYear - 1;
+      var prevPL = fetchTransition_('pl', prevFY);
+      var prevKeys = monthKeys_(year - 1);
+      var prevSales = extractTransitionAccount_(prevPL, '売上高合計', prevKeys);
+      sheet.getRange('C4:N4').setValues([monthlyToK(prevSales)]);
+    } catch (e) {
+      Logger.log('前期売上取得エラー: ' + e.message);
+    }
 
     // 行13: 人件費
     var personnel = extractTransitionSum_(plData, ['給料手当', '賞与', '法定福利費', '役員報酬'], keys);
