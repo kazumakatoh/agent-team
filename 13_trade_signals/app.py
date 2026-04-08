@@ -227,17 +227,39 @@ let sortAsc = true;
 async function refreshData() {
     const btn = document.getElementById('refresh-btn');
     btn.disabled = true; btn.textContent = '⏳ 取得中...';
-    document.getElementById('main-content').innerHTML = '<div class="loading">📡 データ取得中...（2〜3分かかります）</div>';
+    document.getElementById('main-content').innerHTML = '<div class="loading">📡 データ取得中...<br><small>50銘柄×2時間足を取得中（2〜3分）</small></div>';
     const n = document.getElementById('topn').value;
     try {
-        const resp = await fetch('/api/refresh?topn=' + n);
-        const result = await resp.json();
-        if (result.error) {
-            document.getElementById('main-content').innerHTML = '<div class="loading">❌ ' + result.error + '</div>';
-        } else { loadDashboard(); }
+        await fetch('/api/refresh?topn=' + n);
+        // ポーリングで完了を待つ
+        pollForData();
     } catch(e) {
         document.getElementById('main-content').innerHTML = '<div class="loading">❌ ' + e.message + '</div>';
-    } finally { btn.disabled = false; btn.textContent = '🔄 データ更新'; }
+        btn.disabled = false; btn.textContent = '🔄 データ更新';
+    }
+}
+
+function pollForData() {
+    const btn = document.getElementById('refresh-btn');
+    const poll = setInterval(async () => {
+        try {
+            const resp = await fetch('/api/data');
+            const result = await resp.json();
+            if (result.error) {
+                clearInterval(poll);
+                document.getElementById('main-content').innerHTML = '<div class="loading">❌ ' + result.error + '</div>';
+                btn.disabled = false; btn.textContent = '🔄 データ更新';
+            } else if (result.data && result.data.length > 0 && !result.loading) {
+                clearInterval(poll);
+                allData = result.data;
+                symbolList = allData.map(d => d.symbol);
+                document.getElementById('last-update').textContent = result.last_update || '--';
+                renderDashboard();
+                btn.disabled = false; btn.textContent = '🔄 データ更新';
+            }
+            // まだloading中なら待ち続ける
+        } catch(e) { /* ネットワークエラーは無視して再試行 */ }
+    }, 3000); // 3秒ごとにチェック
 }
 
 async function loadDashboard() {
@@ -430,14 +452,10 @@ def api_data():
 @app.route("/api/refresh")
 def api_refresh():
     n = int(request.args.get("topn", TOP_N_SYMBOLS))
-    thread = Thread(target=refresh_cache, args=(n,))
+    # 非同期で開始し、即座にレスポンスを返す
+    thread = Thread(target=refresh_cache, args=(n,), daemon=True)
     thread.start()
-    thread.join(timeout=300)  # 両方取得するので最大5分
-
-    with cache_lock:
-        if cache["error"]:
-            return jsonify({"error": cache["error"]})
-        return jsonify({"status": "ok"})
+    return jsonify({"status": "started"})
 
 
 @app.route("/api/chart")

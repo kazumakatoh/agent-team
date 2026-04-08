@@ -118,8 +118,8 @@ def get_klines_batch(symbols: list[str], interval: str, limit: int = KLINE_LIMIT
         except Exception as e:
             print(f"[WARN] {symbol} のデータ取得に失敗: {e}")
 
-        # API制限対策: 5リクエストごとに0.5秒待機
-        if (i + 1) % 5 == 0:
-            time.sleep(0.5)
+        # API制限対策: 10リクエストごとに0.3秒待機
+        if (i + 1) % 10 == 0:
+            time.sleep(0.3)
 
     return result
