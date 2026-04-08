@@ -330,18 +330,18 @@ function renderDashboard() {
     '</div><div class="content">';
 
     html += '<h2 class="section-title">📋 シグナル一覧（' + data.length + '銘柄）</h2><table><thead><tr>' +
-        '<th onclick="onSort(\'symbol_display\')">銘柄' + sortIcon('symbol_display') + '</th>' +
-        '<th onclick="onSort(\'signal_1d_order\')">日足シグナル' + sortIcon('signal_1d_order') + '</th>' +
-        '<th onclick="onSort(\'signal_4h_order\')">4hシグナル' + sortIcon('signal_4h_order') + '</th>' +
-        '<th onclick="onSort(\'price\')">現在値' + sortIcon('price') + '</th>' +
-        '<th onclick="onSort(\'volume_jpy\')">24h出来高(円)' + sortIcon('volume_jpy') + '</th>' +
-        '<th onclick="onSort(\'avg_volume_30d_jpy\')">30日平均/日(円)' + sortIcon('avg_volume_30d_jpy') + '</th>' +
-        '<th onclick="onSort(\'change_pct\')">24h変動(%)' + sortIcon('change_pct') + '</th>' +
+        '<th onclick="onSort(&quot;symbol_display&quot;)">銘柄' + sortIcon('symbol_display') + '</th>' +
+        '<th onclick="onSort(&quot;signal_1d_order&quot;)">日足シグナル' + sortIcon('signal_1d_order') + '</th>' +
+        '<th onclick="onSort(&quot;signal_4h_order&quot;)">4hシグナル' + sortIcon('signal_4h_order') + '</th>' +
+        '<th onclick="onSort(&quot;price&quot;)">現在値' + sortIcon('price') + '</th>' +
+        '<th onclick="onSort(&quot;volume_jpy&quot;)">24h出来高(円)' + sortIcon('volume_jpy') + '</th>' +
+        '<th onclick="onSort(&quot;avg_volume_30d_jpy&quot;)">30日平均/日(円)' + sortIcon('avg_volume_30d_jpy') + '</th>' +
+        '<th onclick="onSort(&quot;change_pct&quot;)">24h変動(%)' + sortIcon('change_pct') + '</th>' +
     '</tr></thead><tbody>';
 
     data.forEach(d => {
         const cc = d.change_pct >= 0 ? 'positive' : 'negative';
-        html += '<tr onclick="showChart(\'' + d.symbol + '\')" style="cursor:pointer">' +
+        html += '<tr onclick="showChart(&quot;' + d.symbol + '&quot;)" style="cursor:pointer">' +
             '<td><strong>' + d.symbol_display + '</strong></td>' +
             '<td><span class="signal-badge signal-' + d.signal_1d + '">' + d.signal_label_1d + '</span></td>' +
             '<td><span class="signal-badge signal-' + d.signal_4h + '">' + d.signal_label_4h + '</span></td>' +
