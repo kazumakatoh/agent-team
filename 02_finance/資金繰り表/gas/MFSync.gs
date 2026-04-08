@@ -54,8 +54,11 @@ function fetchJournals_(year) {
       per_page: 500
     });
     var journals = data.journals || [];
-    if (journals.length === 0) break;
     allJournals = allJournals.concat(journals);
+
+    // 最終ページ判定: 取得件数 < per_page、またはtotal_pages到達
+    if (journals.length < 500) break;
+    if (data.total_pages && page >= data.total_pages) break;
     page++;
     if (page > 200) break;
   }
