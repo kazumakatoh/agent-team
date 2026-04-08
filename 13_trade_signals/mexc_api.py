@@ -24,7 +24,7 @@ def get_top_symbols(n: int = TOP_N_SYMBOLS) -> list[dict]:
         [{"symbol": "BTCUSDT", "volume": 123456.78, "lastPrice": 68000.0}, ...]
     """
     url = f"{MEXC_BASE_URL}{MEXC_TICKER_ENDPOINT}"
-    resp = requests.get(url, timeout=30)
+    resp = requests.get(url, timeout=10)
     resp.raise_for_status()
     tickers = resp.json()
 
@@ -68,7 +68,7 @@ def get_klines(symbol: str, interval: str, limit: int = KLINE_LIMIT) -> pd.DataF
         "interval": interval,
         "limit": limit,
     }
-    resp = requests.get(url, params=params, timeout=30)
+    resp = requests.get(url, params=params, timeout=10)
     resp.raise_for_status()
     data = resp.json()
 
@@ -109,17 +109,20 @@ def get_klines_batch(symbols: list[str], interval: str, limit: int = KLINE_LIMIT
     Returns:
         {"BTCUSDT": DataFrame, "ETHUSDT": DataFrame, ...}
     """
+    total = len(symbols)
     result = {}
     for i, symbol in enumerate(symbols):
         try:
             df = get_klines(symbol, interval, limit)
             if not df.empty:
                 result[symbol] = df
+            print(f"[{interval}] {i+1}/{total} {symbol} OK")
         except Exception as e:
-            print(f"[WARN] {symbol} のデータ取得に失敗: {e}")
+            print(f"[{interval}] {i+1}/{total} {symbol} SKIP: {e}")
 
-        # API制限対策: 10リクエストごとに0.3秒待機
+        # API制限対策: 10リクエストごとに0.2秒待機
         if (i + 1) % 10 == 0:
-            time.sleep(0.3)
+            time.sleep(0.2)
 
+    print(f"[{interval}] 完了: {len(result)}/{total} 銘柄取得")
     return result

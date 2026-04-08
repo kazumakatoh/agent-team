@@ -53,10 +53,13 @@ def load_data(top_n=TOP_N_SYMBOLS):
     top_symbols = get_top_symbols(top_n)
     symbol_list = [s["symbol"] for s in top_symbols]
     symbol_info = {s["symbol"]: s for s in top_symbols}
+    print(f"=== {len(symbol_list)}銘柄の日足データを取得中... ===")
 
     # 両方の時間足を取得
     klines_1d = get_klines_batch(symbol_list, TIMEFRAMES["1d"])
+    print(f"=== {len(symbol_list)}銘柄の4時間足データを取得中... ===")
     klines_4h = get_klines_batch(symbol_list, TIMEFRAMES["4h"])
+    print(f"=== 分析中... ===")
 
     signal_order = ["strong_bull", "bull", "bull_hint", "bear_hint", "bear", "strong_bear", "sideways"]
 
@@ -202,7 +205,7 @@ HTML_TEMPLATE = """
         <div class="sub">MEXC 取引高上位銘柄 | 日足・4時間足 並列分析 | <span id="last-update">--</span></div>
     </div>
     <div class="controls">
-        <label>銘柄数: <select id="topn"><option value="20">20</option><option value="30">30</option><option value="50" selected>50</option><option value="100">100</option></select></label>
+        <label>銘柄数: <select id="topn"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option><option value="50">50</option><option value="100">100</option></select></label>
         <label>フィルタ: <select id="signal-filter">
             <option value="">全て表示</option>
             <option value="strong_bull">🟢 強い上昇</option><option value="bull">🔵 上昇</option>
