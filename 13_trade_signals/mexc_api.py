@@ -13,7 +13,29 @@ from config import (
     TOP_N_SYMBOLS,
     QUOTE_ASSET,
     KLINE_LIMIT,
+    USD_JPY_RATE,
 )
+
+
+def get_usdjpy_rate() -> float:
+    """
+    USD/JPYの最新レートを取得する。
+    取得失敗時はconfig.pyのデフォルト値を返す。
+    """
+    try:
+        # 無料API（exchangerate.host → 廃止されたので別のAPIを使用）
+        resp = requests.get(
+            "https://open.er-api.com/v6/latest/USD",
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        rate = data["rates"]["JPY"]
+        print(f"[為替] USD/JPY = {rate:.2f}（リアルタイム）")
+        return float(rate)
+    except Exception as e:
+        print(f"[為替] レート取得失敗、デフォルト値 {USD_JPY_RATE}円 を使用: {e}")
+        return USD_JPY_RATE
 
 
 def get_top_symbols(n: int = TOP_N_SYMBOLS) -> list[dict]:

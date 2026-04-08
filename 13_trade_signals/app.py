@@ -16,6 +16,7 @@ MEXC取引高上位銘柄を移動平均線ロジックでスクリーニング�
 import sys
 import os
 import time
+import pandas as pd
 from datetime import datetime
 from threading import Thread, Lock
 
@@ -31,7 +32,7 @@ from config import (
     REFRESH_INTERVAL,
     USD_JPY_RATE,
 )
-from mexc_api import get_top_symbols, get_klines, get_klines_batch
+from mexc_api import get_top_symbols, get_klines, get_klines_batch, get_usdjpy_rate
 from analyzer import add_moving_averages, analyze_symbol
 
 app = Flask(__name__)
@@ -44,12 +45,16 @@ cache = {
     "last_update": None,
     "loading": False,
     "error": None,
+    "jpy_rate": None,
 }
 cache_lock = Lock()
 
 
 def load_data(top_n=TOP_N_SYMBOLS):
     """4h・1d両方のデータを取得→分析する。"""
+    # USD/JPYレートをリアルタイム取得
+    jpy_rate = get_usdjpy_rate()
+
     top_symbols = get_top_symbols(top_n)
     symbol_list = [s["symbol"] for s in top_symbols]
     symbol_info = {s["symbol"]: s for s in top_symbols}
@@ -83,13 +88,13 @@ def load_data(top_n=TOP_N_SYMBOLS):
 
         price = sig_1d["close"] if sig_1d["close"] else sig_4h["close"]
         volume_usdt = info.get("volume", 0)
-        volume_jpy = volume_usdt * USD_JPY_RATE
+        volume_jpy = volume_usdt * jpy_rate
 
         avg_volume_30d_jpy = 0
         if symbol in klines_1d and len(klines_1d[symbol]) >= 30:
             df_1d = klines_1d[symbol]
             avg_vol = df_1d.tail(30)["volume"].mean()
-            avg_volume_30d_jpy = avg_vol * price * USD_JPY_RATE
+            avg_volume_30d_jpy = avg_vol * price * jpy_rate
 
         results.append({
             "symbol": symbol,
@@ -116,7 +121,7 @@ def load_data(top_n=TOP_N_SYMBOLS):
     # 日足シグナル優先度順にソート
     results.sort(key=lambda r: r["signal_1d_order"])
 
-    return results, klines_1d, klines_4h
+    return results, klines_1d, klines_4h, jpy_rate
 
 
 def refresh_cache(top_n=TOP_N_SYMBOLS):
@@ -128,11 +133,12 @@ def refresh_cache(top_n=TOP_N_SYMBOLS):
         cache["error"] = None
 
     try:
-        results, klines_1d, klines_4h = load_data(top_n)
+        results, klines_1d, klines_4h, jpy_rate = load_data(top_n)
         with cache_lock:
             cache["data"] = results
             cache["klines_1d"] = klines_1d
             cache["klines_4h"] = klines_4h
+            cache["jpy_rate"] = jpy_rate
             cache["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
         with cache_lock:
@@ -202,7 +208,7 @@ HTML_TEMPLATE = """
 <body>
     <div class="header">
         <h1>📊 トレードシグナル ダッシュボード</h1>
-        <div class="sub">MEXC 取引高上位銘柄 | 日足・4時間足 並列分析 | <span id="last-update">--</span></div>
+        <div class="sub">MEXC 取引高上位銘柄 | 日足・4時間足 並列分析 | <span id="last-update">--</span> | USD/JPY: <span id="jpy-rate">--</span></div>
     </div>
     <div class="controls">
         <label>銘柄数: <select id="topn"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option><option value="50">50</option><option value="100">100</option></select></label>
@@ -279,6 +285,7 @@ async function loadDashboard() {
         allData = result.data;
         symbolList = allData.map(d => d.symbol);
         document.getElementById('last-update').textContent = result.last_update || '--';
+        if (result.jpy_rate) document.getElementById('jpy-rate').textContent = result.jpy_rate.toFixed(2) + '円';
         renderDashboard();
     } catch(e) { document.getElementById('main-content').innerHTML = '<div class="loading">❌ ' + e.message + '</div>'; }
 }
@@ -342,7 +349,7 @@ function renderDashboard() {
     data.forEach(d => {
         const cc = d.change_pct >= 0 ? 'positive' : 'negative';
         html += '<tr onclick="showChart(&quot;' + d.symbol + '&quot;)" style="cursor:pointer">' +
-            '<td><strong>' + d.symbol_display + '</strong></td>' +
+            '<td><a href="https://www.tradingview.com/chart/?symbol=MEXC%3A' + d.symbol + '" target="_blank" style="color:#4fc3f7;text-decoration:none;font-weight:bold" onclick="event.stopPropagation()">' + d.symbol_display + '</a></td>' +
             '<td><span class="signal-badge signal-' + d.signal_1d + '">' + d.signal_label_1d + '</span></td>' +
             '<td><span class="signal-badge signal-' + d.signal_4h + '">' + d.signal_label_4h + '</span></td>' +
             '<td>' + formatPrice(d.price) + '</td>' +
@@ -449,6 +456,7 @@ def api_data():
             "last_update": cache["last_update"],
             "loading": cache["loading"],
             "error": cache["error"],
+            "jpy_rate": cache["jpy_rate"],
         })
 
 
@@ -492,7 +500,8 @@ def api_chart():
     for p in MA_PERIODS:
         col = f"MA{p}"
         if col in df.columns:
-            data[col] = df[col].tolist()
+            # NaNをNoneに変換（JSONでnullになる）
+            data[col] = [None if pd.isna(v) else v for v in df[col].tolist()]
 
     return jsonify({"data": data})
 
