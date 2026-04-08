@@ -225,7 +225,7 @@ HTML_TEMPLATE = """
     <div id="main-content"><div class="loading">📡 データ取得中...（初回は2〜3分かかります）</div></div>
     <div class="footer">
         ⚠️ このツールは投資助言ではありません。投資判断は自己責任でお願いします。<br>
-        📌 ロジックは暫定版です。相場師朗ロジックのPDF受領後に差し替えます。
+        📌 ロジックは暫定版です。正式版ロジックのPDF受領後に差し替えます。
     </div>
 <script>
 let allData = [];
