@@ -321,10 +321,8 @@ function syncFromMF(year) {
         carryForward.push(toK((cashDeposits[prevKey] || 0) + (arBalance[prevKey] || 0)));
       }
     }
-    // 3月の前月繰越金を上書き（数式ではなく値で）
-    sheet.getRange('C5').setValue(carryForward[0]);
-    // 4月以降は数式が入っているのでそのまま（翌月繰越金から自動計算）
-    // ただし数式がない場合のフォールバックとしてログ出力
+    // 3月〜2月の全月を値で書き込み
+    sheet.getRange('C5:N5').setValues([carryForward]);
     Logger.log('前月繰越金: ' + JSON.stringify(carryForward));
 
     // 行14: 商品棚卸高（月次の在庫増減）
