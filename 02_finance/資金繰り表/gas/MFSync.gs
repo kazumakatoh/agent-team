@@ -273,33 +273,66 @@ function syncFromMF(year) {
     var personnel = extractTransitionSum_(plData, ['給料手当', '賞与', '法定福利費', '役員報酬'], keys);
     sheet.getRange('C13:N13').setValues([monthlyToK(personnel)]);
 
-    // 行15: 諸経費（販管費系の合計 - 個別に取得するより推移表の合計を使う）
-    var expenses = extractTransitionSum_(plData, [
-      '広告宣伝費', '支払手数料', '通信費', '旅費交通費', '消耗品費',
-      '地代家賃', '水道光熱費', '保険料', '租税公課', '外注費',
-      '荷造運賃', '雑費', '減価償却費', '支払報酬', '新聞図書費',
-      '接待交際費', '会議費', '福利厚生費', '業務委託費'
-    ], keys);
-    sheet.getRange('C15:N15').setValues([monthlyToK(expenses)]);
+    // 行15: 諸経費 = 販売費及び一般管理費合計 − 人件費
+    var sgaTotal = extractTransitionAccount_(plData, '販売費及び一般管理費合計', keys);
+    var expenseValues = keys.map(function(k) {
+      return toK((sgaTotal[k] || 0) - (personnel[k] || 0));
+    });
+    sheet.getRange('C15:N15').setValues([expenseValues]);
 
-    // 行18: 経常外収入
-    var nonOpIncome = extractTransitionSum_(plData, ['受取利息', '雑収入', '受取配当金'], keys);
+    // 行18: 経常外収入 = 営業外収益合計
+    var nonOpIncome = extractTransitionAccount_(plData, '営業外収益合計', keys);
     sheet.getRange('C18:N18').setValues([monthlyToK(nonOpIncome)]);
 
-    // 行19: 経常外支出
-    var nonOpExpense = extractTransitionSum_(plData, ['支払利息', '雑損失'], keys);
+    // 行19: 経常外支出 = 営業外費用合計
+    var nonOpExpense = extractTransitionAccount_(plData, '営業外費用合計', keys);
     sheet.getRange('C19:N19').setValues([monthlyToK(nonOpExpense)]);
   }
 
   // === BS推移表から取得する項目 ===
   if (bsData) {
+    // 行5: 前月繰越金 = 前月末の（現金及び預金合計 + 売掛金）
+    // BS推移表のcolumnsは当月末残高を表す
+    // 3月の前月繰越金 = 前年度2月末残高 → 前年度BS推移表が必要
+    var cashDeposits = extractTransitionAccount_(bsData, '現金及び預金合計', keys);
+    var arBalance = extractTransitionAccount_(bsData, '売掛金', keys);
+
+    // 前年度BSから2月末残高を取得（3月の前月繰越金用）
+    var prevCash = 0, prevAR = 0;
+    try {
+      var prevBS = fetchTransition_('bs', fiscalYear - 1);
+      var prevKeys = monthKeys_(year - 1);
+      var prevCashData = extractTransitionAccount_(prevBS, '現金及び預金合計', prevKeys);
+      var prevARData = extractTransitionAccount_(prevBS, '売掛金', prevKeys);
+      var lastPrevKey = prevKeys[prevKeys.length - 1]; // 前年度2月
+      prevCash = prevCashData[lastPrevKey] || 0;
+      prevAR = prevARData[lastPrevKey] || 0;
+    } catch (e) {
+      Logger.log('前年度BS取得エラー: ' + e.message);
+    }
+
+    // 3月 = 前年度2月末残高、4月以降 = 前月末残高
+    var carryForward = [];
+    for (var i = 0; i < keys.length; i++) {
+      if (i === 0) {
+        carryForward.push(toK(prevCash + prevAR));
+      } else {
+        var prevKey = keys[i - 1];
+        carryForward.push(toK((cashDeposits[prevKey] || 0) + (arBalance[prevKey] || 0)));
+      }
+    }
+    // 3月の前月繰越金を上書き（数式ではなく値で）
+    sheet.getRange('C5').setValue(carryForward[0]);
+    // 4月以降は数式が入っているのでそのまま（翌月繰越金から自動計算）
+    // ただし数式がない場合のフォールバックとしてログ出力
+    Logger.log('前月繰越金: ' + JSON.stringify(carryForward));
+
     // 行14: 商品棚卸高（月次の在庫増減）
     var inventory = extractTransitionAccount_(bsData, '商品', keys);
     var invChange = [];
     for (var i = 0; i < keys.length; i++) {
       if (i === 0) {
-        // 3月の前月(2月末)データは推移表にないので初月は0
-        invChange.push(0);
+        invChange.push(0); // 3月の前月データなし
       } else {
         invChange.push(toK((inventory[keys[i]] || 0) - (inventory[keys[i-1]] || 0)));
       }
