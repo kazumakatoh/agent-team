@@ -291,13 +291,7 @@ function syncFromMF(year) {
     var sales = extractTransitionAccount_(plData, '売上高合計', keys);
     sheet.getRange('C3:N3').setValues([monthlyToK(sales)]);
 
-    // 行4: 前期売上 = 前年度PL推移表の売上高合計
-    try {
-      var prevPL = fetchTransition_('pl', fiscalYear - 1);
-      var prevKeys = monthKeys_(year - 1);
-      var prevSales = extractTransitionAccount_(prevPL, '売上高合計', prevKeys);
-      sheet.getRange('C4:N4').setValues([monthlyToK(prevSales)]);
-    } catch (e) { Logger.log('前期売上エラー: ' + e.message); }
+    // 行4: 前期売上 → 手入力（自動取得しない）
   }
 
   // ========================================
@@ -381,12 +375,15 @@ function syncFromMF(year) {
     var income = cashSalesK[i] + arCollectionK[i];
     var knownExpense = cashPurchaseK[i] + apPaymentK[i] + personnelK[i];
     var nonOp = nonOpIncomeK[i] - nonOpExpenseK[i];
-    var invest = -investCFK[i]; // 投資CFはマイナス（出金）
+    var invest = -investCFK[i];
     var finance = loanIncomeK[i] - loanRepShortK[i] - loanRepLongK[i];
-
-    // 翌月繰越金 = 前月繰越金 + 収入 - 支出(含む諸経費) + 経常外 + 投資 + 財務
-    // → 諸経費 = 前月繰越金 + 収入 - 既知支出 + 経常外 + 投資 + 財務 - 翌月繰越金
-    return carryForwardK[i] + income - knownExpense + nonOp + invest + finance - endBalance[i];
+    var misc = carryForwardK[i] + income - knownExpense + nonOp + invest + finance - endBalance[i];
+    // マイナス諸経費のデバッグ
+    if (misc < 0) {
+      Logger.log('⚠️ ' + keys[i].substring(5) + '月 諸経費マイナス: ' + misc);
+      Logger.log('  繰越=' + carryForwardK[i] + ' 収入=' + income + ' 既知支出=' + knownExpense + ' 経常外=' + nonOp + ' 投資=' + invest + ' 財務=' + finance + ' 期末=' + endBalance[i]);
+    }
+    return misc;
   });
 
   // --- スプシに書き込み（新レイアウト: 投資CFセクション追加） ---
