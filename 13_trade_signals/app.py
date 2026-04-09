@@ -32,7 +32,7 @@ from config import (
     REFRESH_INTERVAL,
     USD_JPY_RATE,
 )
-from mexc_api import get_top_symbols, get_klines, get_klines_batch, get_usdjpy_rate
+from mexc_api import get_top_symbols, get_klines, get_klines_batch, get_usdjpy_rate, get_market_caps
 from analyzer import add_moving_averages, analyze_symbol
 
 app = Flask(__name__)
@@ -58,6 +58,10 @@ def load_data(top_n=TOP_N_SYMBOLS):
     top_symbols = get_top_symbols(top_n)
     symbol_list = [s["symbol"] for s in top_symbols]
     symbol_info = {s["symbol"]: s for s in top_symbols}
+
+    # 時価総額を取得
+    market_caps = get_market_caps(symbol_list)
+
     print(f"=== {len(symbol_list)}銘柄の日足データを取得中... ===")
 
     # 両方の時間足を取得
@@ -108,6 +112,7 @@ def load_data(top_n=TOP_N_SYMBOLS):
             "detail_4h": sig_4h["detail"],
             "signal_1d_order": signal_order.index(sig_1d["signal"]) if sig_1d["signal"] in signal_order else 99,
             "signal_4h_order": signal_order.index(sig_4h["signal"]) if sig_4h["signal"] in signal_order else 99,
+            "market_cap_jpy": market_caps.get(symbol, 0) * jpy_rate,
             "volume_jpy": volume_jpy,
             "avg_volume_30d_jpy": avg_volume_30d_jpy,
             "change_pct": info.get("priceChangePercent", 0),
@@ -341,6 +346,7 @@ function renderDashboard() {
         '<th onclick="onSort(&quot;signal_1d_order&quot;)">日足シグナル' + sortIcon('signal_1d_order') + '</th>' +
         '<th onclick="onSort(&quot;signal_4h_order&quot;)">4hシグナル' + sortIcon('signal_4h_order') + '</th>' +
         '<th onclick="onSort(&quot;price&quot;)">現在値' + sortIcon('price') + '</th>' +
+        '<th onclick="onSort(&quot;market_cap_jpy&quot;)">時価総額(円)' + sortIcon('market_cap_jpy') + '</th>' +
         '<th onclick="onSort(&quot;volume_jpy&quot;)">24h出来高(円)' + sortIcon('volume_jpy') + '</th>' +
         '<th onclick="onSort(&quot;avg_volume_30d_jpy&quot;)">30日平均/日(円)' + sortIcon('avg_volume_30d_jpy') + '</th>' +
         '<th onclick="onSort(&quot;change_pct&quot;)">24h変動(%)' + sortIcon('change_pct') + '</th>' +
@@ -353,6 +359,7 @@ function renderDashboard() {
             '<td><span class="signal-badge signal-' + d.signal_1d + '">' + d.signal_label_1d + '</span></td>' +
             '<td><span class="signal-badge signal-' + d.signal_4h + '">' + d.signal_label_4h + '</span></td>' +
             '<td>' + formatPrice(d.price) + '</td>' +
+            '<td>' + (d.market_cap_jpy ? formatJPY(d.market_cap_jpy) : '-') + '</td>' +
             '<td>' + formatJPY(d.volume_jpy) + '</td>' +
             '<td>' + formatJPY(d.avg_volume_30d_jpy) + '</td>' +
             '<td class="' + cc + '">' + (d.change_pct >= 0 ? '+' : '') + d.change_pct.toFixed(2) + '%</td></tr>';

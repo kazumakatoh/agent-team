@@ -23,7 +23,6 @@ def get_usdjpy_rate() -> float:
     取得失敗時はconfig.pyのデフォルト値を返す。
     """
     try:
-        # 無料API（exchangerate.host → 廃止されたので別のAPIを使用）
         resp = requests.get(
             "https://open.er-api.com/v6/latest/USD",
             timeout=5,
@@ -36,6 +35,50 @@ def get_usdjpy_rate() -> float:
     except Exception as e:
         print(f"[為替] レート取得失敗、デフォルト値 {USD_JPY_RATE}円 を使用: {e}")
         return USD_JPY_RATE
+
+
+def get_market_caps(symbols: list[str]) -> dict[str, float]:
+    """
+    CoinGecko APIで時価総額（USD）を取得する。
+    MEXCのシンボル（BTCUSDT）→ CoinGeckoのID変換が必要。
+    取得失敗時は空辞書を返す。
+    """
+    # MEXCシンボルからコインシンボルを抽出（BTCUSDT→btc）
+    coin_symbols = {}
+    for s in symbols:
+        coin = s.replace("USDT", "").lower()
+        coin_symbols[coin] = s
+
+    try:
+        # CoinGecko: vs_currency=usdで上位250コインの時価総額を取得
+        resp = requests.get(
+            "https://api.coingecko.com/api/v3/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "order": "market_cap_desc",
+                "per_page": 250,
+                "page": 1,
+                "sparkline": "false",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        coins = resp.json()
+
+        result = {}
+        for coin in coins:
+            symbol_lower = coin.get("symbol", "").lower()
+            if symbol_lower in coin_symbols:
+                mexc_symbol = coin_symbols[symbol_lower]
+                mcap = coin.get("market_cap", 0)
+                if mcap:
+                    result[mexc_symbol] = float(mcap)
+
+        print(f"[時価総額] {len(result)}/{len(symbols)} 銘柄の時価総額を取得")
+        return result
+    except Exception as e:
+        print(f"[時価総額] 取得失敗（スキップ）: {e}")
+        return {}
 
 
 def get_top_symbols(n: int = TOP_N_SYMBOLS) -> list[dict]:
