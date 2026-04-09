@@ -147,6 +147,7 @@ function classifyBankTransactions_(journals) {
     '買掛金': 'apPayment',
     '役員報酬': 'personnel',
     '給料手当': 'personnel',
+    '給料賃金': 'personnel',
     '法定福利費': 'personnel',
     '役員賞与': 'personnel',
     '支払利息': 'nonOpExpense',
@@ -182,6 +183,8 @@ function classifyBankTransactions_(journals) {
   journals.forEach(function(j) {
     var ym = (j.transaction_date || '').substring(0, 7);
     if (!ym) return;
+    // 開始仕訳・決算整理仕訳を除外
+    if (j.entered_by === 'JOURNAL_TYPE_OPENING') return;
     var branches = j.branches || [];
 
     // 仕訳全体で普通預金の入出金と相手科目を集計
@@ -391,6 +394,16 @@ function syncFromMF(year) {
   Logger.log('前月繰越金: ' + carryForwardK[0]);
   Logger.log('現金売上: ' + cashSalesK[0] + ' / 売掛金回収: ' + arCollectionK[0]);
   Logger.log('現金仕入: ' + cashPurchaseK[0] + ' / 買掛金支払: ' + apPaymentK[0] + ' / 人件費: ' + personnelK[0]);
+  // 人件費デバッグ: 3月の人件費関連仕訳を表示
+  journals.forEach(function(j) {
+    var jym = (j.transaction_date || '').substring(0, 7);
+    if (jym !== keys[0]) return;
+    (j.branches || []).forEach(function(b) {
+      if (b.debitor && ['役員報酬','給料手当','給料賃金','法定福利費','役員賞与'].indexOf(b.debitor.account_name) !== -1) {
+        Logger.log('  人件費仕訳: ' + b.debitor.account_name + ' ' + b.debitor.value + ' / 貸方=' + (b.creditor ? b.creditor.account_name + ' ' + b.creditor.value : 'null'));
+      }
+    });
+  });
   Logger.log('諸経費（逆算）: ' + miscExpenseK[0]);
   Logger.log('投資CF: ' + investCFK[0]);
   Logger.log('経常外: +' + nonOpIncomeK[0] + ' -' + nonOpExpenseK[0]);
