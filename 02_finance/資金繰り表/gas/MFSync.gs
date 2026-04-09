@@ -99,105 +99,138 @@ function fetchJournals_(year) {
 }
 
 // ==============================
-// 普通預金ベースの仕訳分類
+// 普通預金ベースの仕訳分類（仕訳単位）
 // ==============================
 
 /**
  * 全仕訳を普通預金の入出金で分類
- * 返り値: { 入金カテゴリ: {ym: 金額}, 出金カテゴリ: {ym: 金額} }
+ * 複合仕訳対応: 仕訳全体で普通預金の入出金を集計し、相手科目で分類
  */
 function classifyBankTransactions_(journals) {
   var result = {
-    // 入金（普通預金 借方）
-    cashSales: {},       // 売上高
-    arCollection: {},    // 売掛金
-    nonOpIncome: {},     // 受取利息・雑収入・受取配当金
-    loanIncome: {},      // 短期/長期借入金
-    otherIncome: {},     // その他入金
-    // 出金（普通預金 貸方）
-    cashPurchase: {},    // 仕入高（未払金/買掛金を介さない）
-    apPayment: {},       // 未払金・買掛金
-    personnel: {},       // 役員報酬・給料手当・法定福利費
-    nonOpExpense: {},    // 支払利息・雑損失・為替差損
-    loanRepayShort: {},  // 短期借入金
-    loanRepayLong: {},   // 長期借入金
-    miscExpense: {},     // 諸経費（上記以外の販管費）
-    otherExpense: {}     // その他出金
+    cashSales: {},       // 入金: 売上高
+    arCollection: {},    // 入金: 売掛金
+    nonOpIncome: {},     // 入金: 受取利息・雑収入等
+    loanIncome: {},      // 入金: 借入金
+    otherIncome: {},     // 入金: その他
+    cashPurchase: {},    // 出金: 仕入（直接）
+    apPayment: {},       // 出金: 未払金・買掛金
+    personnel: {},       // 出金: 人件費
+    nonOpExpense: {},    // 出金: 支払利息等
+    loanRepayShort: {},  // 出金: 短期借入金
+    loanRepayLong: {},   // 出金: 長期借入金
+    investCF: {},        // 出金: 投資CF（固定資産等）
+    miscExpense: {},     // 出金: 諸経費
+    otherExpense: {}     // 出金: その他
   };
-
-  // 出金で除外する勘定科目（諸経費に含めない）
-  var excludeFromMisc = [
-    '仕入高', '仕入（国内）', '仕入（輸入）',
-    '未払金', '買掛金',
-    '役員報酬', '給料手当', '法定福利費', '役員賞与',
-    '支払利息', '雑損失', '為替差損',
-    '短期借入金', '長期借入金',
-    '普通預金', '現金', '当座預金', '定期預金',
-    '売掛金', '売上高',
-    '仮払消費税', '仮受消費税', '仮払金', '仮受金',
-    '法人税、住民税及び事業税', '未払法人税等',
-    '預り金', '預け金', '貸付金', '借入金',
-    '商品', '減価償却費', '繰延資産償却'
-  ];
-
-  var nonOpIncomeAccounts = ['受取利息', '雑収入', '受取配当金'];
-  var nonOpExpenseAccounts = ['支払利息', '雑損失', '為替差損'];
-  var personnelAccounts = ['役員報酬', '給料手当', '法定福利費', '役員賞与'];
-  var purchaseAccounts = ['仕入高', '仕入（国内）', '仕入（輸入）'];
-  var loanAccounts = ['短期借入金', '長期借入金'];
 
   function addTo(obj, ym, amount) {
     obj[ym] = (obj[ym] || 0) + amount;
   }
+
+  // 分類定義
+  var incomeClassify = {
+    '売上高': 'cashSales',
+    '売掛金': 'arCollection',
+    '受取利息': 'nonOpIncome',
+    '雑収入': 'nonOpIncome',
+    '受取配当金': 'nonOpIncome',
+    '短期借入金': 'loanIncome',
+    '長期借入金': 'loanIncome'
+  };
+
+  var expenseClassify = {
+    '仕入高': 'cashPurchase',
+    '仕入（国内）': 'cashPurchase',
+    '仕入（輸入）': 'cashPurchase',
+    '未払金': 'apPayment',
+    '買掛金': 'apPayment',
+    '役員報酬': 'personnel',
+    '給料手当': 'personnel',
+    '法定福利費': 'personnel',
+    '役員賞与': 'personnel',
+    '支払利息': 'nonOpExpense',
+    '雑損失': 'nonOpExpense',
+    '為替差損': 'nonOpExpense',
+    '短期借入金': 'loanRepayShort',
+    '長期借入金': 'loanRepayLong',
+    // 投資CF
+    '工具器具備品': 'investCF',
+    '建物': 'investCF',
+    '車両運搬具': 'investCF',
+    '土地': 'investCF',
+    '建物附属設備': 'investCF',
+    '附属設備': 'investCF',
+    'ソフトウェア': 'investCF',
+    '出資金': 'investCF',
+    '敷金・保証金': 'investCF',
+    '開発費': 'investCF',
+    '繰延資産': 'investCF'
+  };
+
+  // 諸経費に含めない科目（分類済み or 非現金 or 振替系）
+  var excludeFromMisc = [
+    '普通預金', '当座預金', '定期預金', '現金',
+    '売掛金', '売上高', '商品',
+    '仮払消費税', '仮受消費税', '仮払金', '仮受金',
+    '預り金', '預け金', '立替金',
+    '法人税、住民税及び事業税', '未払法人税等',
+    '減価償却費', '繰延資産償却',
+    '貸付金', '役員貸付金'
+  ];
 
   journals.forEach(function(j) {
     var ym = (j.transaction_date || '').substring(0, 7);
     if (!ym) return;
     var branches = j.branches || [];
 
-    branches.forEach(function(b) {
-      // === 普通預金が借方（入金） ===
-      if (b.debitor && b.debitor.account_name === '普通預金' && b.creditor && b.creditor.value > 0) {
-        var cr = b.creditor;
-        var amount = b.debitor.value;
+    // 仕訳全体で普通預金の入出金と相手科目を集計
+    var bankInflow = 0;   // 普通預金 借方合計（入金）
+    var bankOutflow = 0;  // 普通預金 貸方合計（出金）
+    var debitAccounts = [];  // 普通預金以外の借方
+    var creditAccounts = []; // 普通預金以外の貸方
 
-        if (cr.account_name === '売上高') {
-          addTo(result.cashSales, ym, amount);
-        } else if (cr.account_name === '売掛金') {
-          addTo(result.arCollection, ym, amount);
-        } else if (nonOpIncomeAccounts.indexOf(cr.account_name) !== -1) {
-          addTo(result.nonOpIncome, ym, amount);
-        } else if (loanAccounts.indexOf(cr.account_name) !== -1) {
-          addTo(result.loanIncome, ym, amount);
+    branches.forEach(function(b) {
+      if (b.debitor) {
+        if (b.debitor.account_name === '普通預金') {
+          bankInflow += b.debitor.value || 0;
         } else {
-          addTo(result.otherIncome, ym, amount);
+          debitAccounts.push({ name: b.debitor.account_name, value: b.debitor.value || 0 });
         }
       }
-
-      // === 普通預金が貸方（出金） ===
-      if (b.creditor && b.creditor.account_name === '普通預金' && b.debitor && b.debitor.value > 0) {
-        var dr = b.debitor;
-        var amount = b.creditor.value;
-
-        if (purchaseAccounts.indexOf(dr.account_name) !== -1) {
-          addTo(result.cashPurchase, ym, amount);
-        } else if (dr.account_name === '未払金' || dr.account_name === '買掛金') {
-          addTo(result.apPayment, ym, amount);
-        } else if (personnelAccounts.indexOf(dr.account_name) !== -1) {
-          addTo(result.personnel, ym, amount);
-        } else if (nonOpExpenseAccounts.indexOf(dr.account_name) !== -1) {
-          addTo(result.nonOpExpense, ym, amount);
-        } else if (dr.account_name === '短期借入金') {
-          addTo(result.loanRepayShort, ym, amount);
-        } else if (dr.account_name === '長期借入金') {
-          addTo(result.loanRepayLong, ym, amount);
-        } else if (excludeFromMisc.indexOf(dr.account_name) === -1) {
-          addTo(result.miscExpense, ym, amount);
+      if (b.creditor) {
+        if (b.creditor.account_name === '普通預金') {
+          bankOutflow += b.creditor.value || 0;
         } else {
-          addTo(result.otherExpense, ym, amount);
+          creditAccounts.push({ name: b.creditor.account_name, value: b.creditor.value || 0 });
         }
       }
     });
+
+    // === 入金の分類 ===
+    if (bankInflow > 0 && creditAccounts.length > 0) {
+      // 相手貸方科目で分類（最大金額の科目で全額を分類）
+      creditAccounts.sort(function(a, b) { return b.value - a.value; });
+      var mainCredit = creditAccounts[0].name;
+      var category = incomeClassify[mainCredit] || 'otherIncome';
+      addTo(result[category], ym, bankInflow);
+    }
+
+    // === 出金の分類 ===
+    if (bankOutflow > 0 && debitAccounts.length > 0) {
+      // 相手借方科目で分類（最大金額の科目で全額を分類）
+      debitAccounts.sort(function(a, b) { return b.value - a.value; });
+      var mainDebit = debitAccounts[0].name;
+
+      if (expenseClassify[mainDebit]) {
+        addTo(result[expenseClassify[mainDebit]], ym, bankOutflow);
+      } else if (excludeFromMisc.indexOf(mainDebit) === -1) {
+        // 分類定義にも除外リストにもない → 諸経費
+        addTo(result.miscExpense, ym, bankOutflow);
+      } else {
+        addTo(result.otherExpense, ym, bankOutflow);
+      }
+    }
   });
 
   return result;
@@ -276,6 +309,24 @@ function syncFromMF(year) {
   // ========================================
   // 仕訳ベース（普通預金入出金）
   // ========================================
+
+  // デバッグ: 3月の分類結果をMF CF計算書と照合
+  var m3 = keys[0];
+  Logger.log('=== 3月分類結果（千円） ===');
+  Logger.log('現金売上: ' + toK(bank.cashSales[m3]) + ' (MF CF: 0)');
+  Logger.log('売掛金回収: ' + toK(bank.arCollection[m3]) + ' (MF CF: 24,200)');
+  Logger.log('現金仕入: ' + toK(bank.cashPurchase[m3]) + ' (MF CF: 5,242)');
+  Logger.log('買掛金支払: ' + toK(bank.apPayment[m3]) + ' (MF CF: 0)');
+  Logger.log('人件費: ' + toK(bank.personnel[m3]));
+  Logger.log('諸経費: ' + toK(bank.miscExpense[m3]) + ' (MF CF販管費: 665)');
+  Logger.log('経常外収入: ' + toK(bank.nonOpIncome[m3]));
+  Logger.log('経常外支出: ' + toK(bank.nonOpExpense[m3]));
+  Logger.log('投資CF: ' + toK(bank.investCF[m3]) + ' (MF CF: 100)');
+  Logger.log('借入収入: ' + toK(bank.loanIncome[m3]));
+  Logger.log('短期返済: ' + toK(bank.loanRepayShort[m3]));
+  Logger.log('長期返済: ' + toK(bank.loanRepayLong[m3]) + ' (MF CF: 167)');
+  Logger.log('その他入金: ' + toK(bank.otherIncome[m3]));
+  Logger.log('その他出金: ' + toK(bank.otherExpense[m3]) + ' (MF CFその他: 5,142)');
 
   // --- 経常収入 ---
   sheet.getRange('C8:N8').setValues([monthlyToK(bank.cashSales)]);      // 行8: 現金売上
