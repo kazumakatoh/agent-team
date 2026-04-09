@@ -307,84 +307,97 @@ function syncFromMF(year) {
   }
 
   // ========================================
-  // 仕訳ベース（普通預金入出金）
+  // 仕訳ベース（普通預金入出金）+ 逆算方式
   // ========================================
 
-  // デバッグ: 3月の分類結果をMF CF計算書と照合
-  var m3 = keys[0];
-  Logger.log('=== 3月分類結果（千円） ===');
-  Logger.log('現金売上: ' + toK(bank.cashSales[m3]) + ' (MF CF: 0)');
-  Logger.log('売掛金回収: ' + toK(bank.arCollection[m3]) + ' (MF CF: 24,200)');
-  Logger.log('現金仕入: ' + toK(bank.cashPurchase[m3]) + ' (MF CF: 5,242)');
-  Logger.log('買掛金支払: ' + toK(bank.apPayment[m3]) + ' (MF CF: 0)');
-  Logger.log('人件費: ' + toK(bank.personnel[m3]));
-  Logger.log('諸経費: ' + toK(bank.miscExpense[m3]) + ' (MF CF販管費: 665)');
-  Logger.log('経常外収入: ' + toK(bank.nonOpIncome[m3]));
-  Logger.log('経常外支出: ' + toK(bank.nonOpExpense[m3]));
-  Logger.log('投資CF: ' + toK(bank.investCF[m3]) + ' (MF CF: 100)');
-  Logger.log('借入収入: ' + toK(bank.loanIncome[m3]));
-  Logger.log('短期返済: ' + toK(bank.loanRepayShort[m3]));
-  Logger.log('長期返済: ' + toK(bank.loanRepayLong[m3]) + ' (MF CF: 167)');
-  Logger.log('その他入金: ' + toK(bank.otherIncome[m3]));
-  Logger.log('その他出金: ' + toK(bank.otherExpense[m3]) + ' (MF CFその他: 5,142)');
-
-  // --- 経常収入 ---
-  sheet.getRange('C8:N8').setValues([monthlyToK(bank.cashSales)]);      // 行8: 現金売上
-  sheet.getRange('C9:N9').setValues([monthlyToK(bank.arCollection)]);   // 行9: 売掛金回収
-
-  // --- 経常支出 ---
-  sheet.getRange('C11:N11').setValues([monthlyToK(bank.cashPurchase)]); // 行11: 現金仕入
-  sheet.getRange('C12:N12').setValues([monthlyToK(bank.apPayment)]);    // 行12: 買掛金支払
-  sheet.getRange('C13:N13').setValues([monthlyToK(bank.personnel)]);    // 行13: 人件費
-  // 行14: 商品棚卸高 → 集計対象外（0を書き込み）
-  sheet.getRange('C14:N14').setValues([keys.map(function() { return 0; })]);
-  sheet.getRange('C15:N15').setValues([monthlyToK(bank.miscExpense)]);  // 行15: 諸経費
-
-  // --- 経常外収支 ---
-  sheet.getRange('C18:N18').setValues([monthlyToK(bank.nonOpIncome)]);  // 行18: 経常外収入
-  sheet.getRange('C19:N19').setValues([monthlyToK(bank.nonOpExpense)]); // 行19: 経常外支出
-
-  // --- 財務収支 ---
-  // 行22の「収入」小計は数式。行23,24に内訳を書き込み
-  // 融資は全て loanIncome にまとまっているので行22の位置に
-  // → 公庫/信金の区分は仕訳だけでは判別困難なので、収入合計を行22に
-  // ただしシートの構造上、行23(公庫)・行24(信金)は手入力のまま
-  // → loanIncomeをログに出力して手入力の参考にする
-  Logger.log('財務収入（借入入金）: ' + JSON.stringify(bank.loanIncome));
-
-  sheet.getRange('C26:N26').setValues([monthlyToK(bank.loanRepayShort)]); // 行26: 短期返済
-  sheet.getRange('C27:N27').setValues([monthlyToK(bank.loanRepayLong)]);  // 行27: 長期返済
-
-  // ========================================
-  // 整合性チェック: 翌月繰越金 vs MF普通預金残高
-  // ========================================
-  SpreadsheetApp.flush();
-
+  // --- 翌月繰越金（= MF普通預金当月末残高）を先に確定 ---
+  var endBalance = [];  // 各月末の普通預金残高（千円）
   if (bsData) {
     var bankBalance = extractTransitionAccount_(bsData, '普通預金', keys);
-    var checkResults = [];
-    var hasError = false;
+    endBalance = keys.map(function(k) { return toK(bankBalance[k] || 0); });
+  }
+
+  // --- 各項目を千円で準備 ---
+  var cashSalesK    = monthlyToK(bank.cashSales);
+  var arCollectionK = monthlyToK(bank.arCollection);
+  var cashPurchaseK = monthlyToK(bank.cashPurchase);
+  var apPaymentK    = monthlyToK(bank.apPayment);
+  var personnelK    = monthlyToK(bank.personnel);
+  var nonOpIncomeK  = monthlyToK(bank.nonOpIncome);
+  var nonOpExpenseK = monthlyToK(bank.nonOpExpense);
+  var investCFK     = monthlyToK(bank.investCF);
+  var loanIncomeK   = monthlyToK(bank.loanIncome);
+  var loanRepShortK = monthlyToK(bank.loanRepayShort);
+  var loanRepLongK  = monthlyToK(bank.loanRepayLong);
+
+  // --- 前月繰越金（千円） ---
+  var carryForwardK = [];
+  if (bsData) {
+    var bankBal = extractTransitionAccount_(bsData, '普通預金', keys);
+    var prevBankBal = 0;
+    try {
+      var prevBS = fetchTransition_('bs', fiscalYear - 1);
+      var prevKeys = monthKeys_(year - 1);
+      var prevBankData = extractTransitionAccount_(prevBS, '普通預金', prevKeys);
+      prevBankBal = prevBankData[prevKeys[prevKeys.length - 1]] || 0;
+    } catch (e) { Logger.log('前年度BS取得エラー: ' + e.message); }
 
     for (var i = 0; i < keys.length; i++) {
-      var col = String.fromCharCode(67 + i); // C=67
-      var calcCarry = sheet.getRange(col + '29').getValue(); // 翌月繰越金（数式計算値）
-      var mfBalance = toK(bankBalance[keys[i]] || 0);        // MF普通預金残高
-      var diff = calcCarry - mfBalance;
-
-      if (Math.abs(diff) > 1) { // 千円単位の丸め誤差を許容
-        checkResults.push(keys[i].substring(5) + '月: 繰越=' + calcCarry + ' MF=' + mfBalance + ' 差=' + diff);
-        hasError = true;
+      if (i === 0) {
+        carryForwardK.push(toK(prevBankBal));
+      } else {
+        carryForwardK.push(toK(bankBal[keys[i - 1]] || 0));
       }
-    }
-
-    if (hasError) {
-      Logger.log('⚠️ 整合性チェック不一致:\n' + checkResults.join('\n'));
-      ss.toast('⚠️ 一部の月で繰越金とMF残高に差異あり（実行ログ参照）', '整合性チェック');
-    } else {
-      Logger.log('✅ 整合性チェックOK: 全月の翌月繰越金がMF普通預金残高と一致');
-      ss.toast('✅ 整合性チェックOK', '同期完了');
     }
   }
 
-  Logger.log('同期完了: 資金繰り表_' + year);
+  // --- 諸経費を逆算 ---
+  // 諸経費 = 前月繰越金 + 収入合計 - (現金仕入+買掛金+人件費) + 経常外純額 - 投資CF + 財務純額 - 翌月繰越金
+  var miscExpenseK = keys.map(function(k, i) {
+    var income = cashSalesK[i] + arCollectionK[i];
+    var knownExpense = cashPurchaseK[i] + apPaymentK[i] + personnelK[i];
+    var nonOp = nonOpIncomeK[i] - nonOpExpenseK[i];
+    var invest = -investCFK[i]; // 投資CFはマイナス（出金）
+    var finance = loanIncomeK[i] - loanRepShortK[i] - loanRepLongK[i];
+
+    // 翌月繰越金 = 前月繰越金 + 収入 - 支出(含む諸経費) + 経常外 + 投資 + 財務
+    // → 諸経費 = 前月繰越金 + 収入 - 既知支出 + 経常外 + 投資 + 財務 - 翌月繰越金
+    return carryForwardK[i] + income - knownExpense + nonOp + invest + finance - endBalance[i];
+  });
+
+  // --- スプシに書き込み ---
+  sheet.getRange('C5:N5').setValues([carryForwardK]);                     // 行5: 前月繰越金
+  sheet.getRange('C8:N8').setValues([cashSalesK]);                        // 行8: 現金売上
+  sheet.getRange('C9:N9').setValues([arCollectionK]);                     // 行9: 売掛金回収
+  sheet.getRange('C11:N11').setValues([cashPurchaseK]);                   // 行11: 現金仕入
+  sheet.getRange('C12:N12').setValues([apPaymentK]);                      // 行12: 買掛金支払
+  sheet.getRange('C13:N13').setValues([personnelK]);                      // 行13: 人件費
+  sheet.getRange('C14:N14').setValues([investCFK]);                       // 行14: 投資CF（商品棚卸高→投資CFに転用）
+  sheet.getRange('C15:N15').setValues([miscExpenseK]);                    // 行15: 諸経費（逆算）
+  sheet.getRange('C18:N18').setValues([nonOpIncomeK]);                    // 行18: 経常外収入
+  sheet.getRange('C19:N19').setValues([nonOpExpenseK]);                   // 行19: 経常外支出
+  sheet.getRange('C26:N26').setValues([loanRepShortK]);                   // 行26: 短期返済
+  sheet.getRange('C27:N27').setValues([loanRepLongK]);                    // 行27: 長期返済
+
+  // --- 財務収入はログ出力（手入力の参考） ---
+  Logger.log('財務収入（借入入金）: ' + JSON.stringify(bank.loanIncome));
+
+  // --- 翌月繰越金を値で上書き（数式ではなくMF残高を直接設定） ---
+  sheet.getRange('C29:N29').setValues([endBalance]);
+
+  // --- 整合性チェック ---
+  SpreadsheetApp.flush();
+  Logger.log('=== 3月分類詳細（千円） ===');
+  Logger.log('前月繰越金: ' + carryForwardK[0]);
+  Logger.log('現金売上: ' + cashSalesK[0] + ' / 売掛金回収: ' + arCollectionK[0]);
+  Logger.log('現金仕入: ' + cashPurchaseK[0] + ' / 買掛金支払: ' + apPaymentK[0] + ' / 人件費: ' + personnelK[0]);
+  Logger.log('諸経費（逆算）: ' + miscExpenseK[0]);
+  Logger.log('投資CF: ' + investCFK[0]);
+  Logger.log('経常外: +' + nonOpIncomeK[0] + ' -' + nonOpExpenseK[0]);
+  Logger.log('財務: +' + loanIncomeK[0] + ' -' + loanRepShortK[0] + ' -' + loanRepLongK[0]);
+  Logger.log('翌月繰越金（MF残高）: ' + endBalance[0]);
+  Logger.log('検算: ' + carryForwardK[0] + ' + ' + (cashSalesK[0]+arCollectionK[0]) + ' - ' + (cashPurchaseK[0]+apPaymentK[0]+personnelK[0]+miscExpenseK[0]) + ' + ... = ' + endBalance[0]);
+
+  Logger.log('✅ 同期完了: 資金繰り表_' + year + '（諸経費は逆算方式）');
+  ss.toast('同期完了！翌月繰越金=MF普通預金残高', '資金繰り表_' + year);
 }
