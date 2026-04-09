@@ -540,15 +540,26 @@ function formatMonthlyDataRows_(sheet, startRow, numRows, numCols) {
 }
 
 /**
- * 開業月から当月までの全月を取得する
+ * 開業月から、当月または最も先の予約月のいずれか遅い方までの全月を取得する
  * @return {Array<{year: number, month: number}>}
  */
 function getAllMonthsSinceOpening_() {
   const startYear  = CONFIG.PROPERTY.OPENING_YEAR  || 2025;
   const startMonth = CONFIG.PROPERTY.OPENING_MONTH || 12;
   const now      = new Date();
-  const endYear  = now.getFullYear();
-  const endMonth = now.getMonth() + 1;
+  let endYear  = now.getFullYear();
+  let endMonth = now.getMonth() + 1;
+
+  // 予約リストから最も先のチェックイン月を取得
+  const latestCheckin = getLatestCheckinDate_();
+  if (latestCheckin) {
+    const ly = latestCheckin.getFullYear();
+    const lm = latestCheckin.getMonth() + 1;
+    if (ly > endYear || (ly === endYear && lm > endMonth)) {
+      endYear  = ly;
+      endMonth = lm;
+    }
+  }
 
   const months = [];
   let y = startYear, m = startMonth;
@@ -558,6 +569,30 @@ function getAllMonthsSinceOpening_() {
     if (m > 12) { m = 1; y++; }
   }
   return months;
+}
+
+/**
+ * 予約リストから最も先のチェックイン日を取得する
+ * @return {Date|null}
+ */
+function getLatestCheckinDate_() {
+  const ss    = getSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEETS.RESERVATIONS);
+  if (!sheet || sheet.getLastRow() <= 1) return null;
+
+  const C = CONFIG.RESERVATION_COLS;
+  const data = sheet.getRange(2, C.CHECKIN, sheet.getLastRow() - 1, 1).getValues();
+  let latest = null;
+
+  data.forEach(row => {
+    if (!row[0]) return;
+    const d = new Date(row[0]);
+    if (!isNaN(d.getTime()) && (!latest || d > latest)) {
+      latest = d;
+    }
+  });
+
+  return latest;
 }
 
 /**
