@@ -206,40 +206,37 @@ function classifyBankTransactions_(journals) {
       }
     });
 
-    // === 入金の分類 ===
+    // === 入金の分類（銀行入金額を貸方科目の比率で按分） ===
     if (bankInflow > 0 && creditAccounts.length > 0) {
-      // 各貸方科目で個別に分類（金額は各科目の値を使用）
-      var classifiedIncome = 0;
-      creditAccounts.forEach(function(cr) {
-        var cat = incomeClassify[cr.name];
-        if (cat) {
-          addTo(result[cat], ym, cr.value);
-          classifiedIncome += cr.value;
-        }
-      });
-      // 未分類の入金があればotherIncomeへ
-      if (classifiedIncome < bankInflow) {
-        addTo(result.otherIncome, ym, bankInflow - classifiedIncome);
+      var totalCredit = creditAccounts.reduce(function(s, c) { return s + c.value; }, 0);
+      if (totalCredit > 0) {
+        creditAccounts.forEach(function(cr) {
+          var cashAmount = Math.round(bankInflow * cr.value / totalCredit);
+          var cat = incomeClassify[cr.name];
+          if (cat) {
+            addTo(result[cat], ym, cashAmount);
+          } else {
+            addTo(result.otherIncome, ym, cashAmount);
+          }
+        });
       }
     }
 
-    // === 出金の分類 ===
+    // === 出金の分類（銀行出金額を借方科目の比率で按分） ===
     if (bankOutflow > 0 && debitAccounts.length > 0) {
-      // 各借方科目で個別に分類（金額は各科目の値を使用）
-      var classifiedExpense = 0;
-      debitAccounts.forEach(function(dr) {
-        var cat = expenseClassify[dr.name];
-        if (cat) {
-          addTo(result[cat], ym, dr.value);
-          classifiedExpense += dr.value;
-        } else if (excludeFromMisc.indexOf(dr.name) === -1) {
-          addTo(result.miscExpense, ym, dr.value);
-          classifiedExpense += dr.value;
-        }
-      });
-      // 未分類の出金があればotherExpenseへ
-      if (classifiedExpense < bankOutflow) {
-        addTo(result.otherExpense, ym, bankOutflow - classifiedExpense);
+      var totalDebit = debitAccounts.reduce(function(s, d) { return s + d.value; }, 0);
+      if (totalDebit > 0) {
+        debitAccounts.forEach(function(dr) {
+          var cashAmount = Math.round(bankOutflow * dr.value / totalDebit);
+          var cat = expenseClassify[dr.name];
+          if (cat) {
+            addTo(result[cat], ym, cashAmount);
+          } else if (excludeFromMisc.indexOf(dr.name) === -1) {
+            addTo(result.miscExpense, ym, cashAmount);
+          } else {
+            addTo(result.otherExpense, ym, cashAmount);
+          }
+        });
       }
     }
   });
@@ -333,14 +330,8 @@ function syncFromMF(year) {
   var arCollectionK = monthlyToK(bank.arCollection);
   var cashPurchaseK = monthlyToK(bank.cashPurchase);
   var apPaymentK    = monthlyToK(bank.apPayment);
-  // 人件費はPL推移表から取得（仕訳だと源泉徴収でズレる）
-  var personnelK;
-  if (plData) {
-    var personnelPL = extractTransitionSum_(plData, ['役員賞与', '役員報酬', '法定福利費'], keys);
-    personnelK = monthlyToK(personnelPL);
-  } else {
-    personnelK = monthlyToK(bank.personnel);
-  }
+  // 人件費は仕訳ベース（銀行実出金額を按分）
+  var personnelK    = monthlyToK(bank.personnel);
   var nonOpIncomeK  = monthlyToK(bank.nonOpIncome);
   var nonOpExpenseK = monthlyToK(bank.nonOpExpense);
   var investCFK     = monthlyToK(bank.investCF);
@@ -399,7 +390,9 @@ function syncFromMF(year) {
   sheet.getRange('C26:N26').setValues([loanRepShortK]);                   // 行26: 短期返済
   sheet.getRange('C27:N27').setValues([loanRepLongK]);                    // 行27: 長期返済
 
-  // --- 財務収入はログ出力（手入力の参考） ---
+  // --- 財務収入（借入入金）を行23に書き込み ---
+  // 公庫/信金の区分は仕訳だけでは判別困難なので、合計を行23に
+  sheet.getRange('C23:N23').setValues([loanIncomeK]);
   Logger.log('財務収入（借入入金）: ' + JSON.stringify(bank.loanIncome));
 
   // --- 翌月繰越金を値で上書き（数式ではなくMF残高を直接設定） ---
