@@ -150,6 +150,44 @@ function calcCashPurchase_(journals) {
   return monthly;
 }
 
+// 買掛金支払: 借方が未払金 かつ 貸方が普通預金 の仕訳 − 貸方が仕入値引 かつ 借方が普通預金 の仕訳
+function calcAPPayment_(journals) {
+  var monthlyPayment = {};
+  var monthlyDiscount = {};
+  journals.forEach(function(j) {
+    var ym = getJournalYM_(j);
+    if (!ym) return;
+    var branches = j.branches || [];
+    // 未払金×普通預金の仕訳（借方:未払金, 貸方:普通預金）
+    var hasBankCredit = branches.some(function(b) {
+      return (b.creditor && b.creditor.account_name === '普通預金');
+    });
+    var hasBankDebit = branches.some(function(b) {
+      return (b.debitor && b.debitor.account_name === '普通預金');
+    });
+    if (hasBankCredit) {
+      branches.forEach(function(b) {
+        if (b.debitor && b.debitor.account_name === '未払金' && b.debitor.value > 0) {
+          monthlyPayment[ym] = (monthlyPayment[ym] || 0) + b.debitor.value;
+        }
+      });
+    }
+    // 仕入値引×普通預金の仕訳（借方:普通預金, 貸方:仕入値引）
+    if (hasBankDebit) {
+      branches.forEach(function(b) {
+        if (b.creditor && (b.creditor.account_name === '仕入値引・返品' || b.creditor.account_name === '仕入値引') && b.creditor.value > 0) {
+          monthlyDiscount[ym] = (monthlyDiscount[ym] || 0) + b.creditor.value;
+        }
+      });
+    }
+  });
+  var result = {};
+  Object.keys(monthlyPayment).concat(Object.keys(monthlyDiscount)).forEach(function(ym) {
+    result[ym] = (monthlyPayment[ym] || 0) - (monthlyDiscount[ym] || 0);
+  });
+  return result;
+}
+
 // 借入金返済
 function calcLoanRepayment_(journals) {
   return {
@@ -194,21 +232,16 @@ function syncFromMF(year) {
 
     // 行4: 前期売上 = 前年度の売上高合計
     try {
-      var prevPL = fetchTransition_('pl', fiscalYear - 1);
+      var prevFY = fiscalYear - 1;
+      Logger.log('前期売上: fiscal_year=' + prevFY);
+      var prevPL = fetchTransition_('pl', prevFY);
+      Logger.log('前期PL取得成功: columns=' + JSON.stringify(prevPL.columns));
       var prevKeys = monthKeys_(year - 1);
+      Logger.log('前期monthKeys: ' + JSON.stringify(prevKeys));
       var prevSales = extractTransitionAccount_(prevPL, '売上高合計', prevKeys);
+      Logger.log('前期売上データ: ' + JSON.stringify(prevSales));
       sheet.getRange('C4:N4').setValues([monthlyToK(prevSales)]);
-    } catch (e) { Logger.log('前期売上取得エラー: ' + e.message); }
-
-    // 行12: 買掛金支払 = 仕入高合計（仕入（国内）+仕入（輸入））− 仕入値引・返品
-    //   ※ PL推移表から取得。相手先勘定科目は未払金
-    var purchaseDomestic = extractTransitionAccount_(plData, '仕入（国内）', keys);
-    var purchaseImport = extractTransitionAccount_(plData, '仕入（輸入）', keys);
-    var purchaseDiscount = extractTransitionAccount_(plData, '仕入値引・返品', keys);
-    var apPayment = keys.map(function(k) {
-      return toK((purchaseDomestic[k] || 0) + (purchaseImport[k] || 0) - (purchaseDiscount[k] || 0));
-    });
-    sheet.getRange('C12:N12').setValues([apPayment]);
+    } catch (e) { Logger.log('前期売上取得エラー: ' + e.message + '\n' + e.stack); }
 
     // 行13: 人件費 = 役員賞与 + 役員報酬 + 法定福利費
     var personnel = extractTransitionSum_(plData, ['役員賞与', '役員報酬', '法定福利費'], keys);
@@ -221,13 +254,6 @@ function syncFromMF(year) {
       return toK((endInventory[k] || 0) - (beginInventory[k] || 0));
     });
     sheet.getRange('C14:N14').setValues([inventoryChange]);
-
-    // 行15: 諸経費 = 販売費及び一般管理費合計 − 人件費
-    var sgaTotal = extractTransitionAccount_(plData, '販売費及び一般管理費合計', keys);
-    var expenseValues = keys.map(function(k) {
-      return toK((sgaTotal[k] || 0) - (personnel[k] || 0));
-    });
-    sheet.getRange('C15:N15').setValues([expenseValues]);
 
     // 行18: 経常外収入 = 営業外収益合計
     var nonOpIncome = extractTransitionAccount_(plData, '営業外収益合計', keys);
@@ -275,16 +301,33 @@ function syncFromMF(year) {
   // ========================================
   var arCollection = calcARCollection_(journals);
   var cashPurchase = calcCashPurchase_(journals);
+  var apPayment    = calcAPPayment_(journals);
   var loanRepay    = calcLoanRepayment_(journals);
 
-  // 行8: 現金売上 → 現在は0（Amazon物販は全て売掛金回収）
+  var cashPurchaseK = monthlyToK(cashPurchase);
+  var apPaymentK    = monthlyToK(apPayment);
+
+  // 行8: 現金売上 → 0（Amazon物販は全て売掛金回収）
   sheet.getRange('C8:N8').setValues([keys.map(function() { return 0; })]);
 
   // 行9: 売掛金回収
   sheet.getRange('C9:N9').setValues([monthlyToK(arCollection)]);
 
   // 行11: 現金仕入（仕入×普通預金の仕訳）
-  sheet.getRange('C11:N11').setValues([monthlyToK(cashPurchase)]);
+  sheet.getRange('C11:N11').setValues([cashPurchaseK]);
+
+  // 行12: 買掛金支払（未払金×普通預金 − 仕入値引×普通預金）
+  sheet.getRange('C12:N12').setValues([apPaymentK]);
+
+  // 行15: 諸経費 = 販売費及び一般管理費合計 − 現金仕入 − 買掛金支払 − 人件費
+  if (plData) {
+    var sgaTotal = extractTransitionAccount_(plData, '販売費及び一般管理費合計', keys);
+    var personnel = extractTransitionSum_(plData, ['役員賞与', '役員報酬', '法定福利費'], keys);
+    var expenseValues = keys.map(function(k, i) {
+      return toK(sgaTotal[k] || 0) - cashPurchaseK[i] - apPaymentK[i] - toK(personnel[k] || 0);
+    });
+    sheet.getRange('C15:N15').setValues([expenseValues]);
+  }
 
   // 行26: 借入金返済（短期）
   sheet.getRange('C26:N26').setValues([monthlyToK(loanRepay.short)]);
