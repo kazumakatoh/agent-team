@@ -201,14 +201,14 @@ function classifyBankTransactions_(journals) {
         if (b.debitor.account_name === '普通預金') {
           bankInflow += b.debitor.value || 0;
         } else {
-          debitAccounts.push({ name: b.debitor.account_name, value: b.debitor.value || 0 });
+          debitAccounts.push({ name: b.debitor.account_name, sub: b.debitor.sub_account_name || '', value: b.debitor.value || 0 });
         }
       }
       if (b.creditor) {
         if (b.creditor.account_name === '普通預金') {
           bankOutflow += b.creditor.value || 0;
         } else {
-          creditAccounts.push({ name: b.creditor.account_name, value: b.creditor.value || 0 });
+          creditAccounts.push({ name: b.creditor.account_name, sub: b.creditor.sub_account_name || '', value: b.creditor.value || 0 });
         }
       }
     });
@@ -235,7 +235,13 @@ function classifyBankTransactions_(journals) {
       if (totalDebit > 0) {
         debitAccounts.forEach(function(dr) {
           var cashAmount = Math.round(bankOutflow * dr.value / totalDebit);
-          var cat = expenseClassify[dr.name];
+          // 未払費用の補助科目で人件費を判別
+          var cat;
+          if (dr.name === '未払費用' && /加藤/.test(dr.sub)) {
+            cat = 'personnel';
+          } else {
+            cat = expenseClassify[dr.name];
+          }
           if (cat) {
             addTo(result[cat], ym, cashAmount);
           } else if (excludeFromMisc.indexOf(dr.name) === -1) {
