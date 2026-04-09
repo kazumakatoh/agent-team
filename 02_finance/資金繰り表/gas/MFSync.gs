@@ -132,6 +132,8 @@ function classifyBankTransactions_(journals) {
   // 分類定義
   var incomeClassify = {
     '売上高': 'cashSales',
+    '売上（国内）': 'cashSales',
+    '売上（海外）': 'cashSales',
     '売掛金': 'arCollection',
     '受取利息': 'nonOpIncome',
     '短期借入金': 'loanIncome',
