@@ -385,16 +385,16 @@ function syncFromMF(year) {
   sheet.getRange('C13:N13').setValues([personnelK]);                      // 行13: 人件費
   sheet.getRange('C14:N14').setValues([investCFK]);                       // 行14: 投資CF
   sheet.getRange('C15:N15').setValues([miscExpenseK]);                    // 行15: 諸経費（逆算）
-  sheet.getRange('C17:N17').setValues([nonOpIncomeK]);                    // 行17: 経常外収入
-  sheet.getRange('C18:N18').setValues([nonOpExpenseK]);                   // 行18: 経常外支出
-  sheet.getRange('C25:N25').setValues([loanRepShortK]);                   // 行25: 短期返済
-  sheet.getRange('C26:N26').setValues([loanRepLongK]);                    // 行26: 長期返済
+  sheet.getRange('C18:N18').setValues([nonOpIncomeK]);                    // 行18: 経常外収入
+  sheet.getRange('C19:N19').setValues([nonOpExpenseK]);                   // 行19: 経常外支出
+  sheet.getRange('C26:N26').setValues([loanRepShortK]);                   // 行26: 短期返済
+  sheet.getRange('C27:N27').setValues([loanRepLongK]);                    // 行27: 長期返済
 
   // --- 財務収入はログ出力（手入力の参考） ---
   Logger.log('財務収入（借入入金）: ' + JSON.stringify(bank.loanIncome));
 
   // --- 翌月繰越金を値で上書き（数式ではなくMF残高を直接設定） ---
-  sheet.getRange('C28:N28').setValues([endBalance]);
+  sheet.getRange('C29:N29').setValues([endBalance]);
 
   // --- 整合性チェック ---
   SpreadsheetApp.flush();
