@@ -208,26 +208,38 @@ function classifyBankTransactions_(journals) {
 
     // === 入金の分類 ===
     if (bankInflow > 0 && creditAccounts.length > 0) {
-      // 相手貸方科目で分類（最大金額の科目で全額を分類）
-      creditAccounts.sort(function(a, b) { return b.value - a.value; });
-      var mainCredit = creditAccounts[0].name;
-      var category = incomeClassify[mainCredit] || 'otherIncome';
-      addTo(result[category], ym, bankInflow);
+      // 各貸方科目で個別に分類（金額は各科目の値を使用）
+      var classifiedIncome = 0;
+      creditAccounts.forEach(function(cr) {
+        var cat = incomeClassify[cr.name];
+        if (cat) {
+          addTo(result[cat], ym, cr.value);
+          classifiedIncome += cr.value;
+        }
+      });
+      // 未分類の入金があればotherIncomeへ
+      if (classifiedIncome < bankInflow) {
+        addTo(result.otherIncome, ym, bankInflow - classifiedIncome);
+      }
     }
 
     // === 出金の分類 ===
     if (bankOutflow > 0 && debitAccounts.length > 0) {
-      // 相手借方科目で分類（最大金額の科目で全額を分類）
-      debitAccounts.sort(function(a, b) { return b.value - a.value; });
-      var mainDebit = debitAccounts[0].name;
-
-      if (expenseClassify[mainDebit]) {
-        addTo(result[expenseClassify[mainDebit]], ym, bankOutflow);
-      } else if (excludeFromMisc.indexOf(mainDebit) === -1) {
-        // 分類定義にも除外リストにもない → 諸経費
-        addTo(result.miscExpense, ym, bankOutflow);
-      } else {
-        addTo(result.otherExpense, ym, bankOutflow);
+      // 各借方科目で個別に分類（金額は各科目の値を使用）
+      var classifiedExpense = 0;
+      debitAccounts.forEach(function(dr) {
+        var cat = expenseClassify[dr.name];
+        if (cat) {
+          addTo(result[cat], ym, dr.value);
+          classifiedExpense += dr.value;
+        } else if (excludeFromMisc.indexOf(dr.name) === -1) {
+          addTo(result.miscExpense, ym, dr.value);
+          classifiedExpense += dr.value;
+        }
+      });
+      // 未分類の出金があればotherExpenseへ
+      if (classifiedExpense < bankOutflow) {
+        addTo(result.otherExpense, ym, bankOutflow - classifiedExpense);
       }
     }
   });
