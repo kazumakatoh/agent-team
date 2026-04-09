@@ -333,7 +333,14 @@ function syncFromMF(year) {
   var arCollectionK = monthlyToK(bank.arCollection);
   var cashPurchaseK = monthlyToK(bank.cashPurchase);
   var apPaymentK    = monthlyToK(bank.apPayment);
-  var personnelK    = monthlyToK(bank.personnel);
+  // 人件費はPL推移表から取得（仕訳だと源泉徴収でズレる）
+  var personnelK;
+  if (plData) {
+    var personnelPL = extractTransitionSum_(plData, ['役員賞与', '役員報酬', '法定福利費'], keys);
+    personnelK = monthlyToK(personnelPL);
+  } else {
+    personnelK = monthlyToK(bank.personnel);
+  }
   var nonOpIncomeK  = monthlyToK(bank.nonOpIncome);
   var nonOpExpenseK = monthlyToK(bank.nonOpExpense);
   var investCFK     = monthlyToK(bank.investCF);
@@ -383,7 +390,9 @@ function syncFromMF(year) {
   sheet.getRange('C11:N11').setValues([cashPurchaseK]);                   // 行11: 現金仕入
   sheet.getRange('C12:N12').setValues([apPaymentK]);                      // 行12: 買掛金支払
   sheet.getRange('C13:N13').setValues([personnelK]);                      // 行13: 人件費
-  sheet.getRange('C14:N14').setValues([investCFK]);                       // 行14: 投資CF
+  // 行14: 空行（商品棚卸高を非表示）
+  sheet.getRange('B14').setValue('');
+  sheet.getRange('C14:N14').setValues([keys.map(function() { return ''; })]);
   sheet.getRange('C15:N15').setValues([miscExpenseK]);                    // 行15: 諸経費（逆算）
   sheet.getRange('C18:N18').setValues([nonOpIncomeK]);                    // 行18: 経常外収入
   sheet.getRange('C19:N19').setValues([nonOpExpenseK]);                   // 行19: 経常外支出
