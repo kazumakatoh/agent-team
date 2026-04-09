@@ -11,6 +11,7 @@ from config import (
     MEXC_KLINES_ENDPOINT,
     MEXC_TICKER_ENDPOINT,
     TOP_N_SYMBOLS,
+    MIN_VOLUME_JPY,
     QUOTE_ASSET,
     KLINE_LIMIT,
     USD_JPY_RATE,
@@ -81,9 +82,10 @@ def get_market_caps(symbols: list[str]) -> dict[str, float]:
         return {}
 
 
-def get_top_symbols(n: int = TOP_N_SYMBOLS) -> list[dict]:
+def get_top_symbols(n: int = TOP_N_SYMBOLS, jpy_rate: float = USD_JPY_RATE, min_volume_jpy: float = MIN_VOLUME_JPY) -> list[dict]:
     """
-    取引高上位N銘柄のUSDTペアを取得する。
+    24h出来高が基準額（円）以上のUSDTペアを取得する。
+    基準額未満の場合でも最低n銘柄は確保する。
 
     Returns:
         [{"symbol": "BTCUSDT", "volume": 123456.78, "lastPrice": 68000.0}, ...]
@@ -103,7 +105,16 @@ def get_top_symbols(n: int = TOP_N_SYMBOLS) -> list[dict]:
     # 取引高（USDT建て）で降順ソート
     usdt_tickers.sort(key=lambda t: float(t.get("quoteVolume", 0)), reverse=True)
 
-    top = usdt_tickers[:n]
+    # 出来高が基準額（円）以上の銘柄をフィルタ
+    min_volume_usdt = min_volume_jpy / jpy_rate
+    filtered = [t for t in usdt_tickers if float(t.get("quoteVolume", 0)) >= min_volume_usdt]
+
+    # 最低n銘柄は確保
+    if len(filtered) < n:
+        filtered = usdt_tickers[:n]
+
+    print(f"[銘柄] 24h出来高 {min_volume_jpy/1e4:.0f}万円以上: {len(filtered)}銘柄")
+
     return [
         {
             "symbol": t["symbol"],
@@ -111,7 +122,7 @@ def get_top_symbols(n: int = TOP_N_SYMBOLS) -> list[dict]:
             "lastPrice": float(t.get("lastPrice", 0)),
             "priceChangePercent": float(t.get("priceChangePercent", 0)),
         }
-        for t in top
+        for t in filtered
     ]
 
 

@@ -55,7 +55,7 @@ def load_data(top_n=TOP_N_SYMBOLS):
     # USD/JPYレートをリアルタイム取得
     jpy_rate = get_usdjpy_rate()
 
-    top_symbols = get_top_symbols(top_n)
+    top_symbols = get_top_symbols(n=top_n, jpy_rate=jpy_rate)
     symbol_list = [s["symbol"] for s in top_symbols]
     symbol_info = {s["symbol"]: s for s in top_symbols}
 
@@ -213,10 +213,10 @@ HTML_TEMPLATE = """
 <body>
     <div class="header">
         <h1>📊 トレードシグナル ダッシュボード</h1>
-        <div class="sub">MEXC 取引高上位銘柄 | 日足・4時間足 並列分析 | <span id="last-update">--</span> | USD/JPY: <span id="jpy-rate">--</span></div>
+        <div class="sub">MEXC | 24h出来高5000万円以上 | 日足・4時間足 並列分析 | <span id="last-update">--</span> | USD/JPY: <span id="jpy-rate">--</span></div>
     </div>
     <div class="controls">
-        <label>銘柄数: <select id="topn"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option><option value="50">50</option><option value="100">100</option></select></label>
+        <label>最低銘柄数: <select id="topn"><option value="10">10</option><option value="20" selected>20</option><option value="30">30</option><option value="50">50</option><option value="100">100</option></select></label>
         <label>フィルタ: <select id="signal-filter">
             <option value="">全て表示</option>
             <option value="strong_bull">🟢 強い上昇</option><option value="bull">🔵 上昇</option>

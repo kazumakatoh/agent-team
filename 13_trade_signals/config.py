@@ -8,7 +8,8 @@ MEXC_KLINES_ENDPOINT = "/api/v3/klines"
 MEXC_TICKER_ENDPOINT = "/api/v3/ticker/24hr"
 
 # === 分析対象 ===
-TOP_N_SYMBOLS = 50  # 取引高上位N銘柄
+TOP_N_SYMBOLS = 50  # 取引高上位N銘柄（フォールバック用）
+MIN_VOLUME_JPY = 50_000_000  # 最低24h出来高（円）: 5000万円
 QUOTE_ASSET = "USDT"  # 対象ペア
 
 # === 時間足 ===
