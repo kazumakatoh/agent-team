@@ -119,7 +119,8 @@ function classifyBankTransactions_(journals) {
     nonOpExpense: {},    // 出金: 支払利息等
     loanRepayShort: {},  // 出金: 短期借入金
     loanRepayLong: {},   // 出金: 長期借入金
-    investCF: {},        // 出金: 投資CF（固定資産等）
+    fixedAssetCF: {},    // 出金: 固定資産購入売却
+    otherInvestCF: {},   // 出金: その他投資
     miscExpense: {},     // 出金: 諸経費
     otherExpense: {}     // 出金: その他
   };
@@ -152,17 +153,21 @@ function classifyBankTransactions_(journals) {
     '短期借入金': 'loanRepayShort',
     '長期借入金': 'loanRepayLong',
     // 投資CF
-    '工具器具備品': 'investCF',
-    '建物': 'investCF',
-    '車両運搬具': 'investCF',
-    '土地': 'investCF',
-    '建物附属設備': 'investCF',
-    '附属設備': 'investCF',
-    'ソフトウェア': 'investCF',
-    '出資金': 'investCF',
-    '敷金・保証金': 'investCF',
-    '開発費': 'investCF',
-    '繰延資産': 'investCF'
+    // 投資CF - 固定資産
+    '工具器具備品': 'fixedAssetCF',
+    '建物': 'fixedAssetCF',
+    '車両運搬具': 'fixedAssetCF',
+    '土地': 'fixedAssetCF',
+    '建物附属設備': 'fixedAssetCF',
+    '附属設備': 'fixedAssetCF',
+    'ソフトウェア': 'fixedAssetCF',
+    // 投資CF - その他
+    '出資金': 'otherInvestCF',
+    '敷金・保証金': 'otherInvestCF',
+    '開発費': 'otherInvestCF',
+    '繰延資産': 'otherInvestCF',
+    '投資有価証券': 'otherInvestCF',
+    '長期前払費用': 'otherInvestCF'
   };
 
   // 諸経費に含めない科目（分類済み or 非現金 or 振替系）
@@ -334,7 +339,9 @@ function syncFromMF(year) {
   var personnelK    = monthlyToK(bank.personnel);
   var nonOpIncomeK  = monthlyToK(bank.nonOpIncome);
   var nonOpExpenseK = monthlyToK(bank.nonOpExpense);
-  var investCFK     = monthlyToK(bank.investCF);
+  var fixedAssetK   = monthlyToK(bank.fixedAssetCF);
+  var otherInvestK  = monthlyToK(bank.otherInvestCF);
+  var investCFK     = keys.map(function(k, i) { return fixedAssetK[i] + otherInvestK[i]; });
   var loanIncomeK   = monthlyToK(bank.loanIncome);
   var loanRepShortK = monthlyToK(bank.loanRepayShort);
   var loanRepLongK  = monthlyToK(bank.loanRepayLong);
@@ -374,29 +381,27 @@ function syncFromMF(year) {
     return carryForwardK[i] + income - knownExpense + nonOp + invest + finance - endBalance[i];
   });
 
-  // --- スプシに書き込み ---
+  // --- スプシに書き込み（新レイアウト: 投資CFセクション追加） ---
   sheet.getRange('C5:N5').setValues([carryForwardK]);                     // 行5: 前月繰越金
   sheet.getRange('C8:N8').setValues([cashSalesK]);                        // 行8: 現金売上
   sheet.getRange('C9:N9').setValues([arCollectionK]);                     // 行9: 売掛金回収
   sheet.getRange('C11:N11').setValues([cashPurchaseK]);                   // 行11: 現金仕入
   sheet.getRange('C12:N12').setValues([apPaymentK]);                      // 行12: 買掛金支払
   sheet.getRange('C13:N13').setValues([personnelK]);                      // 行13: 人件費
-  // 行14: 空行（商品棚卸高を非表示）
-  sheet.getRange('B14').setValue('');
-  sheet.getRange('C14:N14').setValues([keys.map(function() { return ''; })]);
   sheet.getRange('C15:N15').setValues([miscExpenseK]);                    // 行15: 諸経費（逆算）
   sheet.getRange('C18:N18').setValues([nonOpIncomeK]);                    // 行18: 経常外収入
   sheet.getRange('C19:N19').setValues([nonOpExpenseK]);                   // 行19: 経常外支出
-  sheet.getRange('C26:N26').setValues([loanRepShortK]);                   // 行26: 短期返済
-  sheet.getRange('C27:N27').setValues([loanRepLongK]);                    // 行27: 長期返済
-
-  // --- 財務収入（借入入金）を行23に書き込み ---
-  // 公庫/信金の区分は仕訳だけでは判別困難なので、合計を行23に
-  sheet.getRange('C23:N23').setValues([loanIncomeK]);
+  // --- 投資キャッシュフロー ---
+  sheet.getRange('C22:N22').setValues([fixedAssetK]);                     // 行22: 固定資産購入売却
+  sheet.getRange('C23:N23').setValues([otherInvestK]);                    // 行23: その他投資
+  // --- 財務収支 ---
+  sheet.getRange('C27:N27').setValues([loanIncomeK]);                     // 行27: 財務収入（公庫に一旦入れる）
+  sheet.getRange('C30:N30').setValues([loanRepShortK]);                   // 行30: 短期返済
+  sheet.getRange('C31:N31').setValues([loanRepLongK]);                    // 行31: 長期返済
   Logger.log('財務収入（借入入金）: ' + JSON.stringify(bank.loanIncome));
 
-  // --- 翌月繰越金を値で上書き（数式ではなくMF残高を直接設定） ---
-  sheet.getRange('C29:N29').setValues([endBalance]);
+  // --- 翌月繰越金を値で上書き ---
+  sheet.getRange('C33:N33').setValues([endBalance]);
 
   // --- 整合性チェック ---
   SpreadsheetApp.flush();

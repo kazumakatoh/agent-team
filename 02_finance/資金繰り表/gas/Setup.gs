@@ -192,55 +192,64 @@ function buildSheet_(sheet, year) {
   sheet.getRange('B20').setFontWeight('bold');
   sheet.getRange('A20:O20').setBackground('#E0F0E0');
 
-  // === 行21: 財務収支（セクションヘッダー） ===
-  setSectionHeader_(sheet, 21, '財務収支');
+  // === 行21: 投資キャッシュフロー（セクションヘッダー） ===
+  setSectionHeader_(sheet, 21, '投資キャッシュフロー');
 
-  // --- 行22: 収入（小計）= 行23 + 行24 ---
-  setRow_(sheet, 22, '', '収入', 'SUM');
-  setSubtotalFormulas_(sheet, 22, [23, 24], mStart, mEnd);
-  sheet.getRange('B22').setFontWeight('bold');
-  sheet.getRange('A22:O22').setBackground('#E0F0E0');
+  // --- 行22: 固定資産購入売却 ---
+  setRow_(sheet, 22, '', '固定資産購入売却', 'SUM');
 
-  // --- 行23: 日本政策金融公庫 ---
-  setRow_(sheet, 23, '', '日本政策金融公庫', 'SUM');
+  // --- 行23: その他投資 ---
+  setRow_(sheet, 23, '', 'その他投資', 'SUM');
 
-  // --- 行24: 西武信用金庫 ---
-  setRow_(sheet, 24, '', '西武信用金庫', 'SUM');
+  // --- 行24: 投資CF合計 = 行22 + 行23 ---
+  setRow_(sheet, 24, '', '合計', 'SUM');
+  setSubtotalFormulas_(sheet, 24, [22, 23], mStart, mEnd);
+  sheet.getRange('B24').setFontWeight('bold');
+  sheet.getRange('A24:O24').setBackground('#E0F0E0');
 
-  // --- 行25: 支出（小計）= 行26 + 行27 ---
-  setRow_(sheet, 25, '', '支出', 'SUM');
-  setSubtotalFormulas_(sheet, 25, [26, 27], mStart, mEnd);
-  sheet.getRange('B25').setFontWeight('bold');
-  sheet.getRange('A25:O25').setBackground('#E0F0E0');
+  // === 行25: 財務収支（セクションヘッダー） ===
+  setSectionHeader_(sheet, 25, '財務収支');
 
-  // --- 行26: 借入金返済（短期） ---
-  setRow_(sheet, 26, '', '借入金返済（短期）', 'SUM');
+  // --- 行26: 収入（小計）= 行27 + 行28 ---
+  setRow_(sheet, 26, '', '収入', 'SUM');
+  setSubtotalFormulas_(sheet, 26, [27, 28], mStart, mEnd);
+  sheet.getRange('B26').setFontWeight('bold');
+  sheet.getRange('A26:O26').setBackground('#E0F0E0');
 
-  // --- 行27: 借入金返済（長期） ---
-  setRow_(sheet, 27, '', '借入金返済（長期）', 'SUM');
+  // --- 行27: 日本政策金融公庫 ---
+  setRow_(sheet, 27, '', '日本政策金融公庫', 'SUM');
 
-  // --- 行28: 合計 = 収入(22) - 支出(25) ---
-  setRow_(sheet, 28, '', '合計', 'SUM');
-  setDiffFormulas_(sheet, 28, 22, 25, mStart, mEnd);
-  sheet.getRange('B28').setFontWeight('bold');
-  sheet.getRange('A28:O28').setBackground('#E0F0E0');
+  // --- 行28: 西武信用金庫 ---
+  setRow_(sheet, 28, '', '西武信用金庫', 'SUM');
 
-  // --- 行29: 翌月繰越金 = 前月繰越金(5) + 差引過不足(16) + 経常外合計(20) + 財務合計(28) ---
-  setRow_(sheet, 29, '', '翌月繰越金', 'NONE');
-  for (var c = mStart; c <= mEnd; c++) {
-    var col = colLetter_(c);
-    sheet.getRange(col + '29').setFormula(
-      '=' + col + '5+' + col + '16+' + col + '20+' + col + '28'
-    );
-  }
+  // --- 行29: 支出（小計）= 行30 + 行31 ---
+  setRow_(sheet, 29, '', '支出', 'SUM');
+  setSubtotalFormulas_(sheet, 29, [30, 31], mStart, mEnd);
   sheet.getRange('B29').setFontWeight('bold');
-  sheet.getRange('A29:O29').setBackground('#FFF8E1');
+  sheet.getRange('A29:O29').setBackground('#E0F0E0');
+
+  // --- 行30: 借入金返済（短期） ---
+  setRow_(sheet, 30, '', '借入金返済（短期）', 'SUM');
+
+  // --- 行31: 借入金返済（長期） ---
+  setRow_(sheet, 31, '', '借入金返済（長期）', 'SUM');
+
+  // --- 行32: 合計 = 収入(26) - 支出(29) ---
+  setRow_(sheet, 32, '', '合計', 'SUM');
+  setDiffFormulas_(sheet, 32, 26, 29, mStart, mEnd);
+  sheet.getRange('B32').setFontWeight('bold');
+  sheet.getRange('A32:O32').setBackground('#E0F0E0');
+
+  // --- 行33: 翌月繰越金 ---
+  setRow_(sheet, 33, '', '翌月繰越金', 'NONE');
+  sheet.getRange('B33').setFontWeight('bold');
+  sheet.getRange('A33:O33').setBackground('#FFF8E1');
 
   // --- 前月繰越金の自動連携（4月以降 = 前月の翌月繰越金） ---
   for (var c = mStart + 1; c <= mEnd; c++) {
     var prevCol = colLetter_(c - 1);
     var col = colLetter_(c);
-    sheet.getRange(col + '5').setFormula('=' + prevCol + '29');
+    sheet.getRange(col + '5').setFormula('=' + prevCol + '33');
   }
 
   // --- 前月繰越金の行を強調 ---
