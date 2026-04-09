@@ -335,6 +335,7 @@ function syncFromMF(year) {
   // --- 各項目を千円で準備 ---
   var cashSalesK    = monthlyToK(bank.cashSales);
   var arCollectionK = monthlyToK(bank.arCollection);
+  var otherIncomeK  = monthlyToK(bank.otherIncome);
   var cashPurchaseK = monthlyToK(bank.cashPurchase);
   var apPaymentK    = monthlyToK(bank.apPayment);
   // 人件費は仕訳ベース（銀行実出金額を按分）
@@ -372,7 +373,7 @@ function syncFromMF(year) {
   // --- 諸経費を逆算 ---
   // 諸経費 = 前月繰越金 + 収入合計 - (現金仕入+買掛金+人件費) + 経常外純額 - 投資CF + 財務純額 - 翌月繰越金
   var miscExpenseK = keys.map(function(k, i) {
-    var income = cashSalesK[i] + arCollectionK[i];
+    var income = cashSalesK[i] + arCollectionK[i] + otherIncomeK[i];
     var knownExpense = cashPurchaseK[i] + apPaymentK[i] + personnelK[i];
     var nonOp = nonOpIncomeK[i] - nonOpExpenseK[i];
     var invest = -investCFK[i];
@@ -404,6 +405,7 @@ function syncFromMF(year) {
   sheet.getRange('C30:N30').setValues([loanRepShortK]);                   // 行30: 短期返済
   sheet.getRange('C31:N31').setValues([loanRepLongK]);                    // 行31: 長期返済
   Logger.log('財務収入（借入入金）: ' + JSON.stringify(bank.loanIncome));
+  Logger.log('その他収入（未分類入金）: ' + JSON.stringify(bank.otherIncome));
 
   // --- 翌月繰越金を値で上書き ---
   sheet.getRange('C33:N33').setValues([endBalance]);
