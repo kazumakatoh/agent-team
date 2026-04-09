@@ -133,8 +133,6 @@ function classifyBankTransactions_(journals) {
     '売上高': 'cashSales',
     '売掛金': 'arCollection',
     '受取利息': 'nonOpIncome',
-    '雑収入': 'nonOpIncome',
-    '受取配当金': 'nonOpIncome',
     '短期借入金': 'loanIncome',
     '長期借入金': 'loanIncome'
   };
@@ -151,8 +149,6 @@ function classifyBankTransactions_(journals) {
     '法定福利費': 'personnel',
     '役員賞与': 'personnel',
     '支払利息': 'nonOpExpense',
-    '雑損失': 'nonOpExpense',
-    '為替差損': 'nonOpExpense',
     '短期借入金': 'loanRepayShort',
     '長期借入金': 'loanRepayLong',
     // 投資CF
