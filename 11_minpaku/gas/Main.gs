@@ -29,7 +29,7 @@ function checkNewReservations() {
     // 変更があれば集計も更新
     if (added > 0 || cancelled > 0) {
       const fiscalYear = KPICalculator.getCurrentFiscalYear();
-      updateMonthlySheet(fiscalYear);
+      updateMonthlySheet();
       updateDashboard(fiscalYear);
       Logger.log('集計・ダッシュボード更新完了');
     } else {
@@ -50,7 +50,7 @@ function dailyAggregation() {
     Logger.log('=== 日次集計更新開始 ===');
 
     const fiscalYear = KPICalculator.getCurrentFiscalYear();
-    updateMonthlySheet(fiscalYear);
+    updateMonthlySheet();
     updateAnnualSheet(fiscalYear);
     updateDashboard(fiscalYear);
 
@@ -113,7 +113,7 @@ function runManualAirSapoCheck() {
     const count = fetchAirSapoInvoices();
     const fiscalYear = KPICalculator.getCurrentFiscalYear();
     if (count > 0) {
-      updateMonthlySheet(fiscalYear);
+      updateMonthlySheet();
       updateAnnualSheet(fiscalYear);
       updateDashboard(fiscalYear);
     }
@@ -136,7 +136,7 @@ function runCancellationCheck() {
     const cancelled = processCancellationEmails();
     const fiscalYear = KPICalculator.getCurrentFiscalYear();
     if (cancelled > 0) {
-      updateMonthlySheet(fiscalYear);
+      updateMonthlySheet();
       updateDashboard(fiscalYear);
     }
     SpreadsheetApp.getUi().alert(`✅ キャンセル処理完了\n・ステータス更新: ${cancelled}件`);
@@ -160,7 +160,7 @@ function runManualAggregation() {
   if (result.getSelectedButton() !== ui.Button.OK) return;
 
   const inputYear = parseInt(result.getResponseText()) || year;
-  updateMonthlySheet(inputYear);
+  updateMonthlySheet();
   updateAnnualSheet(inputYear);
   updateDashboard(inputYear);
   ui.alert(`✅ ${inputYear}年度の集計・ダッシュボードを更新しました。`);
@@ -244,7 +244,7 @@ function continueBackfill(input) {
     const cancelled = processCancellationEmails(sinceDate);
 
     const fiscalYear = KPICalculator.getCurrentFiscalYear();
-    updateMonthlySheet(fiscalYear);
+    updateMonthlySheet();
     updateDashboard(fiscalYear);
 
     ui.alert(
@@ -310,7 +310,7 @@ function addReservationManually() {
   writeReservations([reservation]);
 
   const fiscalYear = KPICalculator.getCurrentFiscalYear();
-  updateMonthlySheet(fiscalYear);
+  updateMonthlySheet();
   updateDashboard(fiscalYear);
 
   ui.alert(`✅ 予約を追加しました\n${plt} | ${checkin.getResponseText()} 〜 ${checkout.getResponseText()} (${nights}泊)`);

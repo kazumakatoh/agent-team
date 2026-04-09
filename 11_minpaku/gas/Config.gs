@@ -27,6 +27,8 @@ const CONFIG = {
     NAME:              '和成也ハイム浅草',
     MAX_ANNUAL_DAYS:   180,  // 民泊法 年間上限日数（4月〜翌3月）
     FISCAL_YEAR_MONTH: 4,    // 事業年度開始月（4月）
+    OPENING_YEAR:      2025, // 開業年
+    OPENING_MONTH:     12,   // 開業月
     ROOMS:             1     // 部屋数（稼働率計算用）
   },
 
