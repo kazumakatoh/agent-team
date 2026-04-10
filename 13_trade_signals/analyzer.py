@@ -9,9 +9,14 @@
 4. PPP（逆PPP）: 移動平均線の並びでトレンド判断
 5. ものわかれ: 5日線が10日線に近づくが離れる→トレンド継続
 
+【クチバシ（相場流のGC/DC）】
+一般的なGC/DCより条件を厳しくしたもの。
+- 基本クチバシ: 5日が10日を交差 + 5日と10日の向きが同じ
+- 強いクチバシ: 上記 + 20日線も同じ向き（さらに信頼性が高い）
+
 【3段ロジック】風向き → 合図 → 加速
 - 風向き: 100日線との位置 + 20日線の傾き（大局）
-- 合図:   下半身/逆下半身、5日と10日の交差
+- 合図:   下半身/逆下半身、クチバシ
 - 加速:   100日線突破、PPP成立
 
 移動平均線（相場流）:
@@ -131,7 +136,7 @@ def detect_monowakare(df: pd.DataFrame, direction: str = "up") -> bool:
 
 
 def detect_golden_cross(df: pd.DataFrame, fast: int = 5, slow: int = 10) -> bool:
-    """MA5がMA10をゴールデンクロス（短期合図）"""
+    """MA5がMA10をゴールデンクロス（単純な交差のみ）"""
     if len(df) < 2:
         return False
     latest = df.iloc[-1]
@@ -140,12 +145,57 @@ def detect_golden_cross(df: pd.DataFrame, fast: int = 5, slow: int = 10) -> bool
 
 
 def detect_dead_cross(df: pd.DataFrame, fast: int = 5, slow: int = 10) -> bool:
-    """MA5がMA10をデッドクロス（短期合図）"""
+    """MA5がMA10をデッドクロス（単純な交差のみ）"""
     if len(df) < 2:
         return False
     latest = df.iloc[-1]
     prev = df.iloc[-2]
     return prev[f"MA{fast}"] >= prev[f"MA{slow}"] and latest[f"MA{fast}"] < latest[f"MA{slow}"]
+
+
+def detect_kuchibashi(df: pd.DataFrame, direction: str = "up") -> tuple[bool, bool]:
+    """
+    クチバシシグナル（相場流のGC/DCより厳格な判定）
+
+    基本クチバシ条件:
+    1. 5日線が10日線を交差（上抜け=上、下抜け=下）
+    2. 5日線と10日線の向きが同じ方向
+
+    強いクチバシ（信頼度高）条件:
+    - 基本クチバシ + 20日線の向きも同じ方向
+      （20日線を抜くのではなく、向きが揃うこと）
+
+    Args:
+        df: ローソク足データ
+        direction: "up" または "down"
+
+    Returns:
+        (基本クチバシ成立, 強いクチバシ成立)
+    """
+    if len(df) < 3:
+        return (False, False)
+
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    ma5_slope = latest["MA5"] - prev["MA5"]
+    ma10_slope = latest["MA10"] - prev["MA10"]
+    ma20_slope = latest["MA20"] - prev["MA20"]
+
+    if direction == "up":
+        # 5日が10日を上抜けているか（直近で交差 or 既に上）
+        crossed = prev["MA5"] <= prev["MA10"] and latest["MA5"] > latest["MA10"]
+        # 5日と10日の向きが同じ（上向き）
+        same_direction = ma5_slope > 0 and ma10_slope > 0
+        basic = crossed and same_direction
+        strong = basic and ma20_slope > 0
+    else:
+        crossed = prev["MA5"] >= prev["MA10"] and latest["MA5"] < latest["MA10"]
+        same_direction = ma5_slope < 0 and ma10_slope < 0
+        basic = crossed and same_direction
+        strong = basic and ma20_slope < 0
+
+    return (basic, strong)
 
 
 def check_wind_direction(latest) -> str:
@@ -225,8 +275,8 @@ def detect_signal(df: pd.DataFrame) -> dict:
     rppp = is_reverse_ppp(latest)
     lhb = detect_lower_half_body(df)
     rlhb = detect_reverse_lower_half_body(df)
-    gc = detect_golden_cross(df)
-    dc = detect_dead_cross(df)
+    kuchibashi_up_basic, kuchibashi_up_strong = detect_kuchibashi(df, "up")
+    kuchibashi_dn_basic, kuchibashi_dn_strong = detect_kuchibashi(df, "down")
     mono_up = detect_monowakare(df, "up")
     mono_down = detect_monowakare(df, "down")
 
@@ -293,11 +343,13 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "detail": reason,
         }
 
-    # === 上昇の兆し: 下半身 or ゴールデンクロス ===
+    # === 上昇の兆し: 下半身 or クチバシ ===
     if lhb:
         reason = "下半身出現（陽線が5日線を実体半分以上で上抜け）"
-        if gc:
-            reason += " + GC"
+        if kuchibashi_up_strong:
+            reason += " + 強いクチバシ（5/10/20日すべて上向き）"
+        elif kuchibashi_up_basic:
+            reason += " + クチバシ（5日が10日を上抜け、同方向）"
         if wind == "up":
             reason += " / 風向き上"
         return {
@@ -307,19 +359,29 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "detail": reason,
         }
 
-    if gc:
+    if kuchibashi_up_strong:
         return {
             "signal": "bull_hint",
             "ma_values": ma_values,
             "close": close,
-            "detail": "5日線が10日線をGC（合図発生）",
+            "detail": "強いクチバシ出現（5日が10日を上抜け+5/10/20日すべて上向き）",
         }
 
-    # === 下落の兆し: 逆下半身 or デッドクロス ===
+    if kuchibashi_up_basic:
+        return {
+            "signal": "bull_hint",
+            "ma_values": ma_values,
+            "close": close,
+            "detail": "クチバシ出現（5日が10日を上抜け+5日と10日が同方向）",
+        }
+
+    # === 下落の兆し: 逆下半身 or 逆クチバシ ===
     if rlhb:
         reason = "逆下半身出現（陰線が5日線を実体半分以上で下抜け）"
-        if dc:
-            reason += " + DC"
+        if kuchibashi_dn_strong:
+            reason += " + 強い逆クチバシ（5/10/20日すべて下向き）"
+        elif kuchibashi_dn_basic:
+            reason += " + 逆クチバシ（5日が10日を下抜け、同方向）"
         if wind == "down":
             reason += " / 風向き下"
         return {
@@ -329,12 +391,20 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "detail": reason,
         }
 
-    if dc:
+    if kuchibashi_dn_strong:
         return {
             "signal": "bear_hint",
             "ma_values": ma_values,
             "close": close,
-            "detail": "5日線が10日線をDC（合図発生）",
+            "detail": "強い逆クチバシ出現（5日が10日を下抜け+5/10/20日すべて下向き）",
+        }
+
+    if kuchibashi_dn_basic:
+        return {
+            "signal": "bear_hint",
+            "ma_values": ma_values,
+            "close": close,
+            "detail": "逆クチバシ出現（5日が10日を下抜け+5日と10日が同方向）",
         }
 
     # === 横ばい ===
@@ -384,8 +454,11 @@ def check_exit_signal(df: pd.DataFrame, position: str) -> dict | None:
     if position == "long":
         if detect_reverse_lower_half_body(df):
             return {"action": "利確推奨", "reason": "逆下半身出現（上昇トレンド終了の初動）"}
-        if detect_dead_cross(df):
-            return {"action": "利確推奨", "reason": "5日線が10日線をDC"}
+        basic, strong = detect_kuchibashi(df, "down")
+        if strong:
+            return {"action": "利確推奨", "reason": "強い逆クチバシ出現"}
+        if basic:
+            return {"action": "利確推奨", "reason": "逆クチバシ出現"}
         bars = count_trend_bars(df, "up")
         if bars >= 15:
             return {"action": "利確警戒", "reason": f"上昇が{bars}本継続（15本ルール）"}
@@ -393,8 +466,11 @@ def check_exit_signal(df: pd.DataFrame, position: str) -> dict | None:
     elif position == "short":
         if detect_lower_half_body(df):
             return {"action": "利確推奨", "reason": "下半身出現（下落トレンド終了の初動）"}
-        if detect_golden_cross(df):
-            return {"action": "利確推奨", "reason": "5日線が10日線をGC"}
+        basic, strong = detect_kuchibashi(df, "up")
+        if strong:
+            return {"action": "利確推奨", "reason": "強いクチバシ出現"}
+        if basic:
+            return {"action": "利確推奨", "reason": "クチバシ出現"}
         bars = count_trend_bars(df, "down")
         if bars >= 15:
             return {"action": "利確警戒", "reason": f"下落が{bars}本継続（15本ルール）"}
