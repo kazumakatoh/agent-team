@@ -112,9 +112,11 @@ def load_data(top_n=TOP_N_SYMBOLS):
             "signal_1d": sig_1d["signal"],
             "signal_label_1d": sig_1d["signal_label"],
             "detail_1d": sig_1d["detail"],
+            "flags_1d": sig_1d.get("flags", {}),
             "signal_4h": sig_4h["signal"],
             "signal_label_4h": sig_4h["signal_label"],
             "detail_4h": sig_4h["detail"],
+            "flags_4h": sig_4h.get("flags", {}),
             "signal_1d_order": signal_order.index(sig_1d["signal"]) if sig_1d["signal"] in signal_order else 99,
             "signal_4h_order": signal_order.index(sig_4h["signal"]) if sig_4h["signal"] in signal_order else 99,
             "market_cap_jpy": market_cap_jpy,
@@ -202,6 +204,20 @@ HTML_TEMPLATE = """
         .signal-bear { background:#ff1744; color:#fff; }
         .signal-strong_bear { background:#424242; color:#fff; }
         .signal-sideways { background:#616161; color:#fff; }
+        .sig-badge { display:inline-block; padding:2px 6px; border-radius:6px; font-size:10px; font-weight:bold; margin-right:3px; min-width:18px; text-align:center; }
+        .sb-half { background:#ff1744; color:#fff; }              /* 下半身=赤 */
+        .sb-half-down { background:#7b1fa2; color:#fff; }         /* 逆下半身=紫 */
+        .sb-kuchi { background:#ffd600; color:#000; }             /* クチバシ=黄 */
+        .sb-kuchi-strong { background:#00c853; color:#000; }      /* 強いクチバシ=緑 */
+        .sb-kuchi-down { background:#ff9100; color:#000; }        /* 逆クチバシ=橙 */
+        .sb-kuchi-strong-down { background:#424242; color:#fff; } /* 強い逆クチバシ=黒 */
+        .sb-ppp { background:#2979ff; color:#fff; }               /* PPP=青 */
+        .sb-ppp-down { background:#5d4037; color:#fff; }          /* 逆PPP=茶 */
+        .sb-mono { background:#9c27b0; color:#fff; }              /* ものわかれ=紫 */
+        .sb-mono-down { background:#6a1b9a; color:#fff; }         /* 逆ものわかれ=濃紫 */
+        .sb-100 { background:#e91e63; color:#fff; }               /* 100日線突破=ピンク */
+        .sb-100-down { background:#37474f; color:#fff; }          /* 100日線割れ=暗灰 */
+        .sb-warn { background:#ff5722; color:#fff; }              /* 15本警戒=橙赤 */
         .positive { color:#00c853; }
         .negative { color:#ff1744; }
         .charts-row { display:flex; gap:15px; margin-top:10px; flex-wrap:wrap; }
@@ -347,10 +363,29 @@ function renderDashboard() {
         '<div class="summary-card"><div class="num negative">' + bearCount + '</div><div class="label">🔴⚫ 下落（日足）</div></div>' +
     '</div><div class="content">';
 
-    html += '<h2 class="section-title">📋 シグナル一覧（' + data.length + '銘柄）</h2><table><thead><tr>' +
+    // === 個別チャート（一覧の上に表示）===
+    html += '<h2 class="section-title">📈 個別チャート（日足・4時間足 並列表示）</h2>' +
+        '<select id="chart-select" onchange="showChart(this.value)" style="padding:8px 16px;background:#262730;color:#fafafa;border:1px solid #444;border-radius:6px;font-size:14px;margin-bottom:10px">' +
+        symbolList.map(s => '<option value="' + s + '">' + s.replace('USDT','/USDT') + '</option>').join('') + '</select>' +
+        '<div class="charts-row"><div class="chart-box" id="chart-1d"></div><div class="chart-box" id="chart-4h"></div></div>' +
+        '<div id="ma-details" class="ma-info"></div>';
+
+    // === シグナル一覧 ===
+    html += '<h2 class="section-title">📋 シグナル一覧（' + data.length + '銘柄）</h2>' +
+        '<div style="font-size:11px;color:#888;margin-bottom:8px">凡例: ' +
+        '<span class="sig-badge sb-half" title="下半身/逆下半身">半</span>' +
+        '<span class="sig-badge sb-kuchi" title="基本クチバシ">ク</span>' +
+        '<span class="sig-badge sb-kuchi-strong" title="強いクチバシ">強</span>' +
+        '<span class="sig-badge sb-ppp" title="PPP/逆PPP">P</span>' +
+        '<span class="sig-badge sb-mono" title="ものわかれ継続">も</span>' +
+        '<span class="sig-badge sb-100" title="100日線突破">100</span>' +
+        '<span class="sig-badge sb-warn" title="15本超え 利確警戒">15</span>' +
+        '</div>' +
+        '<table><thead><tr>' +
         '<th onclick="onSort(&quot;symbol_display&quot;)">銘柄' + sortIcon('symbol_display') + '</th>' +
         '<th onclick="onSort(&quot;signal_1d_order&quot;)">日足シグナル' + sortIcon('signal_1d_order') + '</th>' +
         '<th onclick="onSort(&quot;signal_4h_order&quot;)">4hシグナル' + sortIcon('signal_4h_order') + '</th>' +
+        '<th>出現サイン (日足)</th>' +
         '<th onclick="onSort(&quot;price&quot;)">現在値' + sortIcon('price') + '</th>' +
         '<th onclick="onSort(&quot;market_cap_jpy&quot;)">時価総額(円)' + sortIcon('market_cap_jpy') + '</th>' +
         '<th onclick="onSort(&quot;volume_jpy&quot;)">24h出来高(円)' + sortIcon('volume_jpy') + '</th>' +
@@ -365,6 +400,7 @@ function renderDashboard() {
             '<td><a href="https://www.tradingview.com/chart/?symbol=MEXC%3A' + d.symbol + '" target="_blank" style="color:#4fc3f7;text-decoration:none;font-weight:bold" onclick="event.stopPropagation()">' + d.symbol_display + '</a></td>' +
             '<td><span class="signal-badge signal-' + d.signal_1d + '">' + d.signal_label_1d + '</span></td>' +
             '<td><span class="signal-badge signal-' + d.signal_4h + '">' + d.signal_label_4h + '</span></td>' +
+            '<td>' + renderFlagBadges(d.flags_1d || {}) + '</td>' +
             '<td>' + formatPrice(d.price) + '</td>' +
             '<td>' + (d.market_cap_jpy ? formatJPY(d.market_cap_jpy) : '-') + '</td>' +
             '<td>' + formatJPY(d.volume_jpy) + '</td>' +
@@ -374,11 +410,6 @@ function renderDashboard() {
     });
 
     html += '</tbody></table>';
-    html += '<h2 class="section-title">📈 個別チャート（日足・4時間足 並列表示）</h2>' +
-        '<select id="chart-select" onchange="showChart(this.value)" style="padding:8px 16px;background:#262730;color:#fafafa;border:1px solid #444;border-radius:6px;font-size:14px;margin-bottom:10px">' +
-        symbolList.map(s => '<option value="' + s + '">' + s.replace('USDT','/USDT') + '</option>').join('') + '</select>' +
-        '<div class="charts-row"><div class="chart-box" id="chart-1d"></div><div class="chart-box" id="chart-4h"></div></div>' +
-        '<div id="ma-details" class="ma-info"></div>';
 
     html += '<h2 class="section-title">🔔 注目銘柄（シグナル変化あり）</h2>';
     const alerts = allData.filter(d => ['bull_hint','bear_hint'].includes(d.signal_1d) || ['bull_hint','bear_hint'].includes(d.signal_4h));
@@ -395,6 +426,11 @@ function renderDashboard() {
     }
     html += '</div>';
     document.getElementById('main-content').innerHTML = html;
+
+    // 初回レンダリング後、デフォルトで先頭銘柄のチャートを表示（スクロールなし）
+    if (symbolList.length > 0) {
+        showChart(symbolList[0], false);
+    }
 }
 
 function formatPrice(p) {
@@ -420,6 +456,31 @@ function formatRatio(r) {
     return '<span style="color:' + color + ';font-weight:bold">' + icon + r.toFixed(2) + '%</span>';
 }
 
+function renderFlagBadges(f) {
+    if (!f || Object.keys(f).length === 0) return '';
+    let html = '';
+    // 下半身/逆下半身
+    if (f.lower_half_body) html += '<span class="sig-badge sb-half" title="下半身（陽線が5日線を上抜け）">半</span>';
+    if (f.reverse_lower_half_body) html += '<span class="sig-badge sb-half-down" title="逆下半身（陰線が5日線を下抜け）">半</span>';
+    // クチバシ（強いものを優先表示）
+    if (f.kuchibashi_strong) html += '<span class="sig-badge sb-kuchi-strong" title="強いクチバシ（5/10/20日すべて上向き）">強</span>';
+    else if (f.kuchibashi_basic) html += '<span class="sig-badge sb-kuchi" title="基本クチバシ（5日が10日を上抜け、同方向）">ク</span>';
+    if (f.rev_kuchibashi_strong) html += '<span class="sig-badge sb-kuchi-strong-down" title="強い逆クチバシ（5/10/20日すべて下向き）">強</span>';
+    else if (f.rev_kuchibashi_basic) html += '<span class="sig-badge sb-kuchi-down" title="基本逆クチバシ">ク</span>';
+    // PPP/逆PPP
+    if (f.ppp) html += '<span class="sig-badge sb-ppp" title="PPP成立（5>10>20>50>100）">P</span>';
+    if (f.reverse_ppp) html += '<span class="sig-badge sb-ppp-down" title="逆PPP成立（5<10<20<50<100）">P</span>';
+    // ものわかれ
+    if (f.monowakare_up) html += '<span class="sig-badge sb-mono" title="ものわかれ継続（上昇トレンド継続）">も</span>';
+    if (f.monowakare_down) html += '<span class="sig-badge sb-mono-down" title="ものわかれ継続（下降トレンド継続）">も</span>';
+    // 100日線
+    if (f.above_ma100) html += '<span class="sig-badge sb-100" title="100日線突破（大局上昇）">100</span>';
+    if (f.below_ma100) html += '<span class="sig-badge sb-100-down" title="100日線割れ（大局下降）">100</span>';
+    // 15本ルール
+    if (f.bars_warn) html += '<span class="sig-badge sb-warn" title="' + f.bars_count + '本継続（15本超え 利確警戒）">15</span>';
+    return html || '<span style="color:#666">-</span>';
+}
+
 async function renderChart(container, symbol, tf, tfLabel) {
     try {
         const resp = await fetch('/api/chart?symbol=' + symbol + '&timeframe=' + tf);
@@ -427,8 +488,8 @@ async function renderChart(container, symbol, tf, tfLabel) {
         if (result.error) { document.getElementById(container).innerHTML = '<p style="color:red">' + result.error + '</p>'; return; }
         const d = result.data;
         const traces = [{x:d.timestamp,open:d.open,high:d.high,low:d.low,close:d.close,type:'candlestick',name:'ローソク足'}];
-        const mc = {5:'#FF6B6B',10:'#4ECDC4',30:'#45B7D1',50:'#FFA07A',100:'#9B59B6'};
-        [5,10,30,50,100].forEach(p => {
+        const mc = {5:'#FF6B6B',10:'#4ECDC4',20:'#45B7D1',50:'#FFA07A',100:'#9B59B6'};
+        [5,10,20,50,100].forEach(p => {
             if (d['MA'+p]) traces.push({x:d.timestamp,y:d['MA'+p],type:'scatter',mode:'lines',name:'MA'+p,line:{color:mc[p],width:1.5}});
         });
         Plotly.newPlot(container, traces, {
@@ -440,7 +501,7 @@ async function renderChart(container, symbol, tf, tfLabel) {
     } catch(e) { document.getElementById(container).innerHTML = '<p style="color:red">' + e.message + '</p>'; }
 }
 
-async function showChart(symbol) {
+async function showChart(symbol, scroll) {
     const sel = document.getElementById('chart-select');
     if (sel) sel.value = symbol;
     await Promise.all([renderChart('chart-1d',symbol,'1d','日足'), renderChart('chart-4h',symbol,'4h','4時間足')]);
@@ -457,6 +518,11 @@ async function showChart(symbol) {
             '<span style="font-size:12px;color:#aaa">' + info.detail_1d + '</span><br><br>' +
             '<strong>4時間足:</strong> <span class="signal-badge signal-' + info.signal_4h + '">' + info.signal_label_4h + '</span><br>' +
             '<span style="font-size:12px;color:#aaa">' + info.detail_4h + '</span></div>';
+    }
+    // 行クリック時はチャート位置までスクロール
+    if (scroll !== false) {
+        const chartEl = document.getElementById('chart-1d');
+        if (chartEl) chartEl.scrollIntoView({behavior:'smooth', block:'start'});
     }
 }
 

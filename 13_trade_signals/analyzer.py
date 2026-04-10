@@ -253,6 +253,22 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": {5: x, 10: x, ...},
             "close": 現在値,
             "detail": "判定理由（相場流用語）",
+            "flags": {
+                "lower_half_body": bool,        # 下半身
+                "reverse_lower_half_body": bool, # 逆下半身
+                "kuchibashi_basic": bool,       # 基本クチバシ（上）
+                "kuchibashi_strong": bool,      # 強いクチバシ（上）
+                "rev_kuchibashi_basic": bool,   # 基本逆クチバシ
+                "rev_kuchibashi_strong": bool,  # 強い逆クチバシ
+                "ppp": bool,                    # PPP成立
+                "reverse_ppp": bool,            # 逆PPP成立
+                "monowakare_up": bool,          # ものわかれ（上）
+                "monowakare_down": bool,        # ものわかれ（下）
+                "above_ma100": bool,            # 100日線突破中
+                "below_ma100": bool,            # 100日線割れ中
+                "bars_warn": bool,              # 15本超え
+                "bars_count": int,              # 連続本数
+            }
         }
     """
     if len(df) < max(MA_PERIODS):
@@ -261,6 +277,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": {},
             "close": df["close"].iloc[-1] if len(df) > 0 else 0,
             "detail": "データ不足（様子見）",
+            "flags": {},
         }
 
     latest = df.iloc[-1]
@@ -282,6 +299,25 @@ def detect_signal(df: pd.DataFrame) -> dict:
 
     bars_up = count_trend_bars(df, "up")
     bars_down = count_trend_bars(df, "down")
+    bars_count = max(bars_up, bars_down)
+
+    # フラグ辞書（バッジ表示用）。numpy.boolをPython boolに変換
+    flags = {
+        "lower_half_body": bool(lhb),
+        "reverse_lower_half_body": bool(rlhb),
+        "kuchibashi_basic": bool(kuchibashi_up_basic),
+        "kuchibashi_strong": bool(kuchibashi_up_strong),
+        "rev_kuchibashi_basic": bool(kuchibashi_dn_basic),
+        "rev_kuchibashi_strong": bool(kuchibashi_dn_strong),
+        "ppp": bool(ppp),
+        "reverse_ppp": bool(rppp),
+        "monowakare_up": bool(mono_up),
+        "monowakare_down": bool(mono_down),
+        "above_ma100": bool(close > latest["MA100"]),
+        "below_ma100": bool(close < latest["MA100"]),
+        "bars_warn": bool(bars_count >= 15),
+        "bars_count": int(bars_count),
+    }
 
     # === 強い上昇: PPP成立 + 風向き上 + 加速中（価格>MA5） ===
     if ppp and wind == "up" and close > latest["MA5"]:
@@ -297,6 +333,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": reason,
+            "flags": flags,
         }
 
     # === 強い下落: 逆PPP + 風向き下 + 加速中 ===
@@ -313,6 +350,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": reason,
+            "flags": flags,
         }
 
     # === 上昇相場: MA5>MA10>MA20 かつ 風向き上以外でない ===
@@ -327,6 +365,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": reason,
+            "flags": flags,
         }
 
     # === 下落相場: MA5<MA10<MA20 かつ 風向き下以外でない ===
@@ -341,6 +380,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": reason,
+            "flags": flags,
         }
 
     # === 上昇の兆し: 下半身 or クチバシ ===
@@ -357,6 +397,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": reason,
+            "flags": flags,
         }
 
     if kuchibashi_up_strong:
@@ -365,6 +406,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": "強いクチバシ出現（5日が10日を上抜け+5/10/20日すべて上向き）",
+            "flags": flags,
         }
 
     if kuchibashi_up_basic:
@@ -373,6 +415,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": "クチバシ出現（5日が10日を上抜け+5日と10日が同方向）",
+            "flags": flags,
         }
 
     # === 下落の兆し: 逆下半身 or 逆クチバシ ===
@@ -389,6 +432,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": reason,
+            "flags": flags,
         }
 
     if kuchibashi_dn_strong:
@@ -397,6 +441,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": "強い逆クチバシ出現（5日が10日を下抜け+5/10/20日すべて下向き）",
+            "flags": flags,
         }
 
     if kuchibashi_dn_basic:
@@ -405,6 +450,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
             "ma_values": ma_values,
             "close": close,
             "detail": "逆クチバシ出現（5日が10日を下抜け+5日と10日が同方向）",
+            "flags": flags,
         }
 
     # === 横ばい ===
@@ -413,6 +459,7 @@ def detect_signal(df: pd.DataFrame) -> dict:
         "ma_values": ma_values,
         "close": close,
         "detail": "MA線が収束・交錯中（風向き待ち）",
+        "flags": flags,
     }
 
 
