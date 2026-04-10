@@ -304,7 +304,7 @@ async function loadDashboard() {
 function getFilteredData() {
     let data = allData;
     const filter = document.getElementById('signal-filter').value;
-    if (filter) data = data.filter(d => d.signal_1d === filter || d.signal_4h === filter);
+    if (filter) data = data.filter(d => d.signal_1d === filter);
     const search = (document.getElementById('search-box').value || '').toUpperCase().trim();
     if (search) data = data.filter(d => d.symbol.includes(search));
     return data;
