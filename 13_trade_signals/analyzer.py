@@ -1,9 +1,25 @@
 """
-移動平均線シグナル分析モジュール
+相場流 移動平均線シグナル分析モジュール
+========================================
 
-【暫定ロジック】
-正式版ロジックのPDF受領後に差し替え予定。
-現在はパーフェクトオーダー＋ゴールデンクロス/デッドクロスで判定。
+【5つの基本道具】
+1. 下半身（逆下半身）: トレンド転換の初動シグナル
+2. 本数: 上昇・下落は15本前後で転換（継続・終局の目安）
+3. しこり: 前回高値・安値の抵抗/サポート
+4. PPP（逆PPP）: 移動平均線の並びでトレンド判断
+5. ものわかれ: 5日線が10日線に近づくが離れる→トレンド継続
+
+【3段ロジック】風向き → 合図 → 加速
+- 風向き: 100日線との位置 + 20日線の傾き（大局）
+- 合図:   下半身/逆下半身、5日と10日の交差
+- 加速:   100日線突破、PPP成立
+
+移動平均線（相場流）:
+  MA5  = 赤（直近の勢い）
+  MA10 = 緑（少し落ち着いた勢い）
+  MA20 = 青（風向き / 約1ヶ月）
+  MA50 = 黄（中期）
+  MA100= オレンジ（大局 / 20週・5ヶ月）
 """
 
 import pandas as pd
@@ -17,16 +33,176 @@ def add_moving_averages(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# === 5つの基本道具の判定ヘルパー ===
+
+def is_ppp(row) -> bool:
+    """PPP（パーフェクトオーダー上昇）: 5 > 10 > 20 > 50 > 100"""
+    return row["MA5"] > row["MA10"] > row["MA20"] > row["MA50"] > row["MA100"]
+
+
+def is_reverse_ppp(row) -> bool:
+    """逆PPP（下降）: 5 < 10 < 20 < 50 < 100"""
+    return row["MA5"] < row["MA10"] < row["MA20"] < row["MA50"] < row["MA100"]
+
+
+def detect_lower_half_body(df: pd.DataFrame) -> bool:
+    """
+    下半身シグナル（買い）
+    条件: 5日線が横ばい or 上向き、かつ
+          ローソク足が陽線で実体の半分以上が5日線の上
+    """
+    if len(df) < 3:
+        return False
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    ma5 = latest["MA5"]
+    prev_ma5 = prev["MA5"]
+
+    # 5日線が横ばい or 上向き
+    if ma5 < prev_ma5:
+        return False
+
+    # 陽線（close > open）
+    if latest["close"] <= latest["open"]:
+        return False
+
+    # 実体の半分以上が5日線の上
+    body_mid = (latest["open"] + latest["close"]) / 2
+    return body_mid > ma5 and latest["close"] > ma5
+
+
+def detect_reverse_lower_half_body(df: pd.DataFrame) -> bool:
+    """
+    逆下半身シグナル（売り）
+    条件: 5日線が横ばい or 下向き、かつ
+          ローソク足が陰線で実体の半分以上が5日線の下
+    """
+    if len(df) < 3:
+        return False
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    ma5 = latest["MA5"]
+    prev_ma5 = prev["MA5"]
+
+    # 5日線が横ばい or 下向き
+    if ma5 > prev_ma5:
+        return False
+
+    # 陰線（close < open）
+    if latest["close"] >= latest["open"]:
+        return False
+
+    # 実体の半分以上が5日線の下
+    body_mid = (latest["open"] + latest["close"]) / 2
+    return body_mid < ma5 and latest["close"] < ma5
+
+
+def detect_monowakare(df: pd.DataFrame, direction: str = "up") -> bool:
+    """
+    ものわかれシグナル（トレンド継続）
+    上昇: 5日線が10日線に近づいた後、再び離れて上昇
+    下降: 5日線が10日線に近づいた後、再び離れて下降
+    直近5本で5日線と10日線の距離が一度縮まって広がっているかを確認
+    """
+    if len(df) < 6:
+        return False
+
+    recent = df.tail(6)
+    distances = (recent["MA5"] - recent["MA10"]).abs().tolist()
+
+    if direction == "up":
+        # 上昇トレンド中に5日>10日が継続
+        if not all(recent["MA5"].iloc[i] > recent["MA10"].iloc[i] for i in range(len(recent))):
+            return False
+    else:
+        # 下降トレンド中に5日<10日が継続
+        if not all(recent["MA5"].iloc[i] < recent["MA10"].iloc[i] for i in range(len(recent))):
+            return False
+
+    # 距離が一度縮まって（min）、再び広がっている
+    min_idx = distances.index(min(distances))
+    if min_idx == 0 or min_idx == len(distances) - 1:
+        return False  # 最初 or 最後が最小なら「接近→離れる」ではない
+
+    # 最後の距離 > 最小距離（離れている）
+    return distances[-1] > distances[min_idx] * 1.1
+
+
+def detect_golden_cross(df: pd.DataFrame, fast: int = 5, slow: int = 10) -> bool:
+    """MA5がMA10をゴールデンクロス（短期合図）"""
+    if len(df) < 2:
+        return False
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+    return prev[f"MA{fast}"] <= prev[f"MA{slow}"] and latest[f"MA{fast}"] > latest[f"MA{slow}"]
+
+
+def detect_dead_cross(df: pd.DataFrame, fast: int = 5, slow: int = 10) -> bool:
+    """MA5がMA10をデッドクロス（短期合図）"""
+    if len(df) < 2:
+        return False
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
+    return prev[f"MA{fast}"] >= prev[f"MA{slow}"] and latest[f"MA{fast}"] < latest[f"MA{slow}"]
+
+
+def check_wind_direction(latest) -> str:
+    """
+    風向き判定（大局）
+    100日線との位置 + 20日線の傾き
+    Returns: "up" | "down" | "neutral"
+    """
+    close = latest["close"]
+    ma20 = latest["MA20"]
+    ma100 = latest["MA100"]
+
+    # 価格が100日線の上 → 上昇地合い
+    if close > ma100 and ma20 > ma100:
+        return "up"
+    # 価格が100日線の下 → 下降地合い
+    if close < ma100 and ma20 < ma100:
+        return "down"
+    return "neutral"
+
+
+def count_trend_bars(df: pd.DataFrame, direction: str = "up") -> int:
+    """
+    トレンドの本数を数える（15本前後で転換の目安）
+    MA5の傾きが同じ方向に連続している本数
+    """
+    if len(df) < 3:
+        return 0
+
+    count = 0
+    ma5_series = df["MA5"].tolist()
+
+    for i in range(len(ma5_series) - 1, 0, -1):
+        diff = ma5_series[i] - ma5_series[i - 1]
+        if direction == "up" and diff > 0:
+            count += 1
+        elif direction == "down" and diff < 0:
+            count += 1
+        else:
+            break
+
+    return count
+
+
+# === メインのシグナル判定 ===
+
 def detect_signal(df: pd.DataFrame) -> dict:
     """
-    最新のローソク足＋移動平均線からシグナルを判定する。
+    相場流 3段ロジックで最新のシグナルを判定する。
+    風向き → 合図 → 加速 の順に評価。
 
     Returns:
         {
             "signal": "strong_bull" | "bull" | "bull_hint" | "bear_hint" | "bear" | "strong_bear" | "sideways",
             "ma_values": {5: x, 10: x, ...},
             "close": 現在値,
-            "detail": "判定理由の説明",
+            "detail": "判定理由（相場流用語）",
         }
     """
     if len(df) < max(MA_PERIODS):
@@ -38,82 +214,135 @@ def detect_signal(df: pd.DataFrame) -> dict:
         }
 
     latest = df.iloc[-1]
-    prev = df.iloc[-2]
-
     close = latest["close"]
     ma_values = {p: latest[f"MA{p}"] for p in MA_PERIODS}
 
-    ma5 = ma_values[5]
-    ma10 = ma_values[10]
-    ma30 = ma_values[30]
-    ma50 = ma_values[50]
-    ma100 = ma_values[100]
+    # 風向き判定
+    wind = check_wind_direction(latest)
 
-    prev_ma5 = prev["MA5"]
-    prev_ma10 = prev["MA10"]
+    # 基本道具の判定
+    ppp = is_ppp(latest)
+    rppp = is_reverse_ppp(latest)
+    lhb = detect_lower_half_body(df)
+    rlhb = detect_reverse_lower_half_body(df)
+    gc = detect_golden_cross(df)
+    dc = detect_dead_cross(df)
+    mono_up = detect_monowakare(df, "up")
+    mono_down = detect_monowakare(df, "down")
 
-    # === シグナル判定ロジック（暫定版） ===
+    bars_up = count_trend_bars(df, "up")
+    bars_down = count_trend_bars(df, "down")
 
-    # 1. 強い上昇相場: 完全パーフェクトオーダー（5>10>30>50>100）かつ価格がMA5より上
-    if ma5 > ma10 > ma30 > ma50 > ma100 and close > ma5:
+    # === 強い上昇: PPP成立 + 風向き上 + 加速中（価格>MA5） ===
+    if ppp and wind == "up" and close > latest["MA5"]:
+        reason = "PPP成立（5>10>20>50>100）+ 100日線上で加速中"
+        if mono_up:
+            reason += " + ものわかれ継続"
+        if bars_up >= 10:
+            reason += f" + {bars_up}本継続"
+            if bars_up >= 15:
+                reason += "（15本超え、利確も意識）"
         return {
             "signal": "strong_bull",
             "ma_values": ma_values,
             "close": close,
-            "detail": "パーフェクトオーダー成立（MA5>10>30>50>100）＋価格がMA5の上",
+            "detail": reason,
         }
 
-    # 2. 上昇相場: 短期線が中長期線の上（5>10>30）
-    if ma5 > ma10 > ma30:
-        return {
-            "signal": "bull",
-            "ma_values": ma_values,
-            "close": close,
-            "detail": "上昇トレンド（MA5>10>30）",
-        }
-
-    # 3. 上昇の兆し: MA5がMA10をゴールデンクロス
-    if prev_ma5 <= prev_ma10 and ma5 > ma10:
-        return {
-            "signal": "bull_hint",
-            "ma_values": ma_values,
-            "close": close,
-            "detail": "MA5がMA10をゴールデンクロス（上昇転換の兆し）",
-        }
-
-    # 4. 強い下落相場: 逆パーフェクトオーダー（5<10<30<50<100）かつ価格がMA5より下
-    if ma5 < ma10 < ma30 < ma50 < ma100 and close < ma5:
+    # === 強い下落: 逆PPP + 風向き下 + 加速中 ===
+    if rppp and wind == "down" and close < latest["MA5"]:
+        reason = "逆PPP成立（5<10<20<50<100）+ 100日線下で加速中"
+        if mono_down:
+            reason += " + ものわかれ継続"
+        if bars_down >= 10:
+            reason += f" + {bars_down}本継続"
+            if bars_down >= 15:
+                reason += "（15本超え、戻し警戒）"
         return {
             "signal": "strong_bear",
             "ma_values": ma_values,
             "close": close,
-            "detail": "逆パーフェクトオーダー成立（MA5<10<30<50<100）＋価格がMA5の下",
+            "detail": reason,
         }
 
-    # 5. 下落相場: 短期線が中長期線の下（5<10<30）
-    if ma5 < ma10 < ma30:
+    # === 上昇相場: MA5>MA10>MA20 かつ 風向き上以外でない ===
+    if latest["MA5"] > latest["MA10"] > latest["MA20"] and wind != "down":
+        reason = "上昇トレンド（5>10>20）"
+        if close > latest["MA100"]:
+            reason += " / 100日線上"
+        if mono_up:
+            reason += " + ものわかれ継続"
+        return {
+            "signal": "bull",
+            "ma_values": ma_values,
+            "close": close,
+            "detail": reason,
+        }
+
+    # === 下落相場: MA5<MA10<MA20 かつ 風向き下以外でない ===
+    if latest["MA5"] < latest["MA10"] < latest["MA20"] and wind != "up":
+        reason = "下落トレンド（5<10<20）"
+        if close < latest["MA100"]:
+            reason += " / 100日線下"
+        if mono_down:
+            reason += " + ものわかれ継続"
         return {
             "signal": "bear",
             "ma_values": ma_values,
             "close": close,
-            "detail": "下落トレンド（MA5<10<30）",
+            "detail": reason,
         }
 
-    # 6. 下落の兆し: MA5がMA10をデッドクロス
-    if prev_ma5 >= prev_ma10 and ma5 < ma10:
+    # === 上昇の兆し: 下半身 or ゴールデンクロス ===
+    if lhb:
+        reason = "下半身出現（陽線が5日線を実体半分以上で上抜け）"
+        if gc:
+            reason += " + GC"
+        if wind == "up":
+            reason += " / 風向き上"
+        return {
+            "signal": "bull_hint",
+            "ma_values": ma_values,
+            "close": close,
+            "detail": reason,
+        }
+
+    if gc:
+        return {
+            "signal": "bull_hint",
+            "ma_values": ma_values,
+            "close": close,
+            "detail": "5日線が10日線をGC（合図発生）",
+        }
+
+    # === 下落の兆し: 逆下半身 or デッドクロス ===
+    if rlhb:
+        reason = "逆下半身出現（陰線が5日線を実体半分以上で下抜け）"
+        if dc:
+            reason += " + DC"
+        if wind == "down":
+            reason += " / 風向き下"
         return {
             "signal": "bear_hint",
             "ma_values": ma_values,
             "close": close,
-            "detail": "MA5がMA10をデッドクロス（下落転換の兆し）",
+            "detail": reason,
         }
 
-    # 7. 横ばい: 上記いずれにも該当しない
+    if dc:
+        return {
+            "signal": "bear_hint",
+            "ma_values": ma_values,
+            "close": close,
+            "detail": "5日線が10日線をDC（合図発生）",
+        }
+
+    # === 横ばい ===
     return {
         "signal": "sideways",
         "ma_values": ma_values,
         "close": close,
-        "detail": "MA線が交錯中（方向感なし）",
+        "detail": "MA線が収束・交錯中（風向き待ち）",
     }
 
 
@@ -125,12 +354,12 @@ def analyze_symbol(df: pd.DataFrame) -> dict:
     df = add_moving_averages(df)
     signal = detect_signal(df)
 
-    # トレンド強度: MA5とMA30の乖離率（%）
+    # トレンド強度: MA5とMA20の乖離率（%）
     if signal["ma_values"]:
         ma5 = signal["ma_values"].get(5, 0)
-        ma30 = signal["ma_values"].get(30, 0)
-        if ma30 and ma30 != 0:
-            signal["trend_strength"] = round((ma5 - ma30) / ma30 * 100, 2)
+        ma20 = signal["ma_values"].get(20, 0)
+        if ma20 and ma20 != 0:
+            signal["trend_strength"] = round((ma5 - ma20) / ma20 * 100, 2)
         else:
             signal["trend_strength"] = 0.0
     else:
@@ -141,41 +370,33 @@ def analyze_symbol(df: pd.DataFrame) -> dict:
 
 def check_exit_signal(df: pd.DataFrame, position: str) -> dict | None:
     """
-    利確・撤退シグナルを判定する。（暫定版）
+    利確・撤退シグナルを判定する。
 
-    Args:
-        df: MA付きローソク足データ
-        position: "long" or "short"
-
-    Returns:
-        利確シグナルがあれば辞書、なければNone
+    相場流の利確ロジック:
+    - ロング: 逆下半身 or MA5がMA10をDC、または本数が15本超え
+    - ショート: 下半身 or MA5がMA10をGC、または本数が15本超え
     """
     if len(df) < max(MA_PERIODS):
         return None
 
     df = add_moving_averages(df)
-    latest = df.iloc[-1]
-    prev = df.iloc[-2]
-
-    ma5 = latest["MA5"]
-    ma10 = latest["MA10"]
-    prev_ma5 = prev["MA5"]
-    prev_ma10 = prev["MA10"]
 
     if position == "long":
-        # ロング利確: MA5がMA10をデッドクロス
-        if prev_ma5 >= prev_ma10 and ma5 < ma10:
-            return {
-                "action": "利確推奨",
-                "reason": "MA5がMA10をデッドクロス（上昇トレンド終了の兆し）",
-            }
+        if detect_reverse_lower_half_body(df):
+            return {"action": "利確推奨", "reason": "逆下半身出現（上昇トレンド終了の初動）"}
+        if detect_dead_cross(df):
+            return {"action": "利確推奨", "reason": "5日線が10日線をDC"}
+        bars = count_trend_bars(df, "up")
+        if bars >= 15:
+            return {"action": "利確警戒", "reason": f"上昇が{bars}本継続（15本ルール）"}
 
     elif position == "short":
-        # ショート利確: MA5がMA10をゴールデンクロス
-        if prev_ma5 <= prev_ma10 and ma5 > ma10:
-            return {
-                "action": "利確推奨",
-                "reason": "MA5がMA10をゴールデンクロス（下落トレンド終了の兆し）",
-            }
+        if detect_lower_half_body(df):
+            return {"action": "利確推奨", "reason": "下半身出現（下落トレンド終了の初動）"}
+        if detect_golden_cross(df):
+            return {"action": "利確推奨", "reason": "5日線が10日線をGC"}
+        bars = count_trend_bars(df, "down")
+        if bars >= 15:
+            return {"action": "利確警戒", "reason": f"下落が{bars}本継続（15本ルール）"}
 
     return None

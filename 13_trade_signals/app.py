@@ -124,7 +124,7 @@ def load_data(top_n=TOP_N_SYMBOLS):
             "change_pct": info.get("priceChangePercent", 0),
             "ma5": sig_1d["ma_values"].get(5, 0),
             "ma10": sig_1d["ma_values"].get(10, 0),
-            "ma30": sig_1d["ma_values"].get(30, 0),
+            "ma20": sig_1d["ma_values"].get(20, 0),
             "ma50": sig_1d["ma_values"].get(50, 0),
             "ma100": sig_1d["ma_values"].get(100, 0),
         })
@@ -236,7 +236,7 @@ HTML_TEMPLATE = """
     <div id="main-content"><div class="loading">📡 データ取得中...（初回は2〜3分かかります）</div></div>
     <div class="footer">
         ⚠️ このツールは投資助言ではありません。投資判断は自己責任でお願いします。<br>
-        📌 ロジックは暫定版です。正式版ロジックのPDF受領後に差し替えます。
+        📌 ロジック: 相場流5つの道具（下半身/本数/しこり/PPP/ものわかれ）+ 3段ロジック（風向き→合図→加速）
     </div>
 <script>
 let allData = [];
@@ -450,7 +450,7 @@ async function showChart(symbol) {
             '<div><strong>移動平均線（日足）:</strong><ul>' +
             '<li style="color:#FF6B6B">MA5: ' + formatPrice(info.ma5) + '</li>' +
             '<li style="color:#4ECDC4">MA10: ' + formatPrice(info.ma10) + '</li>' +
-            '<li style="color:#45B7D1">MA30: ' + formatPrice(info.ma30) + '</li>' +
+            '<li style="color:#45B7D1">MA20（風向き）: ' + formatPrice(info.ma20) + '</li>' +
             '<li style="color:#FFA07A">MA50: ' + formatPrice(info.ma50) + '</li>' +
             '<li style="color:#9B59B6">MA100: ' + formatPrice(info.ma100) + '</li></ul></div>' +
             '<div><strong>日足:</strong> <span class="signal-badge signal-' + info.signal_1d + '">' + info.signal_label_1d + '</span><br>' +
