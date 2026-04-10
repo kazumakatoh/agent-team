@@ -42,11 +42,32 @@ cache = {
     "data": None,
     "klines_1d": None,
     "klines_4h": None,
+    "chart_data_1d": {},  # 事前計算済みチャートデータ（銘柄 -> dict）
+    "chart_data_4h": {},
     "last_update": None,
     "loading": False,
     "error": None,
     "jpy_rate": None,
 }
+
+
+def build_chart_data(df: pd.DataFrame) -> dict:
+    """ローソク足DataFrameからフロント用のチャートデータを構築"""
+    if df is None or df.empty:
+        return None
+    df = add_moving_averages(df)
+    data = {
+        "timestamp": df["timestamp"].astype(str).tolist(),
+        "open": df["open"].tolist(),
+        "high": df["high"].tolist(),
+        "low": df["low"].tolist(),
+        "close": df["close"].tolist(),
+    }
+    for p in MA_PERIODS:
+        col = f"MA{p}"
+        if col in df.columns:
+            data[col] = [None if pd.isna(v) else v for v in df[col].tolist()]
+    return data
 cache_lock = Lock()
 
 
@@ -147,10 +168,17 @@ def refresh_cache(top_n=TOP_N_SYMBOLS):
 
     try:
         results, klines_1d, klines_4h, jpy_rate = load_data(top_n)
+        # チャートデータを事前計算
+        print(f"=== チャートデータを事前構築中... ===")
+        chart_data_1d = {s: build_chart_data(df) for s, df in klines_1d.items()}
+        chart_data_4h = {s: build_chart_data(df) for s, df in klines_4h.items()}
+        print(f"=== 事前構築完了: {len(chart_data_1d)}銘柄 ===")
         with cache_lock:
             cache["data"] = results
             cache["klines_1d"] = klines_1d
             cache["klines_4h"] = klines_4h
+            cache["chart_data_1d"] = chart_data_1d
+            cache["chart_data_4h"] = chart_data_4h
             cache["jpy_rate"] = jpy_rate
             cache["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
@@ -259,6 +287,8 @@ let allData = [];
 let symbolList = [];
 let sortCol = '';
 let sortAsc = true;
+let chartCache = {};  // 'SYMBOL_tf' -> 描画データ
+let dataVersion = 0;  // データ更新時にキャッシュを無効化するためのバージョン
 
 async function refreshData() {
     const btn = document.getElementById('refresh-btn');
@@ -309,11 +339,20 @@ async function loadDashboard() {
             }
             refreshData(); return;
         }
+        // データ更新を検知したらキャッシュを無効化
+        const newLastUpdate = result.last_update;
+        const prevLastUpdate = document.getElementById('last-update').textContent;
+        if (newLastUpdate && newLastUpdate !== prevLastUpdate && prevLastUpdate !== '--') {
+            chartCache = {};
+            dataVersion++;
+        }
         allData = result.data;
         symbolList = allData.map(d => d.symbol);
-        document.getElementById('last-update').textContent = result.last_update || '--';
+        document.getElementById('last-update').textContent = newLastUpdate || '--';
         if (result.jpy_rate) document.getElementById('jpy-rate').textContent = result.jpy_rate.toFixed(2) + '円';
         renderDashboard();
+        // バックグラウンドで全銘柄のチャートを先読み
+        preloadCharts();
     } catch(e) { document.getElementById('main-content').innerHTML = '<div class="loading">❌ ' + e.message + '</div>'; }
 }
 
@@ -481,12 +520,22 @@ function renderFlagBadges(f) {
     return html || '<span style="color:#666">-</span>';
 }
 
-async function renderChart(container, symbol, tf, tfLabel) {
+async function fetchChartData(symbol, tf) {
+    const key = symbol + '_' + tf + '_v' + dataVersion;
+    if (chartCache[key]) return chartCache[key];
     try {
         const resp = await fetch('/api/chart?symbol=' + symbol + '&timeframe=' + tf);
         const result = await resp.json();
-        if (result.error) { document.getElementById(container).innerHTML = '<p style="color:red">' + result.error + '</p>'; return; }
-        const d = result.data;
+        if (result.error) return null;
+        chartCache[key] = result.data;
+        return result.data;
+    } catch(e) { return null; }
+}
+
+async function renderChart(container, symbol, tf, tfLabel) {
+    try {
+        const d = await fetchChartData(symbol, tf);
+        if (!d) { document.getElementById(container).innerHTML = '<p style="color:red">データ取得失敗</p>'; return; }
         const traces = [{x:d.timestamp,open:d.open,high:d.high,low:d.low,close:d.close,type:'candlestick',name:'ローソク足'}];
         const mc = {5:'#FF6B6B',10:'#4ECDC4',20:'#45B7D1',50:'#FFA07A',100:'#9B59B6'};
         [5,10,20,50,100].forEach(p => {
@@ -499,6 +548,21 @@ async function renderChart(container, symbol, tf, tfLabel) {
             height:450, margin:{l:50,r:10,t:35,b:30}, legend:{orientation:'h',y:-0.15}
         }, {responsive:true});
     } catch(e) { document.getElementById(container).innerHTML = '<p style="color:red">' + e.message + '</p>'; }
+}
+
+// バックグラウンドで全銘柄のチャートデータを一括先読み
+async function preloadCharts() {
+    const startVersion = dataVersion;
+    try {
+        const resp = await fetch('/api/charts_bulk');
+        if (startVersion !== dataVersion) return;  // 取得中に更新があれば破棄
+        const result = await resp.json();
+        const c1d = result.chart_1d || {};
+        const c4h = result.chart_4h || {};
+        for (const sym in c1d) chartCache[sym + '_1d_v' + dataVersion] = c1d[sym];
+        for (const sym in c4h) chartCache[sym + '_4h_v' + dataVersion] = c4h[sym];
+        console.log('チャート先読み完了:', Object.keys(c1d).length + '銘柄');
+    } catch(e) { console.warn('先読み失敗:', e); }
 }
 
 async function showChart(symbol, scroll) {
@@ -561,40 +625,42 @@ def api_refresh():
     return jsonify({"status": "started"})
 
 
+@app.route("/api/charts_bulk")
+def api_charts_bulk():
+    """
+    全銘柄のチャートデータを一括取得（先読み用）。
+    ネットワーク往復を減らし、一度の呼び出しで全て取得できる。
+    """
+    with cache_lock:
+        chart_1d = cache.get("chart_data_1d") or {}
+        chart_4h = cache.get("chart_data_4h") or {}
+    return jsonify({
+        "chart_1d": chart_1d,
+        "chart_4h": chart_4h,
+    })
+
+
 @app.route("/api/chart")
 def api_chart():
     symbol = request.args.get("symbol")
     tf = request.args.get("timeframe", "1d")
 
+    # 事前計算済みデータから即座に返す（高速）
     with cache_lock:
-        klines = cache.get("klines_1d") if tf == "1d" else cache.get("klines_4h")
+        chart_cache = cache.get("chart_data_1d") if tf == "1d" else cache.get("chart_data_4h")
+        if chart_cache and symbol in chart_cache:
+            return jsonify({"data": chart_cache[symbol]})
 
-    if not klines or symbol not in klines:
-        try:
-            df = get_klines(symbol, TIMEFRAMES[tf])
-        except Exception as e:
-            return jsonify({"error": str(e)})
-    else:
-        df = klines[symbol]
+    # キャッシュにない場合は動的に取得（フォールバック）
+    try:
+        df = get_klines(symbol, TIMEFRAMES[tf])
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
     if df.empty:
         return jsonify({"error": "データなし"})
 
-    df = add_moving_averages(df)
-
-    data = {
-        "timestamp": df["timestamp"].astype(str).tolist(),
-        "open": df["open"].tolist(),
-        "high": df["high"].tolist(),
-        "low": df["low"].tolist(),
-        "close": df["close"].tolist(),
-    }
-    for p in MA_PERIODS:
-        col = f"MA{p}"
-        if col in df.columns:
-            # NaNをNoneに変換（JSONでnullになる）
-            data[col] = [None if pd.isna(v) else v for v in df[col].tolist()]
-
+    data = build_chart_data(df)
     return jsonify({"data": data})
 
 
