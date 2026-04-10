@@ -100,6 +100,11 @@ def load_data(top_n=TOP_N_SYMBOLS):
             avg_vol = df_1d.tail(30)["volume"].mean()
             avg_volume_30d_jpy = avg_vol * price * jpy_rate
 
+        market_cap_usd = market_caps.get(symbol, 0)
+        market_cap_jpy = market_cap_usd * jpy_rate
+        # 出来高/時価総額 回転率(%) = 24h出来高 / 時価総額 × 100
+        volume_ratio = (volume_usdt / market_cap_usd * 100) if market_cap_usd > 0 else 0
+
         results.append({
             "symbol": symbol,
             "symbol_display": symbol.replace("USDT", "/USDT"),
@@ -112,7 +117,8 @@ def load_data(top_n=TOP_N_SYMBOLS):
             "detail_4h": sig_4h["detail"],
             "signal_1d_order": signal_order.index(sig_1d["signal"]) if sig_1d["signal"] in signal_order else 99,
             "signal_4h_order": signal_order.index(sig_4h["signal"]) if sig_4h["signal"] in signal_order else 99,
-            "market_cap_jpy": market_caps.get(symbol, 0) * jpy_rate,
+            "market_cap_jpy": market_cap_jpy,
+            "volume_ratio": volume_ratio,
             "volume_jpy": volume_jpy,
             "avg_volume_30d_jpy": avg_volume_30d_jpy,
             "change_pct": info.get("priceChangePercent", 0),
@@ -348,6 +354,7 @@ function renderDashboard() {
         '<th onclick="onSort(&quot;price&quot;)">現在値' + sortIcon('price') + '</th>' +
         '<th onclick="onSort(&quot;market_cap_jpy&quot;)">時価総額(円)' + sortIcon('market_cap_jpy') + '</th>' +
         '<th onclick="onSort(&quot;volume_jpy&quot;)">24h出来高(円)' + sortIcon('volume_jpy') + '</th>' +
+        '<th onclick="onSort(&quot;volume_ratio&quot;)" title="24h出来高÷時価総額。10%以上=非常に好条件、5%前後=良好、1%以下=効率低">回転率(%)' + sortIcon('volume_ratio') + '</th>' +
         '<th onclick="onSort(&quot;avg_volume_30d_jpy&quot;)">30日平均/日(円)' + sortIcon('avg_volume_30d_jpy') + '</th>' +
         '<th onclick="onSort(&quot;change_pct&quot;)">24h変動(%)' + sortIcon('change_pct') + '</th>' +
     '</tr></thead><tbody>';
@@ -361,6 +368,7 @@ function renderDashboard() {
             '<td>' + formatPrice(d.price) + '</td>' +
             '<td>' + (d.market_cap_jpy ? formatJPY(d.market_cap_jpy) : '-') + '</td>' +
             '<td>' + formatJPY(d.volume_jpy) + '</td>' +
+            '<td>' + formatRatio(d.volume_ratio) + '</td>' +
             '<td>' + formatJPY(d.avg_volume_30d_jpy) + '</td>' +
             '<td class="' + cc + '">' + (d.change_pct >= 0 ? '+' : '') + d.change_pct.toFixed(2) + '%</td></tr>';
     });
@@ -399,6 +407,17 @@ function formatJPY(v) {
     if (v >= 1e8) return (v/1e8).toFixed(1) + '億円';
     if (v >= 1e4) return (v/1e4).toFixed(0) + '万円';
     return Math.round(v).toLocaleString() + '円';
+}
+
+function formatRatio(r) {
+    if (!r || r === 0) return '-';
+    let color = '#888';
+    let icon = '';
+    if (r >= 10) { color = '#00c853'; icon = '🟢 '; }       // 非常に好条件
+    else if (r >= 5) { color = '#4fc3f7'; icon = '🔵 '; }   // 通常OK
+    else if (r >= 1) { color = '#ffd600'; icon = '🟡 '; }   // やや低い
+    else { color = '#ff6b6b'; icon = '🔴 '; }               // 低い
+    return '<span style="color:' + color + ';font-weight:bold">' + icon + r.toFixed(2) + '%</span>';
 }
 
 async function renderChart(container, symbol, tf, tfLabel) {
