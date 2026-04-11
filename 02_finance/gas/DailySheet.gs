@@ -90,12 +90,71 @@ function syncWithDateRange() {
 
 /**
  * 期間指定でMFデータをDailyに同期（ダイアログから呼ばれる）
+ * 日付が逆順の場合は自動で入れ替える
+ * 会計年度をまたぐ場合は自動で分割して取得する
  */
 function syncDateRangeToDaily(dateFrom, dateTo) {
-  syncToDaily_(dateFrom, dateTo);
-  SpreadsheetApp.getUi().alert(
-    `✅ MFデータ同期完了\n\n・期間: ${dateFrom} 〜 ${dateTo}`
-  );
+  // 日付順序チェック（逆順なら入れ替え）
+  if (dateFrom > dateTo) {
+    const tmp = dateFrom;
+    dateFrom = dateTo;
+    dateTo = tmp;
+  }
+
+  // 会計年度をまたぐかチェック（3/1が年度境界）
+  const periods = splitByFiscalYear_(dateFrom, dateTo);
+
+  let totalInserted = 0;
+  periods.forEach(p => {
+    Logger.log(`同期: ${p.from} 〜 ${p.to}`);
+    syncToDaily_(p.from, p.to);
+  });
+
+  const msg = periods.length > 1
+    ? `✅ MFデータ同期完了\n\n${periods.length}期間に分けて取得:\n` + periods.map(p => `・${p.from} 〜 ${p.to}`).join('\n')
+    : `✅ MFデータ同期完了\n\n・期間: ${dateFrom} 〜 ${dateTo}`;
+
+  SpreadsheetApp.getUi().alert(msg);
+}
+
+/**
+ * 期間を会計年度（3/1〜翌2/末）ごとに分割する
+ * 例: 2026-01-01 〜 2026-04-30
+ *     → [{from: 2026-01-01, to: 2026-02-28}, {from: 2026-03-01, to: 2026-04-30}]
+ */
+function splitByFiscalYear_(dateFrom, dateTo) {
+  const periods = [];
+  const start = new Date(dateFrom + 'T00:00:00');
+  const end = new Date(dateTo + 'T00:00:00');
+
+  let current = new Date(start);
+
+  while (current <= end) {
+    const y = current.getFullYear();
+    const m = current.getMonth() + 1;
+
+    // 今の日付が属する会計年度の最終日（2月末）を計算
+    // 3月〜12月 → 翌年2月末が年度末
+    // 1月〜2月 → 今年2月末が年度末
+    const fyEndYear = m < 3 ? y : y + 1;
+    // 3月1日から1日引いて2月末日を取得（閏年も自動対応）
+    const fyEnd = new Date(fyEndYear, 2, 1);  // 3月1日
+    fyEnd.setDate(fyEnd.getDate() - 1);       // → 2月末日
+
+    // 今期間の終了日 = min(fyEnd, end)
+    const periodEnd = fyEnd < end ? fyEnd : end;
+
+    periods.push({
+      from: Utilities.formatDate(current, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd'),
+      to: Utilities.formatDate(periodEnd, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd')
+    });
+
+    // 次の期間の開始 = periodEnd + 1日
+    current = new Date(periodEnd);
+    current.setDate(current.getDate() + 1);
+  }
+
+  return periods;
 }
 
 /**
