@@ -44,7 +44,8 @@ const CONFIG = {
         'Reservation confirmed',
         'New reservation',
         '予約リクエストが承認されました',
-        '予約:'
+        '予約:',
+        'Booking Modified:'
       ],
       BOOKING: [
         '新しい予約',

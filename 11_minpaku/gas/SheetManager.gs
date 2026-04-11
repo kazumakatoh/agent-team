@@ -76,13 +76,23 @@ function writeReservations(reservations) {
     const existingRow = reservationIdToRow[String(r.reservationId)];
     if (existingRow) {
       if (r.status === '変更') {
+        // 元の予約受付日を保持（変更メールの受信日ではなく、最初の予約受付日を維持）
+        const originalBookedDate = sheet.getRange(existingRow, C.BOOKED_DATE).getValue();
+        if (originalBookedDate) {
+          rowData[C.BOOKED_DATE - 1] = originalBookedDate;
+        }
+        // 変更フラグは使用済みなので、書き込み時は通常の「予約」に戻す
+        rowData[C.STATUS - 1] = '予約';
+        rowData[C.NOTES - 1] = (r.notes ? r.notes + ' / ' : '') + `変更反映 ${Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd')}`;
         sheet.getRange(existingRow, 1, 1, NUM_COLS).setValues([rowData]);
-        Logger.log(`予約更新（変更）: ${r.reservationId}`);
+        Logger.log(`予約変更適用: ${r.reservationId}`);
       } else {
         // 同じ予約IDが既にある場合はスキップ（Booking.comの複数メール対策）
         Logger.log(`スキップ（予約ID重複）: ${r.reservationId}`);
       }
     } else {
+      // 新規行の場合、変更メールが先に届いたエッジケースも通常予約として扱う
+      if (r.status === '変更') rowData[C.STATUS - 1] = '予約';
       sheet.appendRow(rowData);
       reservationIdToRow[String(r.reservationId)] = sheet.getLastRow(); // 次の重複チェック用に登録
       Logger.log(`予約追加: ${r.reservationId} (${r.platform})`);

@@ -160,11 +160,12 @@ function parseAirbnbEmail(msg) {
   if (!isConfirmation) return null;
 
   try {
+    const isModified = subject.includes('Booking Modified:');
     const data = {
       emailId:     msg.getId(),
       platform:    'Airbnb',
       bookedDate:  msg.getDate(),
-      status:      '予約'
+      status:      isModified ? '変更' : '予約'
     };
 
     // 予約ID: Beds24が割り振る「Booking Ref: 8桁」を最優先、次に「予約ID: 8桁」
@@ -255,11 +256,12 @@ function parseBookingEmail(msg) {
   if (!isConfirmation) return null;
 
   try {
+    const isModified = subject.includes('Booking Modified:');
     const data = {
       emailId:   msg.getId(),
       platform:  'Booking.com',
       bookedDate: msg.getDate(),
-      status:    '予約'
+      status:    isModified ? '変更' : '予約'
     };
 
     // 予約番号：Beds24が割り振る「Booking Ref: 8桁」を最優先、次に「予約ID: 8桁」
