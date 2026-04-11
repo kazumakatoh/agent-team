@@ -77,27 +77,9 @@ function runFullUpdate() {
     const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`;
     const dateTo = Utilities.formatDate(today, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
 
-    const ss = getCfSpreadsheet();
-
-    // 1. MFデータ同期（当月）
-    const allTxns = fetchAllWalletTransactions(dateFrom, dateTo);
-    Object.entries(allTxns).forEach(([accountKey, txns]) => {
-      if (txns.length === 0) return;
-      const sheet = ss.getSheetByName(CF_CONFIG.ACCOUNTS[accountKey].dailySheet);
-      if (sheet) writeTransactionsToSheet_(sheet, txns);
-    });
-
-    // 2. 全Dailyシートの残高再計算
-    Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
-      const sheet = ss.getSheetByName(account.dailySheet);
-      if (sheet) recalculateBalances_(sheet);
-    });
-
-    // 3. 現残高シート更新
-    updateCurrentBalanceSheet_();
-
-    // 4. 日別サマリー更新
-    updateDailySummary();
+    // 1〜4. MFデータ同期（当月）→ 残高再計算 → 現残高 → 日別サマリー
+    //       syncToDaily_が全てを実行（既存MF行を削除してから再挿入するためダブらない）
+    syncToDaily_(dateFrom, dateTo);
 
     // 5. 月別シート更新（今年度の1月〜現在月）
     try {

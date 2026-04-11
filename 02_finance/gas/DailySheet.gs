@@ -100,6 +100,8 @@ function syncDateRangeToDaily(dateFrom, dateTo) {
 
 /**
  * MFデータ同期の共通処理
+ * 期間内の既存「MF」ソース行を削除してから新しいデータを挿入する
+ * （手入力・予定は削除されない）
  */
 function syncToDaily_(dateFrom, dateTo) {
   if (!isMfConnected()) {
@@ -111,15 +113,26 @@ function syncToDaily_(dateFrom, dateTo) {
   const ss = getCfSpreadsheet();
   const allTxns = fetchAllWalletTransactions(dateFrom, dateTo);
 
-  Object.entries(allTxns).forEach(([accountKey, txns]) => {
-    if (txns.length === 0) return;
-    const sheetName = CF_CONFIG.ACCOUNTS[accountKey].dailySheet;
-    const sheet = ss.getSheetByName(sheetName);
+  // 期間の Date オブジェクトを準備
+  const periodStart = new Date(dateFrom + 'T00:00:00');
+  const periodEnd = new Date(dateTo + 'T23:59:59');
+
+  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([accountKey, account]) => {
+    const sheet = ss.getSheetByName(account.dailySheet);
     if (!sheet) {
-      Logger.log(`⚠️ シート ${sheetName} が見つかりません`);
+      Logger.log(`⚠️ シート ${account.dailySheet} が見つかりません`);
       return;
     }
-    writeTransactionsToSheet_(sheet, txns);
+
+    // 期間内の既存MF行を削除（ダブり防止）
+    deleteMfRowsInPeriod_(sheet, periodStart, periodEnd);
+
+    // 新しいMFデータを挿入
+    const txns = allTxns[accountKey] || [];
+    if (txns.length > 0) {
+      writeTransactionsToSheet_(sheet, txns);
+    }
+
     recalculateBalances_(sheet);
   });
 
@@ -159,6 +172,29 @@ function writeTransactionsToSheet_(sheet, transactions) {
     if (tx.withdrawal > 0) sheet.getRange(insertRow, C.WITHDRAWAL).setValue(tx.withdrawal).setNumberFormat('#,##0');
     sheet.getRange(insertRow, C.SOURCE).setValue(tx.source);
   });
+}
+
+/**
+ * 指定期間内の「MF」ソース行を削除する（ダブり防止）
+ */
+function deleteMfRowsInPeriod_(sheet, dateFrom, dateTo) {
+  const C = CF_CONFIG.DAILY_COLS;
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= headerRows) return;
+
+  // 下から走査して削除（行番号のずれ防止）
+  for (let row = lastRow; row > headerRows; row--) {
+    const date = sheet.getRange(row, C.DATE).getValue();
+    const source = sheet.getRange(row, C.SOURCE).getValue();
+
+    if (source !== CF_CONFIG.SOURCE.MF) continue;
+    if (!(date instanceof Date)) continue;
+
+    if (date >= dateFrom && date <= dateTo) {
+      sheet.deleteRow(row);
+    }
+  }
 }
 
 /**
