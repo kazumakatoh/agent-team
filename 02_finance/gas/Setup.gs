@@ -32,6 +32,7 @@ function runSetup() {
   createMonthlySheet_(ss);
   createFixedCostSheet_(ss);
   createRealBalanceSheet_(ss);
+  createPlanMasterSheet_(ss);
   createSettingsSheet_(ss);
   createCurrentBalanceSheet_(ss);
 
@@ -192,6 +193,87 @@ function createFixedCostSheet_(ss) {
   sheet.setFrozenRows(1);
 
   Logger.log('固定費・融資シート作成完了');
+}
+
+/**
+ * 予定マスタシートを作成する
+ *
+ * 列構成:
+ *  A: 口座 (CF005/CF003/SEIBU)
+ *  B: 内容
+ *  C: 金額
+ *  D: 区分 (入/出)
+ *  E: 頻度 (monthly/bimonthly/yearly)
+ *  F: 発生日 (monthly/bimonthly: 1-31 or "last"(最終営業日) or "end"(月末日) / yearly: MM/DD形式)
+ *  G: 開始年月 (2026.01)
+ *  H: 終了年月 (2027.12)
+ *  I: 備考
+ */
+function createPlanMasterSheet_(ss) {
+  const name = '予定マスタ';
+  let sheet = ss.getSheetByName(name);
+  if (sheet) {
+    Logger.log(`${name}は既に存在します。スキップ。`);
+    return;
+  }
+
+  sheet = ss.insertSheet(name);
+
+  const headers = ['口座', '内容', '金額', '区分', '頻度', '発生日', '開始年月', '終了年月', '備考'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length)
+    .setBackground('#1a73e8').setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
+
+  // サンプル行
+  const samples = [
+    ['CF005', '家賃',           125830, '出', 'monthly', '26',    '2026.01', '2027.12', '事務所家賃'],
+    ['CF005', '役員報酬①',        50000, '出', 'monthly', '22',    '2026.01', '2027.12', ''],
+    ['CF005', '役員報酬②',        50000, '出', 'monthly', '22',    '2026.01', '2027.12', ''],
+    ['CF005', '税理士',          49895, '出', 'monthly', 'last',  '2026.01', '2027.12', '最終営業日'],
+    ['CF005', 'Amazon売上',     6000000, '入', 'monthly', '15',    '2026.01', '2027.12', 'Amazon入金1'],
+    ['CF005', 'Amazon売上',     6000000, '入', 'monthly', 'end',   '2026.01', '2027.12', 'Amazon入金2（月末）'],
+    ['SEIBU', '日本政策金融公庫', 345000, '出', 'monthly', '25',    '2026.01', '2030.02', '新企業育成'],
+    ['SEIBU', '西武信用金庫返済', 129000, '出', 'monthly', '28',    '2026.01', '2031.08', '制度融資1000万'],
+    ['CF005', 'JALカード年会費',  20167, '出', 'yearly',  '06/10', '2026.01', '2030.12', ''],
+    ['CF005', 'セゾン年会費',     22000, '出', 'yearly',  '03/15', '2026.01', '2030.12', ''],
+  ];
+
+  sheet.getRange(2, 1, samples.length, headers.length).setValues(samples);
+  sheet.getRange(2, 3, samples.length, 1).setNumberFormat('#,##0');
+
+  // 説明行
+  const noteRow = samples.length + 3;
+  sheet.getRange(noteRow, 1).setValue('【入力ガイド】').setFontWeight('bold');
+  const notes = [
+    ['口座', 'CF005=PayPay005 / CF003=PayPay003 / SEIBU=西武信金'],
+    ['金額', '0円でもOK（後から個別に変更可能）'],
+    ['区分', '入 = 入金 / 出 = 出金'],
+    ['頻度', 'monthly = 毎月 / bimonthly = 2ヶ月に1回 / yearly = 毎年'],
+    ['発生日', 'monthly/bimonthly: 1〜31 の数字、または "last"(最終営業日) / "end"(月末日) / yearly: "MM/DD" 形式'],
+    ['開始年月', '2026.01 形式'],
+    ['終了年月', '2027.12 形式'],
+  ];
+  sheet.getRange(noteRow + 1, 1, notes.length, 2).setValues(notes);
+  sheet.getRange(noteRow, 1, notes.length + 1, 2).setBackground('#f5f5f5');
+
+  // 列幅
+  sheet.setColumnWidth(1, 80);   // 口座
+  sheet.setColumnWidth(2, 180);  // 内容
+  sheet.setColumnWidth(3, 100);  // 金額
+  sheet.setColumnWidth(4, 50);   // 区分
+  sheet.setColumnWidth(5, 90);   // 頻度
+  sheet.setColumnWidth(6, 70);   // 発生日
+  sheet.setColumnWidth(7, 90);   // 開始年月
+  sheet.setColumnWidth(8, 90);   // 終了年月
+  sheet.setColumnWidth(9, 180);  // 備考
+
+  // 年月列はテキスト形式
+  sheet.getRange(2, 7, 100, 2).setNumberFormat('@');
+
+  sheet.setFrozenRows(1);
+
+  Logger.log('予定マスタシート作成完了');
 }
 
 /**

@@ -21,7 +21,8 @@ function onOpen() {
     .addItem('📅 MFデータ同期（期間指定）', 'syncWithDateRange')
     .addSeparator()
     // 入出金予定
-    .addItem('📝 入出金予定を登録', 'addPlannedTransaction')
+    .addItem('📝 入出金予定を登録（単発）', 'addPlannedTransaction')
+    .addItem('🗓️ 予定を一括展開（マスタ）', 'expandPlannedTransactions')
     .addSeparator()
     // 集計
     .addItem('📊 月次集計を更新', 'updateAllMonthlySheets')

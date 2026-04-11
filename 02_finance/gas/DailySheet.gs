@@ -183,6 +183,222 @@ function findInsertRow_(sheet, targetDate) {
 }
 
 // ==============================
+// 予定マスタからの一括展開
+// ==============================
+
+/**
+ * 予定マスタから定期予定を各Dailyシートに展開する
+ *
+ * 処理:
+ *  1. 各Dailyシートから既存の「予定」ソースの行を削除（実績は残す）
+ *  2. 予定マスタを読み込む
+ *  3. 各予定を期間内の発生日に展開してDailyシートに挿入
+ *  4. 残高再計算 + 日別サマリー更新
+ */
+function expandPlannedTransactions() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = getCfSpreadsheet();
+
+  const masterSheet = ss.getSheetByName('予定マスタ');
+  if (!masterSheet) {
+    ui.alert('❌ 予定マスタシートが見つかりません。セットアップを実行してください。');
+    return;
+  }
+
+  const result = ui.alert(
+    '予定を一括展開',
+    '予定マスタから全Dailyシートに予定を展開します。\n\n' +
+    '・既存の「予定」行は削除されます（実績は残ります）\n' +
+    '・マスタの全項目を期間内の発生日に展開します\n' +
+    '・残高と日別サマリーが自動更新されます\n\n' +
+    '実行しますか？',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (result !== ui.Button.OK) return;
+
+  // 1. 既存の予定行を削除
+  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
+    const sheet = ss.getSheetByName(account.dailySheet);
+    if (sheet) removePlannedRows_(sheet);
+  });
+
+  // 2. 予定マスタを読み込み
+  const lastRow = masterSheet.getLastRow();
+  if (lastRow < 2) {
+    ui.alert('⚠️ 予定マスタにデータがありません。');
+    return;
+  }
+
+  const masterData = masterSheet.getRange(2, 1, lastRow - 1, 9).getValues();
+  let totalInserted = 0;
+
+  // 3. 各予定を展開
+  masterData.forEach(row => {
+    const [accountKey, content, amount, type, frequency, dayStr, startYm, endYm, note] = row;
+
+    if (!accountKey || !content || !startYm || !endYm) return;
+    if (!CF_CONFIG.ACCOUNTS[accountKey]) return;
+
+    const sheet = ss.getSheetByName(CF_CONFIG.ACCOUNTS[accountKey].dailySheet);
+    if (!sheet) return;
+
+    // 各発生日に展開
+    const dates = generatePlannedDates_(String(frequency), String(dayStr), String(startYm), String(endYm));
+    dates.forEach(d => {
+      insertPlannedRow_(sheet, {
+        date: d,
+        content: String(content),
+        deposit: type === '入' ? Number(amount) || 0 : 0,
+        withdrawal: type === '出' ? Number(amount) || 0 : 0
+      });
+      totalInserted++;
+    });
+  });
+
+  // 4. 残高再計算
+  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
+    const sheet = ss.getSheetByName(account.dailySheet);
+    if (sheet) recalculateBalances_(sheet);
+  });
+
+  // 5. 現残高と日別サマリー更新
+  updateCurrentBalanceSheet_();
+  updateDailySummary();
+
+  ui.alert(`✅ 予定を展開しました\n\n・展開件数: ${totalInserted}件`);
+}
+
+/**
+ * Dailyシートから「予定」ソースの行を全て削除する
+ */
+function removePlannedRows_(sheet) {
+  const C = CF_CONFIG.DAILY_COLS;
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= headerRows) return;
+
+  // 下から走査して削除
+  for (let row = lastRow; row > headerRows + 1; row--) {
+    const source = sheet.getRange(row, C.SOURCE).getValue();
+    if (source === CF_CONFIG.SOURCE.PLANNED) {
+      sheet.deleteRow(row);
+    }
+  }
+}
+
+/**
+ * 頻度・発生日・期間から実際の日付リストを生成する
+ * @param {string} frequency - monthly/bimonthly/yearly
+ * @param {string} dayStr - 発生日（数字/last/end/MM/DD）
+ * @param {string} startYm - 開始年月 (2026.01形式)
+ * @param {string} endYm - 終了年月 (2027.12形式)
+ * @return {Array<Date>}
+ */
+function generatePlannedDates_(frequency, dayStr, startYm, endYm) {
+  const dates = [];
+  const startMatch = String(startYm).match(/^(\d{4})[\.\/](\d{1,2})$/);
+  const endMatch = String(endYm).match(/^(\d{4})[\.\/](\d{1,2})$/);
+  if (!startMatch || !endMatch) return dates;
+
+  const startY = parseInt(startMatch[1]);
+  const startM = parseInt(startMatch[2]);
+  const endY = parseInt(endMatch[1]);
+  const endM = parseInt(endMatch[2]);
+
+  if (frequency === 'yearly') {
+    // yearly: dayStrは "MM/DD" 形式
+    const ymdMatch = String(dayStr).match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+    if (!ymdMatch) return dates;
+    const mo = parseInt(ymdMatch[1]);
+    const d = parseInt(ymdMatch[2]);
+
+    for (let y = startY; y <= endY; y++) {
+      const date = new Date(y, mo - 1, d);
+      if (isWithinPeriod_(date, startY, startM, endY, endM)) {
+        dates.push(date);
+      }
+    }
+    return dates;
+  }
+
+  // monthly / bimonthly
+  const step = frequency === 'bimonthly' ? 2 : 1;
+  let y = startY, m = startM;
+
+  while (y < endY || (y === endY && m <= endM)) {
+    const date = resolvePlannedDate_(y, m, dayStr);
+    if (date) dates.push(date);
+
+    m += step;
+    while (m > 12) { m -= 12; y++; }
+  }
+
+  return dates;
+}
+
+/**
+ * 年月と発生日文字列から実際の日付を決定する
+ */
+function resolvePlannedDate_(year, month, dayStr) {
+  const s = String(dayStr).toLowerCase().trim();
+
+  // "end" or "月末" = 月末日
+  if (s === 'end' || s === '月末') {
+    return new Date(year, month, 0);  // 翌月の0日 = 当月末日
+  }
+
+  // "last" = 最終営業日
+  if (s === 'last' || s === '最終営業日') {
+    let d = new Date(year, month, 0);  // 月末日から開始
+    while (d.getDay() === 0 || d.getDay() === 6) {
+      d.setDate(d.getDate() - 1);
+    }
+    return d;
+  }
+
+  // 数字
+  const n = parseInt(s);
+  if (isNaN(n) || n < 1 || n > 31) return null;
+
+  // 月の最終日を超える場合は月末日に丸める
+  const lastDay = new Date(year, month, 0).getDate();
+  const day = Math.min(n, lastDay);
+  return new Date(year, month - 1, day);
+}
+
+/**
+ * 日付が期間内か判定
+ */
+function isWithinPeriod_(date, startY, startM, endY, endM) {
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  if (y < startY || (y === startY && m < startM)) return false;
+  if (y > endY || (y === endY && m > endM)) return false;
+  return true;
+}
+
+/**
+ * 予定行をDailyシートに挿入する（日付順）
+ */
+function insertPlannedRow_(sheet, tx) {
+  const C = CF_CONFIG.DAILY_COLS;
+  const insertRow = findInsertRow_(sheet, tx.date);
+
+  if (insertRow <= sheet.getLastRow()) {
+    sheet.insertRowBefore(insertRow);
+  }
+
+  sheet.getRange(insertRow, C.DATE).setValue(tx.date).setNumberFormat('yyyy/MM/dd');
+  sheet.getRange(insertRow, C.CONTENT).setValue(tx.content);
+  if (tx.deposit > 0) sheet.getRange(insertRow, C.DEPOSIT).setValue(tx.deposit).setNumberFormat('#,##0');
+  if (tx.withdrawal > 0) sheet.getRange(insertRow, C.WITHDRAWAL).setValue(tx.withdrawal).setNumberFormat('#,##0');
+  sheet.getRange(insertRow, C.SOURCE).setValue(CF_CONFIG.SOURCE.PLANNED);
+
+  // 薄い黄色で予定行を視覚的に区別
+  sheet.getRange(insertRow, 1, 1, 6).setBackground('#fff9c4');
+}
+
+// ==============================
 // Dailyシートのクリーンアップ
 // ==============================
 
