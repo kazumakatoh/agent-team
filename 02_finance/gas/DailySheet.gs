@@ -183,12 +183,83 @@ function findInsertRow_(sheet, targetDate) {
 }
 
 // ==============================
+// Dailyシートのクリーンアップ
+// ==============================
+
+/**
+ * 全Dailyシートから「日付なしの行」を削除する
+ * 残高の累積計算で異常値になっている時の復旧用
+ */
+function cleanupAllDailySheets() {
+  const ui = SpreadsheetApp.getUi();
+  const result = ui.alert(
+    'Dailyシートのクリーンアップ',
+    '全Dailyシート（Daily_005/Daily_003/Daily_西武）から、\n' +
+    '日付が入っていない行を削除します。\n\n' +
+    '※ 前月繰越行（2行目）は残ります。\n' +
+    '※ この操作は元に戻せません。',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (result !== ui.Button.OK) return;
+
+  const ss = getCfSpreadsheet();
+  let totalDeleted = 0;
+
+  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
+    const sheet = ss.getSheetByName(account.dailySheet);
+    if (!sheet) return;
+    const deleted = cleanupDailySheet_(sheet);
+    totalDeleted += deleted;
+    Logger.log(`${account.dailySheet}: ${deleted}行削除`);
+  });
+
+  // 残高再計算
+  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
+    const sheet = ss.getSheetByName(account.dailySheet);
+    if (sheet) recalculateBalances_(sheet);
+  });
+
+  // 現残高と日別サマリー更新
+  updateCurrentBalanceSheet_();
+  updateDailySummary();
+
+  ui.alert(`✅ クリーンアップ完了\n\n合計 ${totalDeleted}行を削除しました。`);
+}
+
+/**
+ * 1つのDailyシートから日付がない行を削除する
+ * @return {number} 削除した行数
+ */
+function cleanupDailySheet_(sheet) {
+  const C = CF_CONFIG.DAILY_COLS;
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= headerRows + 1) return 0;
+
+  // 下から走査（削除で行番号がずれるため）
+  // 2行目（前月繰越）は残す
+  let deleted = 0;
+  for (let row = lastRow; row > headerRows + 1; row--) {
+    const date = sheet.getRange(row, C.DATE).getValue();
+    if (!(date instanceof Date)) {
+      sheet.deleteRow(row);
+      deleted++;
+    }
+  }
+  return deleted;
+}
+
+// ==============================
 // 残高計算
 // ==============================
 
 /**
  * Dailyシートの残高を上から再計算する
  * 1行目に前月繰越（残高のみ）がある場合、それを起点にする
+ *
+ * 異常行の自動クリーンアップ:
+ * - 日付なしの行 → 残高をクリア
+ * - 日付あり・入出金なしの行 → 累積残高を表示
  */
 function recalculateBalances_(sheet) {
   const C = CF_CONFIG.DAILY_COLS;
@@ -197,6 +268,7 @@ function recalculateBalances_(sheet) {
   if (lastRow <= headerRows) return;
 
   const numRows = lastRow - headerRows;
+  const dates = sheet.getRange(headerRows + 1, C.DATE, numRows, 1).getValues();
   const deposits = sheet.getRange(headerRows + 1, C.DEPOSIT, numRows, 1).getValues();
   const withdrawals = sheet.getRange(headerRows + 1, C.WITHDRAWAL, numRows, 1).getValues();
   const balances = sheet.getRange(headerRows + 1, C.BALANCE, numRows, 1).getValues();
@@ -207,14 +279,28 @@ function recalculateBalances_(sheet) {
   for (let i = 0; i < numRows; i++) {
     const dep = Number(deposits[i][0]) || 0;
     const wth = Number(withdrawals[i][0]) || 0;
+    const date = dates[i][0];
+    const hasDate = date instanceof Date;
+    const balanceCell = sheet.getRange(headerRows + 1 + i, C.BALANCE);
 
-    // 前月繰越行（入出金なし・残高のみ）はスキップ
-    if (i === 0 && dep === 0 && wth === 0 && balance > 0) continue;
+    // 前月繰越行（最初の行・日付あり・入出金なし・残高あり）はスキップ
+    if (i === 0 && hasDate && dep === 0 && wth === 0 && balance > 0) continue;
 
-    if (dep === 0 && wth === 0) continue;
+    // 日付なしの行は残高をクリア
+    if (!hasDate) {
+      balanceCell.setValue('');
+      continue;
+    }
 
+    // 日付あり・入出金なしの行 → 累積残高を表示
+    if (dep === 0 && wth === 0) {
+      balanceCell.setValue(balance).setNumberFormat('#,##0');
+      continue;
+    }
+
+    // 通常の入出金行: 残高を累積計算
     balance = balance + dep - wth;
-    sheet.getRange(headerRows + 1 + i, C.BALANCE).setValue(balance).setNumberFormat('#,##0');
+    balanceCell.setValue(balance).setNumberFormat('#,##0');
   }
 
   // アラート色付け（PayPay 005のみ）
