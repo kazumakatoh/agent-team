@@ -3,7 +3,7 @@
  * 株式会社LEVEL1 資金繰り管理
  *
  * ■ 定期実行トリガー設定（setupTriggers() を1度だけ実行してください）
- *   - dailyCashFlowCheck() : 毎朝7時実行（MF同期＋アラートチェック）
+ *   - dailyCashFlowCheck() : 毎朝7時実行（全シート一括更新）
  */
 
 // ==============================
@@ -16,21 +16,16 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('💰 CF管理')
-    // MFデータ同期
-    .addItem('🔄 MFデータ同期（当月）', 'syncCurrentMonth')
-    .addItem('📅 MFデータ同期（期間指定）', 'syncWithDateRange')
+    // メイン: 一括更新
+    .addItem('🚀 最新情報に一括更新', 'runFullUpdate')
     .addSeparator()
-    // 入出金予定
-    .addItem('📝 入出金予定を登録（単発）', 'addPlannedTransaction')
-    .addItem('🗓️ 予定を一括展開（マスタ）', 'expandPlannedTransactions')
+    // 予定管理
+    .addItem('📝 単発予定を登録', 'addPlannedTransaction')
+    .addItem('🗓️ 予定マスタから一括展開', 'expandPlannedTransactions')
     .addSeparator()
-    // 集計
-    .addItem('📊 月次集計を更新', 'updateAllMonthlySheets')
-    .addItem('📅 日別サマリーを更新', 'updateDailySummary')
-    .addItem('💰 実口座残高を更新', 'updateRealBalance')
-    .addItem('🧹 Dailyシートをクリーンアップ', 'cleanupAllDailySheets')
-    .addItem('💹 残高サマリー', 'showBalanceSummary')
-    .addItem('⚠️ アラートチェック', 'checkCashOutRisk')
+    // 過去データ取込
+    .addItem('📅 過去データを取込（期間指定）', 'syncWithDateRange')
+    .addItem('💼 実口座残高を個別更新', 'updateRealBalance')
     .addSeparator()
     // MF連携
     .addSubMenu(SpreadsheetApp.getUi().createMenu('🔗 MF連携')
@@ -40,10 +35,136 @@ function onOpen() {
       .addItem('リダイレクトURIを表示', 'showRedirectUri')
     )
     .addSeparator()
-    // セットアップ
-    .addItem('⚙️ 初期セットアップ', 'runSetup')
-    .addItem('⏰ 定期実行トリガー設定', 'setupTriggers')
+    // 管理
+    .addSubMenu(SpreadsheetApp.getUi().createMenu('⚙️ 管理')
+      .addItem('初期セットアップ', 'runSetup')
+      .addItem('Dailyシートをクリーンアップ', 'cleanupAllDailySheets')
+      .addItem('定期実行トリガー設定', 'setupTriggers')
+    )
     .addToUi();
+}
+
+// ==============================
+// 一括更新（メインボタン）
+// ==============================
+
+/**
+ * 今日時点の最新情報に全シートを一括更新する
+ *
+ * 処理内容:
+ *  1. MFから当月データ取得 → 各Daily_XXXに反映
+ *  2. 全Dailyシートの残高再計算
+ *  3. 現残高シート更新
+ *  4. 日別サマリー更新
+ *  5. 月別シート更新（今年度）
+ *  6. 実口座残高更新（当月のみMF API）
+ *  7. アラートチェック
+ */
+function runFullUpdate() {
+  const ui = SpreadsheetApp.getUi();
+
+  if (!isMfConnected()) {
+    ui.alert('❌ MF未連携です。\n\nメニュー → MF連携 → MF連携開始 を実行してください。');
+    return;
+  }
+
+  const startTime = new Date();
+
+  try {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1;
+    const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`;
+    const dateTo = Utilities.formatDate(today, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
+
+    const ss = getCfSpreadsheet();
+
+    // 1. MFデータ同期（当月）
+    const allTxns = fetchAllWalletTransactions(dateFrom, dateTo);
+    Object.entries(allTxns).forEach(([accountKey, txns]) => {
+      if (txns.length === 0) return;
+      const sheet = ss.getSheetByName(CF_CONFIG.ACCOUNTS[accountKey].dailySheet);
+      if (sheet) writeTransactionsToSheet_(sheet, txns);
+    });
+
+    // 2. 全Dailyシートの残高再計算
+    Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
+      const sheet = ss.getSheetByName(account.dailySheet);
+      if (sheet) recalculateBalances_(sheet);
+    });
+
+    // 3. 現残高シート更新
+    updateCurrentBalanceSheet_();
+
+    // 4. 日別サマリー更新
+    updateDailySummary();
+
+    // 5. 月別シート更新（今年度の1月〜現在月）
+    try {
+      updateMonthlySheet(year, 1, year, month);
+    } catch (e) {
+      Logger.log(`月別シート更新エラー: ${e.message}`);
+    }
+
+    // 6. 実口座残高更新（当月）
+    try {
+      updateRealBalanceMonth_(year, month);
+    } catch (e) {
+      Logger.log(`実口座残高更新エラー: ${e.message}`);
+    }
+
+    // 7. アラートチェック
+    const alerts = checkCashOutRisk();
+    const alertMsg = (alerts && alerts.length > 0)
+      ? `\n\n⚠️ ${alerts.length}件のアラートがあります`
+      : '\n\n🟢 キャッシュアウトリスクなし';
+
+    const elapsed = Math.round((new Date() - startTime) / 1000);
+
+    ui.alert(
+      `✅ 最新情報に更新しました\n\n` +
+      `・MFデータ同期: ${year}年${month}月\n` +
+      `・Daily各口座: 残高再計算\n` +
+      `・日別サマリー: 更新\n` +
+      `・月別: ${year}年1月〜${month}月\n` +
+      `・実口座残高: ${year}.${String(month).padStart(2,'0')}\n` +
+      `・現残高: 更新` +
+      alertMsg +
+      `\n\n処理時間: ${elapsed}秒`
+    );
+
+  } catch (e) {
+    ui.alert(`❌ エラーが発生しました\n\n${e.message}`);
+    Logger.log(`runFullUpdate エラー: ${e.message}\n${e.stack}`);
+  }
+}
+
+/**
+ * 実口座残高の指定月をMFから更新する（内部関数）
+ */
+function updateRealBalanceMonth_(year, month) {
+  const ss = getCfSpreadsheet();
+  const sheet = ss.getSheetByName('実口座残高');
+  if (!sheet) return;
+
+  const targetRow = findRealBalanceRow_(sheet, year, month);
+  if (targetRow === 0) return;
+
+  const lastDay = new Date(year, month, 0).getDate();
+  const bsData = mfApiRequest_('/reports/trial_balance_bs', {
+    start_date: `${year}-${String(month).padStart(2, '0')}-01`,
+    end_date: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+  });
+
+  const balanceMap = extractBalancesFromRows_(bsData.rows || []);
+
+  sheet.getRange(targetRow, 3).setValue(balanceMap['普通預金'] || 0);
+  sheet.getRange(targetRow, 4).setValue(balanceMap['売掛金'] || 0);
+  sheet.getRange(targetRow, 5).setValue(balanceMap['未払金'] || 0);
+  sheet.getRange(targetRow, 6).setValue(balanceMap['未払費用'] || 0);
+  sheet.getRange(targetRow, 7).setValue(balanceMap['預り金'] || 0);
+  sheet.getRange(targetRow, 9).setValue(balanceMap['商品'] || balanceMap['商品及び製品'] || 0);
+  sheet.getRange(targetRow, 14).setValue(balanceMap['長期借入金'] || 0);
 }
 
 // ==============================
@@ -56,13 +177,14 @@ function onOpen() {
 function setupTriggers() {
   // 既存の本システム関連トリガーを削除
   ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === 'dailyCashFlowCheck') {
+    const fn = t.getHandlerFunction();
+    if (fn === 'dailyCashFlowCheck' || fn === 'runFullUpdate') {
       ScriptApp.deleteTrigger(t);
     }
   });
 
-  // 毎朝7時: MFデータ同期＋アラートチェック
-  ScriptApp.newTrigger('dailyCashFlowCheck')
+  // 毎朝7時: 全シート一括更新
+  ScriptApp.newTrigger('runFullUpdate')
     .timeBased()
     .everyDays(1)
     .atHour(7)
@@ -72,75 +194,13 @@ function setupTriggers() {
   Logger.log('トリガー設定完了');
   SpreadsheetApp.getUi().alert(
     '✅ トリガー設定完了\n\n' +
-    '・毎朝7時: MFデータ同期＋アラートチェック\n\n' +
-    'MFから入出金データを自動取得し、\nキャッシュアウトリスクを検知します。'
+    '・毎朝7時: 全シート一括更新（MF同期+集計+アラート）'
   );
 }
 
 // ==============================
-// 手動実行ショートカット
+// 現残高シート更新
 // ==============================
-
-/**
- * MF同期 → 月次集計 → アラートチェック を一括実行
- */
-function runFullUpdate() {
-  const ui = SpreadsheetApp.getUi();
-
-  if (!isMfConnected()) {
-    ui.alert('❌ MF未連携です。\n\nメニュー → MF連携 → MF連携開始 を実行してください。');
-    return;
-  }
-
-  try {
-    // 1. 当月のMFデータ同期
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth() + 1;
-    const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`;
-    const dateTo = Utilities.formatDate(today, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
-
-    const allTxns = fetchAllWalletTransactions(dateFrom, dateTo);
-    const ss = getCfSpreadsheet();
-    const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.DAILY);
-
-    if (sheet) {
-      for (const [accountKey, txns] of Object.entries(allTxns)) {
-        if (txns.length > 0) writeTransactionsToDaily_(sheet, accountKey, txns);
-      }
-      Object.keys(CF_CONFIG.ACCOUNTS).forEach(key => recalculateBalances(key));
-      updateDailyTotals_();
-    }
-
-    // 2. 月次集計更新
-    Object.keys(CF_CONFIG.ACCOUNTS).forEach(key => {
-      updateAccountMonthlySheet(key, year);
-    });
-    updateConsolidatedMonthlySheet(year);
-
-    // 3. 現残高シート更新
-    updateCurrentBalanceSheet_();
-
-    // 4. アラートチェック
-    const alerts = checkCashOutRisk();
-
-    const alertMsg = (alerts && alerts.length > 0)
-      ? `\n\n⚠️ ${alerts.length}件のアラートがあります。`
-      : '\n\n🟢 キャッシュアウトリスクなし。';
-
-    ui.alert(
-      `✅ 一括更新完了\n\n` +
-      `・MFデータ同期: ${year}年${month}月\n` +
-      `・月次集計: 更新済み\n` +
-      `・現残高: 更新済み` +
-      alertMsg
-    );
-
-  } catch (e) {
-    ui.alert(`❌ エラーが発生しました\n\n${e.message}`);
-    Logger.log(`runFullUpdate エラー: ${e.message}\n${e.stack}`);
-  }
-}
 
 /**
  * 現残高シートを更新する
@@ -154,7 +214,6 @@ function updateCurrentBalanceSheet_() {
   let row = 2;
 
   Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
-    // 各口座のDailyシートから最新残高を取得
     const balance = getLatestBalance_(key);
 
     sheet.getRange(row, 2).setValue(balance).setNumberFormat('#,##0');

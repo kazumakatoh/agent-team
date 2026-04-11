@@ -470,12 +470,15 @@ function cleanupDailySheet_(sheet) {
 // ==============================
 
 /**
- * Dailyシートの残高を上から再計算する
- * 1行目に前月繰越（残高のみ）がある場合、それを起点にする
+ * Dailyシートの残高を数式で再構築する
+ *
+ * 最初の行（前月繰越）: 値のまま
+ * 以降の行: =前行の残高 + 当行の入金 - 当行の出金
+ *
+ * これにより、金額を手動で変更した時に自動で残高が再計算される。
  *
  * 異常行の自動クリーンアップ:
  * - 日付なしの行 → 残高をクリア
- * - 日付あり・入出金なしの行 → 累積残高を表示
  */
 function recalculateBalances_(sheet) {
   const C = CF_CONFIG.DAILY_COLS;
@@ -487,20 +490,28 @@ function recalculateBalances_(sheet) {
   const dates = sheet.getRange(headerRows + 1, C.DATE, numRows, 1).getValues();
   const deposits = sheet.getRange(headerRows + 1, C.DEPOSIT, numRows, 1).getValues();
   const withdrawals = sheet.getRange(headerRows + 1, C.WITHDRAWAL, numRows, 1).getValues();
-  const balances = sheet.getRange(headerRows + 1, C.BALANCE, numRows, 1).getValues();
 
-  // 最初の行の残高を前月繰越として使用
-  let balance = Number(balances[0][0]) || 0;
+  // 列文字（A=1, B=2, ...）
+  const depCol = 'C';   // C: 入金
+  const wthCol = 'D';   // D: 出金
+  const balCol = 'E';   // E: 残高
+
+  // 直前の有効な残高セル（数式参照用）
+  let prevBalanceRow = 0;
 
   for (let i = 0; i < numRows; i++) {
     const dep = Number(deposits[i][0]) || 0;
     const wth = Number(withdrawals[i][0]) || 0;
     const date = dates[i][0];
     const hasDate = date instanceof Date;
-    const balanceCell = sheet.getRange(headerRows + 1 + i, C.BALANCE);
+    const currentRow = headerRows + 1 + i;
+    const balanceCell = sheet.getRange(currentRow, C.BALANCE);
 
-    // 前月繰越行（最初の行・日付あり・入出金なし・残高あり）はスキップ
-    if (i === 0 && hasDate && dep === 0 && wth === 0 && balance > 0) continue;
+    // 最初の行が前月繰越行（日付あり・入出金なし・残高あり）ならスキップ（値のまま）
+    if (i === 0 && hasDate && dep === 0 && wth === 0) {
+      prevBalanceRow = currentRow;
+      continue;
+    }
 
     // 日付なしの行は残高をクリア
     if (!hasDate) {
@@ -508,15 +519,18 @@ function recalculateBalances_(sheet) {
       continue;
     }
 
-    // 日付あり・入出金なしの行 → 累積残高を表示
-    if (dep === 0 && wth === 0) {
-      balanceCell.setValue(balance).setNumberFormat('#,##0');
-      continue;
+    // 数式を設定: =前行の残高 + 入金 - 出金
+    if (prevBalanceRow === 0) {
+      // 前月繰越がまだ見つかっていない場合、入出金の差で開始
+      balanceCell.setFormula(`=IFERROR(${depCol}${currentRow},0)-IFERROR(${wthCol}${currentRow},0)`);
+    } else {
+      balanceCell.setFormula(
+        `=IFERROR(${balCol}${prevBalanceRow},0)+IFERROR(${depCol}${currentRow},0)-IFERROR(${wthCol}${currentRow},0)`
+      );
     }
+    balanceCell.setNumberFormat('#,##0');
 
-    // 通常の入出金行: 残高を累積計算
-    balance = balance + dep - wth;
-    balanceCell.setValue(balance).setNumberFormat('#,##0');
+    prevBalanceRow = currentRow;
   }
 
   // アラート色付け（PayPay 005のみ）
