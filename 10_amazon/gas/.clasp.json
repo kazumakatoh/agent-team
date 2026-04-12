@@ -4,4 +4,3 @@
   "rootDir": "."
 }
 '@ | Out-File -Encoding utf8 .clasp.json
-
