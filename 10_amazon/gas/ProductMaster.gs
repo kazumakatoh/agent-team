@@ -51,19 +51,33 @@ function importProductsFromCfSheet() {
   let priceRow = -1;
 
   for (let r = 0; r < headerData.length; r++) {
-    const firstCell = String(headerData[r][0]).trim().toLowerCase();
-    const secondCell = String(headerData[r][1]).trim().toLowerCase();
+    // 全列をチェックしてASINラベルまたはASINパターンを探す
+    for (let c = 0; c < Math.min(lastCol, 10); c++) {
+      const cellVal = String(headerData[r][c]).trim();
 
-    // ASIN行を検出
-    if (firstCell === 'asin' || secondCell === 'asin' ||
-        String(headerData[r][0]).match(/^B0[A-Z0-9]{8,}$/)) {
-      asinRow = r;
+      // 「ASIN」ラベルを検出（A〜J列のどこかに）
+      if (cellVal.toLowerCase() === 'asin' && asinRow === -1) {
+        asinRow = r;
+      }
+
+      // B0で始まるASINパターンを検出
+      if (cellVal.match(/^B0[A-Z0-9]{8,}$/) && asinRow === -1) {
+        asinRow = r;
+      }
     }
 
-    // 商品名を含む行を検出（ASINの次の行、または列ヘッダー行）
+    const firstCell = String(headerData[r][0]).trim().toLowerCase();
+    const secondCell = String(headerData[r][1]).trim().toLowerCase();
+    const thirdCell = String(headerData[r][2]).trim().toLowerCase();
+
     // 仕入単価行を検出
-    if (firstCell.includes('仕入単価') || secondCell.includes('仕入単価')) {
+    if (firstCell.includes('仕入単価') || secondCell.includes('仕入単価') || thirdCell.includes('仕入単価')) {
       priceRow = r;
+    }
+
+    // 商品名行を検出（「商品名」ラベルがある行の次）
+    if ((firstCell === '商品名' || secondCell === '商品名' || thirdCell === '商品名') && nameRow === -1) {
+      nameRow = r;
     }
   }
 
@@ -85,9 +99,9 @@ function importProductsFromCfSheet() {
         break;
       }
     }
-  } else {
-    // ASIN行の1つ上 or 下が商品名行
-    nameRow = asinRow > 0 ? asinRow - 1 : asinRow + 1;
+  } else if (nameRow === -1) {
+    // ASIN行の次の行が商品名行
+    nameRow = asinRow + 1;
   }
 
   Logger.log('ASIN行: ' + (asinRow >= 0 ? asinRow + 1 : '未検出'));
