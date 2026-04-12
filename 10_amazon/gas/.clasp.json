@@ -1,6 +1,4 @@
-@'
 {
   "scriptId": "1D5uMyRWUrPppz0D4wNy4N0ZfDO3eopFnTYn1wz7V4BqByWYr5KlaYS2k",
   "rootDir": "."
 }
-'@ | Out-File -Encoding utf8 .clasp.json
