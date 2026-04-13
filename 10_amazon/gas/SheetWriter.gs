@@ -6,6 +6,8 @@
  * メインスプレッドシートを取得
  */
 function getMainSpreadsheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (ss) return ss;
   return SpreadsheetApp.openById(getMainSpreadsheetId());
 }
 
