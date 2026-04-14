@@ -1,37 +1,58 @@
 /**
- * Amazon Dashboard - L1/L2 ダッシュボード構築
+ * Amazon Dashboard - L1/L2 ダッシュボード構築（最適化版）
  */
 
 // ===== L1 事業ダッシュボード =====
 
 function updateDashboardL1() {
+  const t0 = Date.now();
   Logger.log('===== L1 事業ダッシュボード更新開始 =====');
 
   const sheet = getOrCreateSheet(SHEET_NAMES.L1_DASHBOARD);
   sheet.clear();
 
+  // データ読み込み（シートアクセスは最小回数）
+  const t1 = Date.now();
   const dailyData = getDailyDataAll();
-  if (dailyData.length === 0) {
-    Logger.log('データなし');
-    return;
-  }
+  Logger.log('日次データ読み込み: ' + (Date.now()-t1) + 'ms (' + dailyData.length + '行)');
+
+  if (dailyData.length === 0) { Logger.log('データなし'); return; }
 
   const periods = getPeriods();
 
-  // 経費データを取得
-  const thisMonthExp = getSettlementExpenses(periods.thisMonth.start, periods.thisMonth.end);
-  const lastMonthSameDayExp = getSettlementExpenses(periods.lastMonthSameDay.start, periods.lastMonthSameDay.end);
+  // 経費データは2期間まとめて1回だけ読む
+  const t2 = Date.now();
+  const allExpenses = readAllSettlement();
+  Logger.log('経費データ読み込み: ' + (Date.now()-t2) + 'ms (' + allExpenses.length + '行)');
 
+  // 経費を期間別に集計（1パス）
+  const thisMonthExp = aggregateExpenses(allExpenses, periods.thisMonth.start, periods.thisMonth.end);
+  const lastMonthSameDayExp = aggregateExpenses(allExpenses, periods.lastMonthSameDay.start, periods.lastMonthSameDay.end);
+
+  // 日次データを期間別に事前フィルタ
+  const thisMonthDaily = dailyData.filter(d => d.date >= periods.thisMonth.start && d.date <= periods.thisMonth.end);
+  const lastMonthDaily = dailyData.filter(d => d.date >= periods.lastMonthSameDay.start && d.date <= periods.lastMonthSameDay.end);
+
+  // カテゴリ別の集計を1パスで作る
+  const t3 = Date.now();
+  const thisMonthByCategory = aggregateByCategory(thisMonthDaily, thisMonthExp);
+  const lastMonthByCategory = aggregateByCategory(lastMonthDaily, lastMonthSameDayExp);
+  Logger.log('カテゴリ集計: ' + (Date.now()-t3) + 'ms');
+
+  // 全体合計
   const totals = {
-    thisMonth: aggregateData(dailyData, periods.thisMonth.start, periods.thisMonth.end, null, thisMonthExp),
-    lastMonthSameDay: aggregateData(dailyData, periods.lastMonthSameDay.start, periods.lastMonthSameDay.end, null, lastMonthSameDayExp),
+    thisMonth: sumCategoryAggs(thisMonthByCategory),
+    lastMonthSameDay: sumCategoryAggs(lastMonthByCategory),
   };
 
+  // シート書き込み
+  const t4 = Date.now();
   writeOverallSummary(sheet, totals, periods);
-  const alertStartRow = writeCategorySummary(sheet, dailyData, periods, thisMonthExp, lastMonthSameDayExp);
-  writeAlertProducts(sheet, dailyData, periods.thisMonth, alertStartRow);
+  const alertStartRow = writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, periods);
+  writeAlertProducts(sheet, thisMonthDaily, alertStartRow);
+  Logger.log('シート書き込み: ' + (Date.now()-t4) + 'ms');
 
-  Logger.log('===== L1 完了 =====');
+  Logger.log('===== L1 完了（合計 ' + (Date.now()-t0) + 'ms）=====');
 }
 
 // ===== データ取得 =====
@@ -57,6 +78,53 @@ function getDailyDataAll() {
   }));
 }
 
+/**
+ * Settlement 全データを読み込み（1回のみ）
+ */
+function readAllSettlement() {
+  const sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  const data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+  return data.map(row => ({
+    date: row[2] instanceof Date ? Utilities.formatDate(row[2], 'Asia/Tokyo', 'yyyy-MM-dd') : String(row[2]).substring(0, 10),
+    asin: String(row[3] || '').trim(),
+    itemType: String(row[5]).trim(),
+    amount: parseFloat(row[6]) || 0,
+  }));
+}
+
+/**
+ * 既にメモリにある経費データを期間でフィルタして集計
+ */
+function aggregateExpenses(allExpenses, startDate, endDate) {
+  let commission = 0, other = 0;
+  const byAsin = {};
+
+  for (const row of allExpenses) {
+    if (!row.date || row.date < startDate || row.date > endDate) continue;
+    if (row.itemType === 'Principal' || row.itemType === 'Tax') continue;
+
+    const expense = -row.amount;
+    if (row.itemType === 'Commission') {
+      commission += expense;
+      if (row.asin) {
+        if (!byAsin[row.asin]) byAsin[row.asin] = { commission: 0, other: 0 };
+        byAsin[row.asin].commission += expense;
+      }
+    } else {
+      other += expense;
+      if (row.asin) {
+        if (!byAsin[row.asin]) byAsin[row.asin] = { commission: 0, other: 0 };
+        byAsin[row.asin].other += expense;
+      }
+    }
+  }
+
+  return { commission, other, total: commission + other, byAsin };
+}
+
 function getPeriods() {
   const today = new Date();
   const y = today.getFullYear();
@@ -66,66 +134,77 @@ function getPeriods() {
   const daysInMonth = new Date(y, m + 1, 0).getDate();
   const elapsedDays = d;
 
-  const thisMonthStart = new Date(y, m, 1);
-  const thisMonthEnd = today;
-  const lastMonthStart = new Date(y, m - 1, 1);
-  const lastMonthEnd = new Date(y, m, 0);
-  const lastMonthSameDayStart = new Date(y, m - 1, 1);
-  const lastMonthSameDayEnd = new Date(y, m - 1, Math.min(d, new Date(y, m, 0).getDate()));
-  const prevYearStart = new Date(y - 1, m, 1);
-  const prevYearEnd = new Date(y - 1, m + 1, 0);
-  const ytdStart = new Date(y, 0, 1);
-  const ytdEnd = today;
-
   const fmt = d => Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
 
   return {
-    thisMonth: { start: fmt(thisMonthStart), end: fmt(thisMonthEnd) },
-    lastMonth: { start: fmt(lastMonthStart), end: fmt(lastMonthEnd) },
-    lastMonthSameDay: { start: fmt(lastMonthSameDayStart), end: fmt(lastMonthSameDayEnd) },
-    prevYear: { start: fmt(prevYearStart), end: fmt(prevYearEnd) },
-    ytd: { start: fmt(ytdStart), end: fmt(ytdEnd) },
+    thisMonth: { start: fmt(new Date(y, m, 1)), end: fmt(today) },
+    lastMonth: { start: fmt(new Date(y, m - 1, 1)), end: fmt(new Date(y, m, 0)) },
+    lastMonthSameDay: {
+      start: fmt(new Date(y, m - 1, 1)),
+      end: fmt(new Date(y, m - 1, Math.min(d, new Date(y, m, 0).getDate()))),
+    },
+    prevYear: { start: fmt(new Date(y - 1, m, 1)), end: fmt(new Date(y - 1, m + 1, 0)) },
+    ytd: { start: fmt(new Date(y, 0, 1)), end: fmt(today) },
     daysInMonth,
     elapsedDays,
   };
 }
 
-function aggregateData(dailyData, startDate, endDate, filterFn, expenses) {
-  const filtered = dailyData.filter(d => {
-    if (!d.date || d.date < startDate || d.date > endDate) return false;
-    if (filterFn && !filterFn(d)) return false;
-    return true;
-  });
+// ===== カテゴリ別集計（1パスで全カテゴリ集計） =====
 
-  const sales = filtered.reduce((s, d) => s + d.sales, 0);
-  const cv = filtered.reduce((s, d) => s + d.cv, 0);
-  const units = filtered.reduce((s, d) => s + d.units, 0);
-  const sessions = filtered.reduce((s, d) => s + d.sessions, 0);
-  const adCost = filtered.reduce((s, d) => s + d.adCost, 0);
-  const adSales = filtered.reduce((s, d) => s + d.adSales, 0);
+/**
+ * 事前フィルタ済みの日次データから、カテゴリ別に1パスで集計
+ * @returns {Object} { category: aggregatedData }
+ */
+function aggregateByCategory(filteredDaily, expenses) {
+  const byCategory = {};
 
-  let commission = 0, otherExpense = 0;
-  if (expenses) {
-    if (filterFn) {
-      const asinsInFilter = new Set(filtered.map(d => d.asin));
-      for (const [asin, exp] of Object.entries(expenses.byAsin)) {
-        if (asinsInFilter.has(asin)) {
-          commission += exp.commission || 0;
-          otherExpense += exp.other || 0;
-        }
-      }
-    } else {
-      commission = expenses.commission;
-      otherExpense = expenses.other;
+  for (const d of filteredDaily) {
+    const cat = d.category || '(未分類)';
+    if (!byCategory[cat]) {
+      byCategory[cat] = {
+        category: cat,
+        sales: 0, cv: 0, units: 0, sessions: 0, pv: 0,
+        adCost: 0, adSales: 0,
+        asins: new Set(),
+      };
     }
+    const c = byCategory[cat];
+    c.sales += d.sales;
+    c.cv += d.cv;
+    c.units += d.units;
+    c.sessions += d.sessions;
+    c.pv += d.pv;
+    c.adCost += d.adCost;
+    c.adSales += d.adSales;
+    if (d.asin) c.asins.add(d.asin);
   }
 
-  const cogs = 0;  // TODO: CFシート連携
+  // カテゴリごとに経費を集計
+  for (const cat of Object.values(byCategory)) {
+    let commission = 0, otherExpense = 0;
+    for (const asin of cat.asins) {
+      const exp = expenses.byAsin[asin];
+      if (exp) {
+        commission += exp.commission || 0;
+        otherExpense += exp.other || 0;
+      }
+    }
+    Object.assign(cat, computeDerivedMetrics(cat, commission, otherExpense));
+  }
+
+  return byCategory;
+}
+
+function computeDerivedMetrics(base, commission, otherExpense) {
+  const sales = base.sales;
+  const adCost = base.adCost;
+  const adSales = base.adSales;
+  const cogs = 0; // TODO: CFシート連携
   const grossProfit = sales - cogs - commission - otherExpense;
   const profit = grossProfit - adCost;
 
   return {
-    sales, cv, units, sessions, adCost, adSales,
     commission, otherExpense, expense: commission + otherExpense,
     cogs, grossProfit, profit,
     costRate: sales > 0 ? cogs / sales : 0,
@@ -137,6 +216,26 @@ function aggregateData(dailyData, startDate, endDate, filterFn, expenses) {
     roas: adCost > 0 ? (sales / adCost) : 0,
     organicShare: sales > 0 ? ((sales - adSales) / sales * 100) : 0,
   };
+}
+
+function sumCategoryAggs(byCategory) {
+  const total = {
+    sales: 0, cv: 0, units: 0, sessions: 0, pv: 0,
+    adCost: 0, adSales: 0, commission: 0, otherExpense: 0,
+  };
+  for (const cat of Object.values(byCategory)) {
+    total.sales += cat.sales;
+    total.cv += cat.cv;
+    total.units += cat.units;
+    total.sessions += cat.sessions;
+    total.pv += cat.pv;
+    total.adCost += cat.adCost;
+    total.adSales += cat.adSales;
+    total.commission += cat.commission;
+    total.otherExpense += cat.otherExpense;
+  }
+  Object.assign(total, computeDerivedMetrics(total, total.commission, total.otherExpense));
+  return total;
 }
 
 // ===== 全体サマリー =====
@@ -178,24 +277,20 @@ function writeOverallSummary(sheet, totals, periods) {
   sheet.getRange(3, 1, rows.length, 1).setHorizontalAlignment('center').setFontWeight('bold');
   sheet.getRange(3, 2, rows.length, headers.length - 1).setHorizontalAlignment('right');
 
-  // 数値列: 売上(2), CV(4), 点数(5), 広告費(6), 販売手数料(7), 経費等(8), 利益(9)
   [2, 4, 5, 6, 7, 8, 9].forEach(col => {
     sheet.getRange(3, col, 3, 1).setNumberFormat('#,##0');
     sheet.getRange(7, col, 1, 1).setNumberFormat('#,##0');
   });
-  // 率列: 売上比(3), 原価率(10), 粗利率(11), 広告比率(12), 利益率(14)
   [3, 10, 11, 12, 14].forEach(col => {
     sheet.getRange(3, col, 3, 1).setNumberFormat('0.0%');
   });
-  // ROAS(13)
   sheet.getRange(3, 13, 3, 1).setNumberFormat('0.00');
-  // 前月比行
   sheet.getRange(6, 2, 1, headers.length - 1).setNumberFormat('+0.0%;-0.0%;-');
 }
 
 // ===== カテゴリ別サマリー =====
 
-function writeCategorySummary(sheet, dailyData, periods, thisMonthExp, lastMonthSameDayExp) {
+function writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, periods) {
   const startRow = 10;
   sheet.getRange(startRow, 1).setValue('━━━ カテゴリ別サマリー（当月）━━━').setFontWeight('bold').setFontSize(14);
 
@@ -203,35 +298,30 @@ function writeCategorySummary(sheet, dailyData, periods, thisMonthExp, lastMonth
   sheet.getRange(startRow + 1, 1, 1, headers.length).setValues([headers])
     .setFontWeight('bold').setBackground('#e8f0fe').setHorizontalAlignment('center');
 
-  const categories = [...new Set(dailyData.filter(d => d.category).map(d => d.category))].sort();
-  const totalSales = dailyData
-    .filter(d => d.date >= periods.thisMonth.start && d.date <= periods.thisMonth.end)
-    .reduce((s, d) => s + d.sales, 0);
+  const totalSales = Object.values(thisMonthByCategory).reduce((s, c) => s + c.sales, 0);
 
-  const catData = categories.map(cat => {
-    const agg = aggregateData(dailyData, periods.thisMonth.start, periods.thisMonth.end, d => d.category === cat, thisMonthExp);
-    const lmAgg = aggregateData(dailyData, periods.lastMonthSameDay.start, periods.lastMonthSameDay.end, d => d.category === cat, lastMonthSameDayExp);
-    return { cat, agg, lmAgg };
+  const filtered = Object.values(thisMonthByCategory)
+    .filter(c => c.sales > 0 || c.cv > 0)
+    .sort((a, b) => b.sales - a.sales);
+
+  const rows = filtered.map(c => {
+    const lm = lastMonthByCategory[c.category] || { tacos: 0, acos: 0 };
+    return [
+      c.category,
+      c.sales,
+      totalSales > 0 ? c.sales / totalSales : 0,
+      c.cv,
+      c.units,
+      c.adCost,
+      c.profit,
+      c.tacos / 100,
+      pctChangeNum(c.tacos, lm.tacos),
+      c.acos / 100,
+      pctChangeNum(c.acos, lm.acos),
+      c.roas,
+      c.profitMargin,
+    ];
   });
-
-  const filtered = catData.filter(c => c.agg.sales > 0 || c.agg.cv > 0)
-    .sort((a, b) => b.agg.sales - a.agg.sales);
-
-  const rows = filtered.map(c => [
-    c.cat,
-    c.agg.sales,
-    totalSales > 0 ? c.agg.sales / totalSales : 0,
-    c.agg.cv,
-    c.agg.units,
-    c.agg.adCost,
-    c.agg.profit,
-    c.agg.tacos / 100,
-    pctChangeNum(c.agg.tacos, c.lmAgg.tacos),
-    c.agg.acos / 100,
-    pctChangeNum(c.agg.acos, c.lmAgg.acos),
-    c.agg.roas,
-    c.agg.profitMargin,
-  ]);
 
   if (rows.length > 0) {
     const dataRow = startRow + 2;
@@ -255,20 +345,20 @@ function writeCategorySummary(sheet, dailyData, periods, thisMonthExp, lastMonth
 
 // ===== 注意商品 =====
 
-function writeAlertProducts(sheet, dailyData, period, startRow) {
+function writeAlertProducts(sheet, thisMonthDaily, startRow) {
   sheet.getRange(startRow, 1).setValue('━━━ 注意が必要な商品 ━━━').setFontWeight('bold').setFontSize(14);
   sheet.getRange(startRow + 1, 1, 1, 4).setValues([['ASIN', '商品名', 'カテゴリ', '理由']])
     .setFontWeight('bold').setBackground('#fce8e6').setHorizontalAlignment('center');
 
   const asinMap = {};
-  dailyData.filter(d => d.date >= period.start && d.date <= period.end).forEach(d => {
+  for (const d of thisMonthDaily) {
     if (!asinMap[d.asin]) {
       asinMap[d.asin] = { name: d.name, category: d.category, sales: 0, adCost: 0, adSales: 0 };
     }
     asinMap[d.asin].sales += d.sales;
     asinMap[d.asin].adCost += d.adCost;
     asinMap[d.asin].adSales += d.adSales;
-  });
+  }
 
   const alerts = [];
   for (const [asin, d] of Object.entries(asinMap)) {
@@ -294,6 +384,7 @@ function writeAlertProducts(sheet, dailyData, period, startRow) {
 // ===== L2 カテゴリ分析 =====
 
 function updateDashboardL2() {
+  const t0 = Date.now();
   const sheet = getOrCreateSheet(SHEET_NAMES.L2_CATEGORY);
   const dailyData = getDailyDataAll();
   const periods = getPeriods();
@@ -303,37 +394,49 @@ function updateDashboardL2() {
   sheet.getRange(1, 1).setValue('━━━ L2 カテゴリ分析 ━━━').setFontWeight('bold').setFontSize(14);
   sheet.getRange(1, 9).setValue('※ 当月売上上位順に表示').setFontStyle('italic').setFontColor('#888');
 
-  const categories = [...new Set(dailyData.filter(d => d.category).map(d => d.category))];
-  const catWithSales = categories.map(cat => {
-    const thisMonthSales = dailyData
-      .filter(d => d.category === cat && d.date >= periods.thisMonth.start && d.date <= periods.thisMonth.end)
-      .reduce((s, d) => s + d.sales, 0);
-    return { cat, sales: thisMonthSales };
-  }).filter(c => c.sales > 0)
-    .sort((a, b) => b.sales - a.sales);
+  // 当月売上順でカテゴリをソート
+  const thisMonthDaily = dailyData.filter(d => d.date >= periods.thisMonth.start && d.date <= periods.thisMonth.end);
+  const catSalesMap = {};
+  for (const d of thisMonthDaily) {
+    if (!d.category) continue;
+    catSalesMap[d.category] = (catSalesMap[d.category] || 0) + d.sales;
+  }
+
+  const sortedCategories = Object.entries(catSalesMap)
+    .filter(([, sales]) => sales > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat]) => cat);
+
+  // カテゴリごとにデータを事前分類
+  const dataByCategory = {};
+  for (const d of dailyData) {
+    if (!d.category) continue;
+    if (!dataByCategory[d.category]) dataByCategory[d.category] = [];
+    dataByCategory[d.category].push(d);
+  }
 
   let currentRow = 3;
-
-  catWithSales.forEach(({ cat }) => {
-    const catData = dailyData.filter(d => d.category === cat);
+  sortedCategories.forEach(cat => {
+    const catData = dataByCategory[cat] || [];
     const blockHeight = writeCategoryBlock(sheet, catData, cat, currentRow, periods);
     currentRow += blockHeight + 2;
   });
 
-  if (catWithSales.length === 0) {
+  if (sortedCategories.length === 0) {
     sheet.getRange(3, 1).setValue('当月売上のあるカテゴリがありません');
   }
+
+  Logger.log('L2 完了（' + (Date.now()-t0) + 'ms）');
 }
 
 function writeCategoryBlock(sheet, catData, category, startRow, periods) {
-  // 左側: 月次推移
   sheet.getRange(startRow, 1).setValue('━━━ ' + category + ' 月次推移（直近12ヶ月）━━━')
     .setFontWeight('bold').setFontSize(12);
   sheet.getRange(startRow + 1, 1, 1, 7).setValues([['年月', '売上', 'CV', '点数', 'TACOS', 'ACOS', 'ROAS']])
     .setFontWeight('bold').setBackground('#e8f0fe').setHorizontalAlignment('center');
 
   const monthMap = {};
-  catData.forEach(d => {
+  for (const d of catData) {
     const month = d.date.substring(0, 7);
     if (!monthMap[month]) {
       monthMap[month] = { sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0 };
@@ -343,7 +446,7 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods) {
     monthMap[month].units += d.units;
     monthMap[month].adCost += d.adCost;
     monthMap[month].adSales += d.adSales;
-  });
+  }
 
   const months = Object.keys(monthMap).sort().slice(-12);
   const monthRows = months.map(m => {
@@ -372,9 +475,9 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods) {
   sheet.getRange(startRow + 1, 9, 1, 8).setValues([['ASIN', '商品名', '売上', '売上比', 'CV', '点数', 'TACOS', 'ACOS']])
     .setFontWeight('bold').setBackground('#e8f0fe').setHorizontalAlignment('center');
 
-  const thisMonth = catData.filter(d => d.date >= periods.thisMonth.start && d.date <= periods.thisMonth.end);
   const asinMap = {};
-  thisMonth.forEach(d => {
+  for (const d of catData) {
+    if (d.date < periods.thisMonth.start || d.date > periods.thisMonth.end) continue;
     if (!asinMap[d.asin]) {
       asinMap[d.asin] = { name: d.name, sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0 };
     }
@@ -383,7 +486,7 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods) {
     asinMap[d.asin].units += d.units;
     asinMap[d.asin].adCost += d.adCost;
     asinMap[d.asin].adSales += d.adSales;
-  });
+  }
 
   const catTotal = Object.values(asinMap).reduce((s, d) => s + d.sales, 0);
 
@@ -409,50 +512,6 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods) {
   }
 
   return 2 + Math.max(monthRows.length, asinRows.length);
-}
-
-// ===== 経費計算 =====
-
-function getSettlementExpenses(startDate, endDate) {
-  const sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { commission: 0, other: 0, total: 0, byAsin: {} };
-
-  const data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
-  let commission = 0;
-  let other = 0;
-  const byAsin = {};
-
-  data.forEach(row => {
-    const postedDate = row[2] instanceof Date
-      ? Utilities.formatDate(row[2], 'Asia/Tokyo', 'yyyy-MM-dd')
-      : String(row[2]).substring(0, 10);
-    if (!postedDate || postedDate < startDate || postedDate > endDate) return;
-
-    const asin = String(row[3] || '').trim();
-    const itemType = String(row[5]).trim();
-    const amount = parseFloat(row[6]) || 0;
-
-    if (itemType === 'Principal' || itemType === 'Tax') return;
-
-    const expense = -amount;
-
-    if (itemType === 'Commission') {
-      commission += expense;
-      if (asin) {
-        if (!byAsin[asin]) byAsin[asin] = { commission: 0, other: 0 };
-        byAsin[asin].commission += expense;
-      }
-    } else {
-      other += expense;
-      if (asin) {
-        if (!byAsin[asin]) byAsin[asin] = { commission: 0, other: 0 };
-        byAsin[asin].other += expense;
-      }
-    }
-  });
-
-  return { commission, other, total: commission + other, byAsin };
 }
 
 // ===== ヘルパー =====
