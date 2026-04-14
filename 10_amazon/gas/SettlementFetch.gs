@@ -73,6 +73,11 @@ function fetchSettlementReports() {
   }
 
   Logger.log('===== Settlement Report 取得完了: ' + newReports + ' 件の新規レポート =====');
+
+  // 新規取込があれば月次集計も更新
+  if (newReports > 0) {
+    buildSettlementSummary();
+  }
 }
 
 /**
@@ -171,4 +176,80 @@ function testSettlementList() {
   reports.forEach(r => {
     Logger.log('  ' + r.reportId + ' | ' + r.processingStatus + ' | ' + (r.dataStartTime || '') + ' 〜 ' + (r.dataEndTime || ''));
   });
+}
+
+/**
+ * 経費明細(D2)から月次集計を作成（D2_SETTLEMENT_SUMMARY）
+ * ASIN × 年月 × (commission, other) の形式
+ *
+ * ダッシュボードはこの集計シートから読み込むため高速化される
+ */
+function buildSettlementSummary() {
+  const t0 = Date.now();
+  Logger.log('===== 経費月次集計 開始 =====');
+
+  const srcSheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
+  const lastRow = srcSheet.getLastRow();
+  if (lastRow <= 1) {
+    Logger.log('経費明細データなし');
+    return;
+  }
+
+  // 列3(日付), 4(ASIN), 6(明細種別), 7(金額) の4列のみ読む
+  const dateCol = srcSheet.getRange(2, 3, lastRow - 1, 1).getValues();
+  const asinCol = srcSheet.getRange(2, 4, lastRow - 1, 1).getValues();
+  const typeCol = srcSheet.getRange(2, 6, lastRow - 1, 1).getValues();
+  const amountCol = srcSheet.getRange(2, 7, lastRow - 1, 1).getValues();
+
+  Logger.log('読み込み: ' + (Date.now()-t0) + 'ms (' + (lastRow-1) + '行)');
+
+  // ASIN × 年月 で集計
+  const summary = {};  // key: "ASIN_YYYY-MM"
+
+  for (let i = 0; i < dateCol.length; i++) {
+    const rawDate = dateCol[i][0];
+    const dateStr = rawDate instanceof Date
+      ? Utilities.formatDate(rawDate, 'Asia/Tokyo', 'yyyy-MM-dd')
+      : String(rawDate).substring(0, 10);
+    if (!dateStr) continue;
+    const yearMonth = dateStr.substring(0, 7);
+    const asin = String(asinCol[i][0] || '').trim();
+    const itemType = String(typeCol[i][0]).trim();
+    const amount = parseFloat(amountCol[i][0]) || 0;
+
+    if (itemType === 'Principal' || itemType === 'Tax') continue;
+
+    const expense = -amount;
+    const key = asin + '_' + yearMonth;
+
+    if (!summary[key]) {
+      summary[key] = { asin, yearMonth, commission: 0, other: 0 };
+    }
+
+    if (itemType === 'Commission') {
+      summary[key].commission += expense;
+    } else {
+      summary[key].other += expense;
+    }
+  }
+
+  const rows = Object.values(summary).map(s => [s.asin, s.yearMonth, s.commission, s.other]);
+  rows.sort((a, b) => (a[1] + a[0]).localeCompare(b[1] + b[0]));
+
+  Logger.log('集計: ' + (Date.now()-t0) + 'ms (' + rows.length + '件)');
+
+  // 集計シートに書き込み
+  const dstSheet = getOrCreateSheet(SHEET_NAMES.D2S_SETTLEMENT_SUMMARY);
+  dstSheet.clear();
+
+  dstSheet.getRange(1, 1, 1, 4).setValues([['ASIN', '年月', '販売手数料', 'その他経費']])
+    .setFontWeight('bold').setBackground('#e8f0fe');
+  dstSheet.setFrozenRows(1);
+
+  if (rows.length > 0) {
+    dstSheet.getRange(2, 1, rows.length, 4).setValues(rows);
+    dstSheet.getRange(2, 3, rows.length, 2).setNumberFormat('#,##0');
+  }
+
+  Logger.log('===== 経費月次集計 完了（' + (Date.now()-t0) + 'ms）=====');
 }

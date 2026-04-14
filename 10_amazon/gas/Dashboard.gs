@@ -79,46 +79,64 @@ function getDailyDataAll() {
 }
 
 /**
- * Settlement 全データを読み込み（1回のみ）
+ * 経費月次集計シートから全データ読み込み（高速）
+ * 事前にbuildSettlementSummary()で生成されたシートを使う
  */
 function readAllSettlement() {
-  const sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
+  const sheet = getOrCreateSheet(SHEET_NAMES.D2S_SETTLEMENT_SUMMARY);
   const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return [];
+  if (lastRow <= 1) {
+    Logger.log('⚠️ 経費月次集計シートが空です。buildSettlementSummary() を実行してください。');
+    return [];
+  }
 
-  const data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+  const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
   return data.map(row => ({
-    date: row[2] instanceof Date ? Utilities.formatDate(row[2], 'Asia/Tokyo', 'yyyy-MM-dd') : String(row[2]).substring(0, 10),
-    asin: String(row[3] || '').trim(),
-    itemType: String(row[5]).trim(),
-    amount: parseFloat(row[6]) || 0,
+    asin: String(row[0] || '').trim(),
+    yearMonth: String(row[1] || '').trim(),
+    commission: parseFloat(row[2]) || 0,
+    other: parseFloat(row[3]) || 0,
   }));
 }
 
 /**
- * 既にメモリにある経費データを期間でフィルタして集計
+ * 月次集計から期間でフィルタして集計（月単位の精度）
  */
 function aggregateExpenses(allExpenses, startDate, endDate) {
+  const startMonth = startDate.substring(0, 7);
+  const endMonth = endDate.substring(0, 7);
+
   let commission = 0, other = 0;
   const byAsin = {};
 
-  for (const row of allExpenses) {
-    if (!row.date || row.date < startDate || row.date > endDate) continue;
-    if (row.itemType === 'Principal' || row.itemType === 'Tax') continue;
+  // 同月内の部分期間の場合、日数按分
+  const startDay = parseInt(startDate.substring(8, 10));
+  const endDay = parseInt(endDate.substring(8, 10));
+  const sameMonth = startMonth === endMonth;
 
-    const expense = -row.amount;
-    if (row.itemType === 'Commission') {
-      commission += expense;
-      if (row.asin) {
-        if (!byAsin[row.asin]) byAsin[row.asin] = { commission: 0, other: 0 };
-        byAsin[row.asin].commission += expense;
-      }
-    } else {
-      other += expense;
-      if (row.asin) {
-        if (!byAsin[row.asin]) byAsin[row.asin] = { commission: 0, other: 0 };
-        byAsin[row.asin].other += expense;
-      }
+  for (const row of allExpenses) {
+    if (row.yearMonth < startMonth || row.yearMonth > endMonth) continue;
+
+    // 部分月の按分（同月内で日数指定がある場合）
+    let ratio = 1.0;
+    if (sameMonth) {
+      const y = parseInt(startMonth.substring(0, 4));
+      const m = parseInt(startMonth.substring(5, 7));
+      const daysInMonth = new Date(y, m, 0).getDate();
+      const daysInRange = endDay - startDay + 1;
+      ratio = daysInRange / daysInMonth;
+    }
+
+    const c = row.commission * ratio;
+    const o = row.other * ratio;
+
+    commission += c;
+    other += o;
+
+    if (row.asin) {
+      if (!byAsin[row.asin]) byAsin[row.asin] = { commission: 0, other: 0 };
+      byAsin[row.asin].commission += c;
+      byAsin[row.asin].other += o;
     }
   }
 

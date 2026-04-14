@@ -30,6 +30,7 @@ const SHEET_NAMES = {
   // データシート
   D1_DAILY: '日次データ',
   D2_SETTLEMENT: '経費明細',
+  D2S_SETTLEMENT_SUMMARY: '経費月次集計',  // ASIN×月の事前集計（高速化用）
   D3_ADS_DETAIL: '広告詳細',
   // マスターシート
   M1_PRODUCT_MASTER: '商品マスター',
