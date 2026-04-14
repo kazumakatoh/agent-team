@@ -129,3 +129,51 @@ function getProductMasterMap() {
   });
   return map;
 }
+
+/**
+ * 商品マスターの情報をD1日次データに反映
+ * 商品名・カテゴリが空のセルを商品マスターから埋める
+ */
+function syncMasterToDaily() {
+  Logger.log('===== 商品マスター → 日次データ 同期開始 =====');
+
+  const masterMap = getProductMasterMap();
+  const sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow <= 1) {
+    Logger.log('データなし');
+    return;
+  }
+
+  const data = sheet.getRange(2, 2, lastRow - 1, 3).getValues();
+  let updated = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    const asin = data[i][0];
+    if (!asin) continue;
+
+    const master = masterMap[asin];
+    if (!master) continue;
+
+    let changed = false;
+    if (!data[i][1] && master.name) {
+      data[i][1] = master.name;
+      changed = true;
+    }
+    if (!data[i][2] && master.category) {
+      data[i][2] = master.category;
+      changed = true;
+    }
+    if (changed) updated++;
+  }
+
+  if (updated > 0) {
+    sheet.getRange(2, 3, lastRow - 1, 2).setValues(data.map(row => [row[1], row[2]]));
+    Logger.log('✅ ' + updated + ' 行の商品名・カテゴリを更新');
+  } else {
+    Logger.log('更新対象なし');
+  }
+
+  Logger.log('===== 同期完了 =====');
+}
