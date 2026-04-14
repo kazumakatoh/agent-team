@@ -120,7 +120,7 @@ function testSpApiAuth() {
 function testAdsApiAuth() {
   try {
     const token = getAdsApiAccessToken();
-    Logger.log('✅ Ads API Access Token 取得成功（先頭20文字）: ' + token.substring(0, 20) + '...');
+    Logger.log('✅ Access Token 取得成功');
 
     const url = ADS_API_ENDPOINT + '/v2/profiles';
     const options = {
@@ -134,20 +134,17 @@ function testAdsApiAuth() {
     };
     const response = UrlFetchApp.fetch(url, options);
     const statusCode = response.getResponseCode();
+    const headers = response.getAllHeaders();
     const data = JSON.parse(response.getContentText());
 
-    if (statusCode === 200 && data.length > 0) {
-      Logger.log('✅ Ads API Profiles 取得成功: ' + data.length + ' 件');
-      data.forEach(p => {
-        Logger.log('  - Profile ID: ' + p.profileId + ' (' + p.countryCode + ')');
-      });
-    } else if (statusCode === 200 && data.length === 0) {
-      Logger.log('⚠️ Ads API Profiles: 0件（サポート回答待ち）');
-    } else {
-      Logger.log('❌ Ads API エラー: HTTP ' + statusCode);
-      Logger.log(response.getContentText());
-    }
+    Logger.log('ステータス: ' + statusCode);
+    Logger.log('x-amz-rid: ' + (headers['x-amz-rid'] || headers['X-Amz-Rid'] || '取得できず'));
+    Logger.log('x-amz-request-id: ' + (headers['x-amz-request-id'] || headers['X-Amz-Request-Id'] || '取得できず'));
+    Logger.log('Date: ' + (headers['Date'] || headers['date'] || '-'));
+    Logger.log('プロファイル数: ' + data.length);
+
   } catch (e) {
     Logger.log('❌ エラー: ' + e.message);
   }
 }
+

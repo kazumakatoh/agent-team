@@ -99,8 +99,18 @@ function getReportStatus(reportId) {
 function downloadReportDocument(reportDocumentId) {
   const docInfo = callSpApi('GET', '/reports/2021-06-30/documents/' + reportDocumentId);
   const response = UrlFetchApp.fetch(docInfo.url);
+
+  // gzip圧縮されている場合は解凍
+  if (docInfo.compressionAlgorithm === 'GZIP') {
+    const blob = response.getBlob().setContentType('application/x-gzip');
+    const decompressed = Utilities.ungzip(blob);
+    return decompressed.getDataAsString('UTF-8');
+  }
+
   return response.getContentText();
 }
+
+
 
 /**
  * レポートを作成→完了まで待機→ダウンロード

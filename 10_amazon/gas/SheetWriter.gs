@@ -129,11 +129,6 @@ function getProductMasterMap() {
   });
   return map;
 }
-
-/**
- * 商品マスターの情報をD1日次データに反映
- * 商品名・カテゴリが空のセルを商品マスターから埋める
- */
 function syncMasterToDaily() {
   Logger.log('===== 商品マスター → 日次データ 同期開始 =====');
 
@@ -174,6 +169,4 @@ function syncMasterToDaily() {
   } else {
     Logger.log('更新対象なし');
   }
-
-  Logger.log('===== 同期完了 =====');
 }

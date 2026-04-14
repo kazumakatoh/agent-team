@@ -105,3 +105,34 @@ function checkCredentials() {
     Logger.log(key + ': ' + status);
   });
 }
+/**
+ * 日次トリガーを設定
+ * 1回だけ実行すればOK
+ */
+function setupDailyTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(t => ScriptApp.deleteTrigger(t));
+
+  // 毎日 6:00 - 注文データ取得
+  ScriptApp.newTrigger('dailyFetchByReport')
+    .timeBased().everyDays(1).atHour(6).create();
+
+  // 毎日 6:15 - トラフィックデータ取得
+  ScriptApp.newTrigger('dailyFetchTraffic')
+    .timeBased().everyDays(1).atHour(6).nearMinute(15).create();
+
+  // 毎日 6:30 - 商品マスター同期
+  ScriptApp.newTrigger('syncMasterToDaily')
+    .timeBased().everyDays(1).atHour(6).nearMinute(30).create();
+
+  // 毎日 7:00 - Settlement Report
+  ScriptApp.newTrigger('fetchSettlementReports')
+    .timeBased().everyDays(1).atHour(7).create();
+
+  Logger.log('✅ トリガー設定完了');
+  Logger.log('  6:00 - 注文データ');
+  Logger.log('  6:15 - トラフィック');
+  Logger.log('  6:30 - マスター同期');
+  Logger.log('  7:00 - Settlement');
+}
+
