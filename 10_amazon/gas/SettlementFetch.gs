@@ -195,27 +195,33 @@ function buildSettlementSummary() {
     return;
   }
 
-  // 列3(日付), 4(ASIN), 6(明細種別), 7(金額) の4列のみ読む
-  const dateCol = srcSheet.getRange(2, 3, lastRow - 1, 1).getValues();
-  const asinCol = srcSheet.getRange(2, 4, lastRow - 1, 1).getValues();
-  const typeCol = srcSheet.getRange(2, 6, lastRow - 1, 1).getValues();
-  const amountCol = srcSheet.getRange(2, 7, lastRow - 1, 1).getValues();
+  // 単一読み込み: 列3-7（日付、ASIN、トランザクション種別、明細種別、金額）
+  const t1 = Date.now();
+  const data = srcSheet.getRange(2, 3, lastRow - 1, 5).getValues();
+  Logger.log('読み込み: ' + (Date.now()-t1) + 'ms (' + data.length + '行)');
 
-  Logger.log('読み込み: ' + (Date.now()-t0) + 'ms (' + (lastRow-1) + '行)');
+  // 集計（Utilities.formatDateを避けて高速化）
+  const t2 = Date.now();
+  const summary = {};
 
-  // ASIN × 年月 で集計
-  const summary = {};  // key: "ASIN_YYYY-MM"
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const rawDate = row[0];
+    let yearMonth = '';
 
-  for (let i = 0; i < dateCol.length; i++) {
-    const rawDate = dateCol[i][0];
-    const dateStr = rawDate instanceof Date
-      ? Utilities.formatDate(rawDate, 'Asia/Tokyo', 'yyyy-MM-dd')
-      : String(rawDate).substring(0, 10);
-    if (!dateStr) continue;
-    const yearMonth = dateStr.substring(0, 7);
-    const asin = String(asinCol[i][0] || '').trim();
-    const itemType = String(typeCol[i][0]).trim();
-    const amount = parseFloat(amountCol[i][0]) || 0;
+    if (rawDate instanceof Date) {
+      const y = rawDate.getFullYear();
+      const m = rawDate.getMonth() + 1;
+      yearMonth = y + '-' + (m < 10 ? '0' + m : String(m));
+    } else if (rawDate) {
+      const s = String(rawDate);
+      if (s.length >= 7) yearMonth = s.substring(0, 7);
+    }
+    if (!yearMonth) continue;
+
+    const asin = String(row[1] || '').trim();
+    const itemType = String(row[3]).trim();  // 明細種別
+    const amount = parseFloat(row[4]) || 0;
 
     if (itemType === 'Principal' || itemType === 'Tax') continue;
 
@@ -223,7 +229,7 @@ function buildSettlementSummary() {
     const key = asin + '_' + yearMonth;
 
     if (!summary[key]) {
-      summary[key] = { asin, yearMonth, commission: 0, other: 0 };
+      summary[key] = { asin: asin, yearMonth: yearMonth, commission: 0, other: 0 };
     }
 
     if (itemType === 'Commission') {
@@ -232,16 +238,15 @@ function buildSettlementSummary() {
       summary[key].other += expense;
     }
   }
+  Logger.log('集計: ' + (Date.now()-t2) + 'ms');
 
+  // 書き込み
+  const t3 = Date.now();
   const rows = Object.values(summary).map(s => [s.asin, s.yearMonth, s.commission, s.other]);
   rows.sort((a, b) => (a[1] + a[0]).localeCompare(b[1] + b[0]));
 
-  Logger.log('集計: ' + (Date.now()-t0) + 'ms (' + rows.length + '件)');
-
-  // 集計シートに書き込み
   const dstSheet = getOrCreateSheet(SHEET_NAMES.D2S_SETTLEMENT_SUMMARY);
   dstSheet.clear();
-
   dstSheet.getRange(1, 1, 1, 4).setValues([['ASIN', '年月', '販売手数料', 'その他経費']])
     .setFontWeight('bold').setBackground('#e8f0fe');
   dstSheet.setFrozenRows(1);
@@ -250,6 +255,7 @@ function buildSettlementSummary() {
     dstSheet.getRange(2, 1, rows.length, 4).setValues(rows);
     dstSheet.getRange(2, 3, rows.length, 2).setNumberFormat('#,##0');
   }
+  Logger.log('書き込み: ' + (Date.now()-t3) + 'ms (' + rows.length + '件)');
 
   Logger.log('===== 経費月次集計 完了（' + (Date.now()-t0) + 'ms）=====');
 }
