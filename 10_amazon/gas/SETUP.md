@@ -86,6 +86,16 @@ GASエディタで以下の関数を順に実行:
 
 ## clasp での開発フロー
 
+### 自動デプロイ（推奨）
+
+`main` または `claude/**` ブランチに `10_amazon/gas/**` への変更が push されると、
+GitHub Actions が自動で `clasp push --force` を実行する。
+ワークフロー: `.github/workflows/deploy-gas-amazon.yml`
+
+→ **ローカルに clasp 環境を作らなくても、push するだけで GAS に反映される**
+
+### 手動デプロイ（ローカル作業時）
+
 ```bash
 # ローカルで編集 → GASに反映
 clasp push
