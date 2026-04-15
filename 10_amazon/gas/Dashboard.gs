@@ -407,10 +407,13 @@ function updateDashboardL2() {
   const dailyData = getDailyDataAll();
   const periods = getPeriods();
 
+  // 経費データを読み込み（高速化用）
+  const allExpenses = readAllSettlement();
+
   sheet.clear();
 
   sheet.getRange(1, 1).setValue('━━━ L2 カテゴリ分析 ━━━').setFontWeight('bold').setFontSize(14);
-  sheet.getRange(1, 9).setValue('※ 当月売上上位順に表示').setFontStyle('italic').setFontColor('#888');
+  sheet.getRange(1, 11).setValue('※ 当月売上上位順に表示').setFontStyle('italic').setFontColor('#888');
 
   // 当月売上順でカテゴリをソート
   const thisMonthDaily = dailyData.filter(d => d.date >= periods.thisMonth.start && d.date <= periods.thisMonth.end);
@@ -436,7 +439,7 @@ function updateDashboardL2() {
   let currentRow = 3;
   sortedCategories.forEach(cat => {
     const catData = dataByCategory[cat] || [];
-    const blockHeight = writeCategoryBlock(sheet, catData, cat, currentRow, periods);
+    const blockHeight = writeCategoryBlock(sheet, catData, cat, currentRow, periods, allExpenses);
     currentRow += blockHeight + 2;
   });
 
@@ -447,50 +450,72 @@ function updateDashboardL2() {
   Logger.log('L2 完了（' + (Date.now()-t0) + 'ms）');
 }
 
-function writeCategoryBlock(sheet, catData, category, startRow, periods) {
+function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpenses) {
+  // 左側: 月次推移（10列: 年月, 売上, CV, 点数, 広告費, 利益, TACOS, ACOS, ROAS, 利益率）
   sheet.getRange(startRow, 1).setValue('━━━ ' + category + ' 月次推移（直近12ヶ月）━━━')
     .setFontWeight('bold').setFontSize(12);
-  sheet.getRange(startRow + 1, 1, 1, 7).setValues([['年月', '売上', 'CV', '点数', 'TACOS', 'ACOS', 'ROAS']])
+  sheet.getRange(startRow + 1, 1, 1, 10).setValues([['年月', '売上', 'CV', '点数', '広告費', '利益', 'TACOS', 'ACOS', 'ROAS', '利益率']])
     .setFontWeight('bold').setBackground('#e8f0fe').setHorizontalAlignment('center');
 
+  // 月別集計（月ごとに ASIN セットも記録）
   const monthMap = {};
   for (const d of catData) {
     const month = d.date.substring(0, 7);
     if (!monthMap[month]) {
-      monthMap[month] = { sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0 };
+      monthMap[month] = { sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0, asins: new Set() };
     }
     monthMap[month].sales += d.sales;
     monthMap[month].cv += d.cv;
     monthMap[month].units += d.units;
     monthMap[month].adCost += d.adCost;
     monthMap[month].adSales += d.adSales;
+    if (d.asin) monthMap[month].asins.add(d.asin);
+  }
+
+  // 月ごとに経費を集計
+  const expenseByMonthAsin = {};
+  for (const exp of allExpenses) {
+    if (!expenseByMonthAsin[exp.yearMonth]) expenseByMonthAsin[exp.yearMonth] = {};
+    expenseByMonthAsin[exp.yearMonth][exp.asin] = exp;
   }
 
   const months = Object.keys(monthMap).sort().slice(-12);
   const monthRows = months.map(m => {
     const d = monthMap[m];
+    let commission = 0, otherExpense = 0;
+    const monthExp = expenseByMonthAsin[m] || {};
+    for (const asin of d.asins) {
+      if (monthExp[asin]) {
+        commission += monthExp[asin].commission || 0;
+        otherExpense += monthExp[asin].other || 0;
+      }
+    }
+    const profit = d.sales - commission - otherExpense - d.adCost;
     return [
-      m, d.sales, d.cv, d.units,
+      m, d.sales, d.cv, d.units, d.adCost, profit,
       d.sales > 0 ? d.adCost / d.sales : 0,
       d.adSales > 0 ? d.adCost / d.adSales : 0,
       d.adCost > 0 ? d.sales / d.adCost : 0,
+      d.sales > 0 ? profit / d.sales : 0,
     ];
   });
 
   if (monthRows.length > 0) {
     const r = startRow + 2;
-    sheet.getRange(r, 1, monthRows.length, 7).setValues(monthRows);
+    sheet.getRange(r, 1, monthRows.length, 10).setValues(monthRows);
     sheet.getRange(r, 1, monthRows.length, 1).setHorizontalAlignment('center');
-    sheet.getRange(r, 2, monthRows.length, 6).setHorizontalAlignment('right');
-    sheet.getRange(r, 2, monthRows.length, 3).setNumberFormat('#,##0');
-    sheet.getRange(r, 5, monthRows.length, 2).setNumberFormat('0.0%');
-    sheet.getRange(r, 7, monthRows.length, 1).setNumberFormat('0.00');
+    sheet.getRange(r, 2, monthRows.length, 9).setHorizontalAlignment('right');
+    sheet.getRange(r, 2, monthRows.length, 5).setNumberFormat('#,##0');  // 売上,CV,点数,広告費,利益
+    sheet.getRange(r, 7, monthRows.length, 2).setNumberFormat('0.0%');   // TACOS,ACOS
+    sheet.getRange(r, 9, monthRows.length, 1).setNumberFormat('0.00');   // ROAS
+    sheet.getRange(r, 10, monthRows.length, 1).setNumberFormat('0.0%');  // 利益率
   }
 
-  // 右側: ASIN別
-  sheet.getRange(startRow, 9).setValue('━━━ ' + category + ' 内ASIN別（当月）━━━')
+  // 右側: ASIN別（11列目以降）
+  const rightCol = 12;
+  sheet.getRange(startRow, rightCol).setValue('━━━ ' + category + ' 内ASIN別（当月）━━━')
     .setFontWeight('bold').setFontSize(12);
-  sheet.getRange(startRow + 1, 9, 1, 8).setValues([['ASIN', '商品名', '売上', '売上比', 'CV', '点数', 'TACOS', 'ACOS']])
+  sheet.getRange(startRow + 1, rightCol, 1, 11).setValues([['ASIN', '商品名', '売上', '売上比', 'CV', '点数', '広告費', '利益', 'TACOS', 'ACOS', '利益率']])
     .setFontWeight('bold').setBackground('#e8f0fe').setHorizontalAlignment('center');
 
   const asinMap = {};
@@ -506,27 +531,37 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods) {
     asinMap[d.asin].adSales += d.adSales;
   }
 
+  // ASIN別の経費を当月分から取得
+  const thisMonthYM = periods.thisMonth.start.substring(0, 7);
+  const thisMonthExpByAsin = expenseByMonthAsin[thisMonthYM] || {};
+
   const catTotal = Object.values(asinMap).reduce((s, d) => s + d.sales, 0);
 
   const asinRows = Object.entries(asinMap)
     .sort((a, b) => b[1].sales - a[1].sales)
-    .map(([asin, d]) => [
-      asin, d.name, d.sales,
-      catTotal > 0 ? d.sales / catTotal : 0,
-      d.cv, d.units,
-      d.sales > 0 ? d.adCost / d.sales : 0,
-      d.adSales > 0 ? d.adCost / d.adSales : 0,
-    ]);
+    .map(([asin, d]) => {
+      const exp = thisMonthExpByAsin[asin] || { commission: 0, other: 0 };
+      const profit = d.sales - exp.commission - exp.other - d.adCost;
+      return [
+        asin, d.name, d.sales,
+        catTotal > 0 ? d.sales / catTotal : 0,
+        d.cv, d.units, d.adCost, profit,
+        d.sales > 0 ? d.adCost / d.sales : 0,
+        d.adSales > 0 ? d.adCost / d.adSales : 0,
+        d.sales > 0 ? profit / d.sales : 0,
+      ];
+    });
 
   if (asinRows.length > 0) {
     const r = startRow + 2;
-    sheet.getRange(r, 9, asinRows.length, 8).setValues(asinRows);
-    sheet.getRange(r, 9, asinRows.length, 1).setHorizontalAlignment('center');
-    sheet.getRange(r, 11, asinRows.length, 6).setHorizontalAlignment('right');
-    sheet.getRange(r, 11, asinRows.length, 1).setNumberFormat('#,##0');
-    sheet.getRange(r, 12, asinRows.length, 1).setNumberFormat('0.0%');
-    sheet.getRange(r, 13, asinRows.length, 2).setNumberFormat('#,##0');
-    sheet.getRange(r, 15, asinRows.length, 2).setNumberFormat('0.0%');
+    sheet.getRange(r, rightCol, asinRows.length, 11).setValues(asinRows);
+    sheet.getRange(r, rightCol, asinRows.length, 1).setHorizontalAlignment('center');
+    sheet.getRange(r, rightCol + 2, asinRows.length, 9).setHorizontalAlignment('right');
+    sheet.getRange(r, rightCol + 2, asinRows.length, 1).setNumberFormat('#,##0');     // 売上
+    sheet.getRange(r, rightCol + 3, asinRows.length, 1).setNumberFormat('0.0%');      // 売上比
+    sheet.getRange(r, rightCol + 4, asinRows.length, 4).setNumberFormat('#,##0');     // CV,点数,広告費,利益
+    sheet.getRange(r, rightCol + 8, asinRows.length, 2).setNumberFormat('0.0%');      // TACOS,ACOS
+    sheet.getRange(r, rightCol + 10, asinRows.length, 1).setNumberFormat('0.0%');     // 利益率
   }
 
   return 2 + Math.max(monthRows.length, asinRows.length);
