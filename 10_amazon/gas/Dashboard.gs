@@ -312,8 +312,8 @@ function writeOverallSummary(sheet, totals, periods) {
   // 前月比行
   sheet.getRange(6, 2, 1, headers.length - 1).setNumberFormat('+0.0%;-0.0%;-');
 
-  // 全体サマリー末尾(行7) + 1行スペーサー(行8) → 次セクションは行9から
-  return 9;
+  // 全体サマリー末尾(行7) + 2行スペーサー(行8,9) → PLセクションは行10から
+  return 10;
 }
 
 // ===== P&L セクション（レイヤー2: 損益計算書形式・縦型） =====
@@ -413,8 +413,8 @@ function writeFinalProfitSection(sheet, totals, periods, startRow) {
     }
   }
 
-  // 次セクションへ: 末尾行 + 1行スペーサー
-  return dataStartRow + dataRows.length + 1;
+  // 次セクションへ: 末尾行 + 2行スペーサー
+  return dataStartRow + dataRows.length + 2;
 }
 
 // ===== カテゴリ別サマリー =====
