@@ -114,7 +114,8 @@ function addKpiRules(rules, range, metric) {
  * L1 事業ダッシュボードに条件付き書式を適用
  *
  * 対象範囲:
- *   全体サマリー（行3-7）: 粗利率(11)/広告比率=TACOS(12)/ROAS(13)/利益率(14)
+ *   全体サマリー（行3-7）: 広告比率(8)/ROAS(9)/利益率(10)
+ *     ※ 粗利率/原価率/販売手数料/経費等は P&L セクションへ集約したため削除
  *   カテゴリ別サマリー（行 categoryStartRow〜categoryEndRow）:
  *     TACOS(8)/ACOS(10)/ROAS(12)/利益率(13)
  *
@@ -126,28 +127,21 @@ function applyL1ConditionalFormatting(sheet, categoryStartRow, categoryRowCount)
   const rules = [];
 
   // 全体サマリー（行3-7 = 全体/広告/オーガニック/前月比/月末予測）
-  // 前月比(行6)は pctChange なので除外、全体/月末予測を主対象に
-  const overallRows = 5; // 行3〜7
+  const overallRows = 5;
   const overallStartRow = 3;
 
-  // 粗利率（列11）
-  addKpiRules(rules, sheet.getRange(overallStartRow, 11, overallRows, 1), 'profitMargin');
-  // 広告比率=TACOS（列12）
-  addKpiRules(rules, sheet.getRange(overallStartRow, 12, overallRows, 1), 'tacos');
-  // ROAS（列13）
-  addKpiRules(rules, sheet.getRange(overallStartRow, 13, overallRows, 1), 'roas');
-  // 利益率（列14）
-  addKpiRules(rules, sheet.getRange(overallStartRow, 14, overallRows, 1), 'profitMargin');
+  // 広告比率=TACOS（列8）
+  addKpiRules(rules, sheet.getRange(overallStartRow, 8, overallRows, 1), 'tacos');
+  // ROAS（列9）
+  addKpiRules(rules, sheet.getRange(overallStartRow, 9, overallRows, 1), 'roas');
+  // 利益率（列10）
+  addKpiRules(rules, sheet.getRange(overallStartRow, 10, overallRows, 1), 'profitMargin');
 
-  // カテゴリ別サマリー
+  // カテゴリ別サマリー（列番号は変更なし）
   if (categoryRowCount > 0) {
-    // TACOS（列8）
     addKpiRules(rules, sheet.getRange(categoryStartRow, 8, categoryRowCount, 1), 'tacos');
-    // ACOS（列10）
     addKpiRules(rules, sheet.getRange(categoryStartRow, 10, categoryRowCount, 1), 'acos');
-    // ROAS（列12）
     addKpiRules(rules, sheet.getRange(categoryStartRow, 12, categoryRowCount, 1), 'roas');
-    // 利益率（列13）
     addKpiRules(rules, sheet.getRange(categoryStartRow, 13, categoryRowCount, 1), 'profitMargin');
   }
 
