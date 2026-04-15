@@ -47,8 +47,9 @@ function updateDashboardL1() {
 
   // シート書き込み
   const t4 = Date.now();
-  writeOverallSummary(sheet, totals, periods);
-  const categoryResult = writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, periods);
+  const summaryEndRow = writeOverallSummary(sheet, totals, periods);
+  const finalProfitEndRow = writeFinalProfitSection(sheet, totals, periods, summaryEndRow);
+  const categoryResult = writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, periods, finalProfitEndRow);
   writeAlertProducts(sheet, thisMonthDaily, categoryResult.nextRow);
   Logger.log('シート書き込み: ' + (Date.now()-t4) + 'ms');
 
@@ -309,12 +310,72 @@ function writeOverallSummary(sheet, totals, periods) {
   });
   sheet.getRange(3, 13, 3, 1).setNumberFormat('0.00');
   sheet.getRange(6, 2, 1, headers.length - 1).setNumberFormat('+0.0%;-0.0%;-');
+
+  // 全体サマリー末尾の行番号を返す（3 + 5行データ = 7行目まで使用）
+  return 8;
+}
+
+// ===== 最終利益セクション（レイヤー2） =====
+
+function writeFinalProfitSection(sheet, totals, periods, startRow) {
+  const t = totals.thisMonth;
+  const lm = totals.lastMonthSameDay;
+
+  // 当月と前月同日の販促費を計算
+  const thisPromo = calcPromoCostForPeriod(periods.thisMonth.start, periods.thisMonth.end, t.adCost);
+  const lastPromo = calcPromoCostForPeriod(periods.lastMonthSameDay.start, periods.lastMonthSameDay.end, lm.adCost);
+
+  // 最終利益 = Amazon内粗利 − 販促費合計
+  // 注意: t.profit は既に広告費も引かれている = Amazon内粗利
+  const thisFinalProfit = t.profit - thisPromo.total;
+  const lastFinalProfit = lm.profit - lastPromo.total;
+  const thisFinalMargin = t.sales > 0 ? thisFinalProfit / t.sales : 0;
+  const lastFinalMargin = lm.sales > 0 ? lastFinalProfit / lm.sales : 0;
+
+  sheet.getRange(startRow, 1).setValue('━━━ 最終利益（レイヤー2: 販促費控除後）━━━')
+    .setFontWeight('bold').setFontSize(14);
+
+  const headers = ['項目', '当月', '前月同日', '前月比'];
+  sheet.getRange(startRow + 1, 1, 1, 4).setValues([headers])
+    .setFontWeight('bold').setBackground('#e8f0fe').setHorizontalAlignment('center');
+
+  const rows = [
+    ['Amazon内粗利（①）',  t.profit,              lm.profit,              pctChangeNum(t.profit, lm.profit)],
+    ['  Amence',           -thisPromo.amence,     -lastPromo.amence,      pctChangeNum(thisPromo.amence, lastPromo.amence)],
+    ['  その他ツール',      -thisPromo.otherTools, -lastPromo.otherTools,  pctChangeNum(thisPromo.otherTools, lastPromo.otherTools)],
+    ['  荷造運賃',         -thisPromo.shipping,   -lastPromo.shipping,    pctChangeNum(thisPromo.shipping, lastPromo.shipping)],
+    ['  納品人件費',        -thisPromo.labor,      -lastPromo.labor,       pctChangeNum(thisPromo.labor, lastPromo.labor)],
+    ['  M19成果報酬(6.0%)', -thisPromo.m19Performance, -lastPromo.m19Performance, pctChangeNum(thisPromo.m19Performance, lastPromo.m19Performance)],
+    ['販促費合計（②）',    -thisPromo.total,      -lastPromo.total,       pctChangeNum(thisPromo.total, lastPromo.total)],
+    ['最終利益（①−②）',    thisFinalProfit,       lastFinalProfit,        pctChangeNum(thisFinalProfit, lastFinalProfit)],
+    ['最終利益率',          thisFinalMargin,       lastFinalMargin,        pctChangeNum(thisFinalMargin, lastFinalMargin)],
+  ];
+
+  const dataStartRow = startRow + 2;
+  sheet.getRange(dataStartRow, 1, rows.length, 4).setValues(rows);
+
+  // フォーマット
+  sheet.getRange(dataStartRow, 2, rows.length, 2).setHorizontalAlignment('right');
+  // 金額行（1〜8行目、最終利益率除く）
+  sheet.getRange(dataStartRow, 2, rows.length - 1, 2).setNumberFormat('#,##0');
+  // 最終利益率行
+  sheet.getRange(dataStartRow + rows.length - 1, 2, 1, 2).setNumberFormat('0.0%');
+  // 前月比（D列）
+  sheet.getRange(dataStartRow, 4, rows.length, 1).setNumberFormat('+0.0%;-0.0%;-');
+
+  // 太字にする行: Amazon内粗利（①）、販促費合計（②）、最終利益、最終利益率
+  sheet.getRange(dataStartRow, 1, 1, 4).setFontWeight('bold');           // ①
+  sheet.getRange(dataStartRow + 6, 1, 1, 4).setFontWeight('bold');        // ②
+  sheet.getRange(dataStartRow + 7, 1, 2, 4).setFontWeight('bold');        // 最終利益 + 最終利益率
+  sheet.getRange(dataStartRow + 7, 1, 2, 4).setBackground('#fff2cc');     // 最終利益行を薄黄色で強調
+
+  return dataStartRow + rows.length + 2; // セクション末尾（次のセクション開始行）
 }
 
 // ===== カテゴリ別サマリー =====
 
-function writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, periods) {
-  const startRow = 10;
+function writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, periods, startRow) {
+  if (!startRow) startRow = 10; // デフォルト（後方互換）
   sheet.getRange(startRow, 1).setValue('━━━ カテゴリ別サマリー（当月）━━━').setFontWeight('bold').setFontSize(14);
 
   const headers = ['カテゴリ', '売上', '売上比', 'CV', '点数', '広告費', '利益', 'TACOS', 'TACOS前月比', 'ACOS', 'ACOS前月比', 'ROAS', '利益率'];
