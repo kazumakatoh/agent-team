@@ -2,7 +2,7 @@
  * Amazon Dashboard - L3 商品分析（ASIN別一覧）
  *
  * 各ASINを1行として、売上〜利益率までの主要指標を一覧表示。
- * 前月同日数との比較で各セルに色付け（改善=緑 / 悪化=オレンジ）。
+ * カラースケール（条件付き書式のグラデーション）で商品間の相対順位を可視化。
  *
  * ## 広告詳細の取り扱い
  *
@@ -15,33 +15,32 @@
  * [指標] 売上 | CV | 点数 | 仕入 | 販売手数料 | 広告費 | その他経費 | 利益
  *        | 広告比率 | 粗利率 | 利益率 | ROAS | 注意
  *
- * ## 色分けルール（前月同消化日数比較）
+ * ## カラースケール（緑 → 白 → 赤）
  *
- * **A類: 多いほど良い**（売上 / CV / 点数 / 利益 / 利益率 / ROAS）
- * - +10% 以上       : 🟢 緑
- * - -5%  〜 +10%    : ⚪ 色なし
- * - -15% 〜 -5%     : 🟠 薄オレンジ
- * - -15% 以下       : 🟠 濃オレンジ
+ * **A類: 高いほど良い**（売上 / CV / 点数 / 利益 / 粗利率 / 利益率 / ROAS）
+ * - 最小 → 🔴赤   中央 → ⚪白   最大 → 🟢緑
  *
- * **B類: 少ないほど良い**（広告比率）
- * - -10% 以下       : 🟢 緑
- * - -5%  〜 +5%     : ⚪ 色なし
- * - +5%  〜 +15%    : 🟠 薄オレンジ
- * - +15% 以上       : 🟠 濃オレンジ
+ * **B類: 低いほど良い**（広告比率）
+ * - 最小 → 🟢緑   中央 → ⚪白   最大 → 🔴赤
  *
- * **中立**（仕入 / 販売手数料 / 広告費 / その他経費 / 粗利率）→ 色付けなし
+ * **中立**（仕入 / 販売手数料 / 広告費 / その他経費）→ 色付けなし
+ *
+ * ## ソート
+ *
+ * 売上額の降順（最大値が先頭、売上ゼロは末尾）。updateDashboardL3 の実行時点で確定。
  *
  * ## 注意アイコン
  * - 利益マイナス: 🔴
  * - 広告費あり・売上ゼロ: ⚠️
  */
 
-// ===== 色定義 =====
-const L3_COLOR_POS_STRONG = '#93c47d';   // 緑（強）
-const L3_COLOR_NEG_LIGHT  = '#fce5cd';   // オレンジ（薄）
-const L3_COLOR_NEG_STRONG = '#f6b26b';   // オレンジ（濃）
-const L3_COLOR_ROW_LOSS   = '#fbe9e7';   // 利益マイナス行の薄赤
-const L3_COLOR_TOTAL_BG   = '#d0e1f9';   // 全体合計行の薄青
+// ===== カラースケール色定義（ユーザー承認済み・Google Sheets標準パレット）=====
+const L3_SCALE_GREEN = '#57bb8a';  // 最良（高いほど良いなら最大 / 低いほど良いなら最小）
+const L3_SCALE_WHITE = '#ffffff';  // 中央（パーセンタイル50）
+const L3_SCALE_RED   = '#e67c73';  // 最悪
+
+// ===== 合計行・ヘッダー色 =====
+const L3_COLOR_TOTAL_BG = '#d0e1f9';  // 全体合計行の薄青
 
 // ===== ヘッダー定義 =====
 const L3_HEADERS = [
@@ -52,16 +51,18 @@ const L3_HEADERS = [
   '注意',
 ];
 
-// 色分け対象の列インデックス（1-indexed）と判定タイプ
-// 'high-good' = A類（増で緑）, 'low-good' = B類（減で緑）
-const L3_COLORED_COLS = [
-  { col: 4,  metric: 'sales',        type: 'high-good' },  // 売上
-  { col: 5,  metric: 'cv',           type: 'high-good' },  // CV
-  { col: 6,  metric: 'units',        type: 'high-good' },  // 点数
-  { col: 11, metric: 'profit',       type: 'high-good' },  // 利益
-  { col: 12, metric: 'adRate',       type: 'low-good'  },  // 広告比率
-  { col: 14, metric: 'profitMargin', type: 'high-good' },  // 利益率
-  { col: 15, metric: 'roas',         type: 'high-good' },  // ROAS
+// カラースケール対象の列インデックス（1-indexed）と方向
+// 'high-good' = 高い方が良い（min=赤, max=緑）
+// 'low-good'  = 低い方が良い（min=緑, max=赤）
+const L3_SCALE_COLS = [
+  { col: 4,  type: 'high-good' },  // 売上
+  { col: 5,  type: 'high-good' },  // CV
+  { col: 6,  type: 'high-good' },  // 点数
+  { col: 11, type: 'high-good' },  // 利益
+  { col: 12, type: 'low-good'  },  // 広告比率
+  { col: 13, type: 'high-good' },  // 粗利率
+  { col: 14, type: 'high-good' },  // 利益率
+  { col: 15, type: 'high-good' },  // ROAS
 ];
 
 /**
@@ -73,10 +74,10 @@ function updateDashboardL3() {
 
   const sheet = getOrCreateSheet(SHEET_NAMES.L3_PRODUCT);
 
-  // 既存のフィルタを削除（clear前に実行する必要あり）
+  // 既存のフィルタ・条件付き書式を削除
   const existingFilter = sheet.getFilter();
   if (existingFilter) existingFilter.remove();
-
+  sheet.clearConditionalFormatRules();
   sheet.clear();
 
   // データ準備
@@ -91,9 +92,7 @@ function updateDashboardL3() {
     return;
   }
 
-  // 期間別フィルタ
   const thisMonthDaily = dailyData.filter(d => d.date >= periods.thisMonth.start && d.date <= periods.thisMonth.end);
-  const lastMonthDaily = dailyData.filter(d => d.date >= periods.lastMonthSameDay.start && d.date <= periods.lastMonthSameDay.end);
 
   // 経費を年月別にインデックス化
   const expByMonthAsin = {};
@@ -104,14 +103,13 @@ function updateDashboardL3() {
 
   // ASIN別集計
   const thisByAsin = aggregateByAsinWithExpense(thisMonthDaily, expByMonthAsin, periods.thisMonth.start.substring(0, 7));
-  const lastByAsin = aggregateByAsinWithExpense(lastMonthDaily, expByMonthAsin, periods.lastMonthSameDay.start.substring(0, 7));
 
   // ===== 書き込み =====
 
   // タイトル + ガイド
   sheet.getRange(1, 1).setValue('━━━ L3 商品分析 ━━━').setFontWeight('bold').setFontSize(14);
   sheet.getRange(2, 1)
-    .setValue('※ 前月同消化日数比較で色分け（改善=緑 / 悪化=オレンジ） ／ フィルタ: メニュー → データ → フィルタを作成')
+    .setValue('※ カラースケールで商品間の相対順位を色分け（緑=良 / 赤=悪） ／ 売上降順でソート済み')
     .setFontStyle('italic').setFontColor('#666');
 
   // ヘッダー (行4)
@@ -121,17 +119,24 @@ function updateDashboardL3() {
 
   // 全商品合計行 (行5)
   const totalRow = headerRow + 1;
-  writeL3TotalRow(sheet, totalRow, thisByAsin, lastByAsin);
+  writeL3TotalRow(sheet, totalRow, thisByAsin);
 
-  // 商品行 (行6+)
-  // 売上降順ソート
+  // 売上額の降順でソート（明示的・ユーザー要求 2026-04-15）
   const sortedAsins = Object.entries(thisByAsin)
     .sort((a, b) => b[1].sales - a[1].sales);
 
+  // 商品行 (行6+)
   const t2 = Date.now();
   const dataStartRow = totalRow + 1;
-  writeL3ProductRows(sheet, dataStartRow, sortedAsins, lastByAsin);
+  writeL3ProductRows(sheet, dataStartRow, sortedAsins);
   Logger.log('書き込み: ' + (Date.now() - t2) + 'ms (' + sortedAsins.length + '商品)');
+
+  // カラースケール適用（商品行のみ、合計行は除外）
+  const t3 = Date.now();
+  if (sortedAsins.length > 0) {
+    applyL3ColorScale(sheet, dataStartRow, sortedAsins.length);
+  }
+  Logger.log('カラースケール: ' + (Date.now() - t3) + 'ms');
 
   // フリーズ（列3まで・行4まで）
   sheet.setFrozenColumns(3);
@@ -189,10 +194,8 @@ function aggregateByAsinWithExpense(dailyData, expByMonthAsin, yearMonth) {
 /**
  * 全商品合計行を書き込み
  */
-function writeL3TotalRow(sheet, row, thisByAsin, lastByAsin) {
+function writeL3TotalRow(sheet, row, thisByAsin) {
   const t = sumAsinAggs(Object.values(thisByAsin));
-  const l = sumAsinAggs(Object.values(lastByAsin));
-
   const values = [[
     '【全商品合計】', '-', '-',
     t.sales, t.cv, t.units,
@@ -205,16 +208,13 @@ function writeL3TotalRow(sheet, row, thisByAsin, lastByAsin) {
     .setFontWeight('bold').setBackground(L3_COLOR_TOTAL_BG);
 
   applyL3RowNumberFormats(sheet, row);
-  applyL3RowColors(sheet, row, t, l);
 }
 
 /**
  * 商品行を一括書き込み
  */
-function writeL3ProductRows(sheet, startRow, sortedAsins, lastByAsin) {
+function writeL3ProductRows(sheet, startRow, sortedAsins) {
   const values = [];
-  const rowLossFlags = []; // 利益マイナス行のフラグ
-
   for (const [asin, a] of sortedAsins) {
     // 注意アイコン
     let alert = '';
@@ -228,7 +228,6 @@ function writeL3ProductRows(sheet, startRow, sortedAsins, lastByAsin) {
       a.profit, a.adRate, a.grossMargin, a.profitMargin, a.roas,
       alert,
     ]);
-    rowLossFlags.push(a.profit < 0);
   }
 
   if (values.length === 0) return;
@@ -238,24 +237,6 @@ function writeL3ProductRows(sheet, startRow, sortedAsins, lastByAsin) {
 
   // 数値フォーマットを一括適用
   applyL3RowNumberFormats(sheet, startRow, values.length);
-
-  // 行ストライプ + 利益マイナス行の赤背景
-  for (let i = 0; i < values.length; i++) {
-    const row = startRow + i;
-    if (rowLossFlags[i]) {
-      sheet.getRange(row, 1, 1, L3_HEADERS.length).setBackground(L3_COLOR_ROW_LOSS);
-    } else if (i % 2 === 1) {
-      sheet.getRange(row, 1, 1, L3_HEADERS.length).setBackground('#f8f9fa'); // 薄グレーストライプ
-    }
-  }
-
-  // 前月比較の色付け（各セル個別）
-  for (let i = 0; i < sortedAsins.length; i++) {
-    const [asin, a] = sortedAsins[i];
-    const l = lastByAsin[asin];
-    if (!l) continue; // 前月データがない新商品はスキップ
-    applyL3RowColors(sheet, startRow + i, a, l);
-  }
 }
 
 /**
@@ -280,41 +261,44 @@ function applyL3RowNumberFormats(sheet, startRow, numRows) {
 }
 
 /**
- * 前月比較で各セルに色を付ける
+ * カラースケール条件付き書式を適用
+ *
+ * 各指標列に 3色グラデーション（最小-中央パーセンタイル50-最大）を設定。
+ * 高いほど良い指標は 赤→白→緑、低いほど良い指標は 緑→白→赤。
+ *
+ * @param {Sheet} sheet L3シート
+ * @param {number} dataStartRow 商品行の開始行（合計行は除外）
+ * @param {number} rowCount 商品行数
  */
-function applyL3RowColors(sheet, row, current, previous) {
-  for (const { col, metric, type } of L3_COLORED_COLS) {
-    const cur = current[metric] || 0;
-    const prev = previous[metric] || 0;
-    const color = decideColor(cur, prev, type);
-    if (color) {
-      sheet.getRange(row, col).setBackground(color);
+function applyL3ColorScale(sheet, dataStartRow, rowCount) {
+  const rules = [];
+
+  for (const { col, type } of L3_SCALE_COLS) {
+    const range = sheet.getRange(dataStartRow, col, rowCount, 1);
+
+    if (type === 'high-good') {
+      // 最小=赤 / 中央=白 / 最大=緑
+      rules.push(buildGradientRule(range, L3_SCALE_RED, L3_SCALE_WHITE, L3_SCALE_GREEN));
+    } else {
+      // 低いほど良い: 最小=緑 / 中央=白 / 最大=赤
+      rules.push(buildGradientRule(range, L3_SCALE_GREEN, L3_SCALE_WHITE, L3_SCALE_RED));
     }
   }
+
+  sheet.setConditionalFormatRules(rules);
+  Logger.log('✅ L3 カラースケール適用: ' + rules.length + ' 列');
 }
 
 /**
- * 前月比の pct change から色を決定
- * @param {number} cur 当月値
- * @param {number} prev 前月値
- * @param {'high-good'|'low-good'} type
- * @returns {string|null} background color or null
+ * カラースケール（3色グラデーション）のルールを構築
  */
-function decideColor(cur, prev, type) {
-  if (!prev || prev === 0) return null;
-  const pct = (cur - prev) / prev;
-
-  if (type === 'high-good') {
-    if (pct >= 0.10)  return L3_COLOR_POS_STRONG;
-    if (pct >= -0.05) return null;
-    if (pct >= -0.15) return L3_COLOR_NEG_LIGHT;
-    return L3_COLOR_NEG_STRONG;
-  }
-  // low-good
-  if (pct <= -0.10) return L3_COLOR_POS_STRONG;
-  if (pct <= 0.05)  return null;
-  if (pct <= 0.15)  return L3_COLOR_NEG_LIGHT;
-  return L3_COLOR_NEG_STRONG;
+function buildGradientRule(range, minColor, midColor, maxColor) {
+  return SpreadsheetApp.newConditionalFormatRule()
+    .setGradientMinpointWithValue(minColor, SpreadsheetApp.InterpolationType.MIN, '')
+    .setGradientMidpointWithValue(midColor, SpreadsheetApp.InterpolationType.PERCENTILE, '50')
+    .setGradientMaxpointWithValue(maxColor, SpreadsheetApp.InterpolationType.MAX, '')
+    .setRanges([range])
+    .build();
 }
 
 /**
