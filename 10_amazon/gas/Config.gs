@@ -36,6 +36,8 @@ const SHEET_NAMES = {
   M1_PRODUCT_MASTER: '商品マスター',
   M2_PURCHASE_PRICE: '月次仕入単価',
   M3_PROMO_COST: '販促費マスター',
+  // インポートシート
+  HISTORICAL_IMPORT: 'インポート_履歴データ',  // 過去Excelデータの一括取り込み用
 };
 
 // ===== 対象商品の定義 =====

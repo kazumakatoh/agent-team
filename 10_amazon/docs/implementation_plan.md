@@ -1,6 +1,6 @@
 # 実装フェーズ・未解決事項
 
-*v2.1 - 改善提案拡張・仕入履歴追加（2026-04-12）*
+*v2.2 - Phase 1 ほぼ完了・Phase 2 条件付き書式＋履歴インポート実装（2026-04-15）*
 
 ## 実装フェーズ
 
@@ -8,33 +8,33 @@
 
 - [ ] Amazon Ads API の Refresh Token 再発行
 - [ ] `/v2/profiles` で Profile ID (数値) を取得・確認
-- [ ] GitHubリポジトリ `kazumakatoh/amazon-dashboard` 作成 (Private)
-- [ ] clasp セットアップ（ローカル ↔ GAS 同期）
-- [ ] Google スプレッドシート作成・GAS プロジェクト初期化
-- [ ] PropertiesService に認証情報を設定
-- [ ] 既存Excel資産の共有・移行マッピング設計
+- [x] GitHubリポジトリ `kazumakatoh/agent-team` で管理（PR #4）
+- [x] clasp セットアップ（ローカル ↔ GAS 同期）
+- [x] Google スプレッドシート作成・GAS プロジェクト初期化
+- [ ] PropertiesService に認証情報を設定（社長作業）
+- [ ] 既存Excel資産の共有・移行マッピング設計（社長から共有待ち）
 
 ### Phase 1: SP-APIデータ取得 + マスター構築
 
-- [ ] LWA認証（Access Token取得）の実装
-- [ ] Orders API で売上・注文データ取得（CV/点数を分離）
-- [ ] `GET_SALES_AND_TRAFFIC_REPORT` でPV・訪問数・CVR取得
-- [ ] `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` で確定経費取得
+- [x] LWA認証（Access Token取得）の実装 ← `Auth.gs` / `SpApi.gs`
+- [x] Orders API で売上・注文データ取得（CV/点数を分離）← `DailyFetch.gs`
+- [x] `GET_SALES_AND_TRAFFIC_REPORT` でPV・訪問数・CVR取得 ← `ReportFetch.gs`
+- [x] `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` で確定経費取得 ← `SettlementFetch.gs`
 - [ ] `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` で在庫取得
-- [ ] M1（商品マスター）作成・カテゴリ設定・既存Excelから移行
-- [ ] M2（仕入履歴）作成・既存Excelの仕入単価データ移行
-- [ ] D1（日次データ）への書き込み
-- [ ] D2（経費明細）への Settlement Report 取り込み
+- [x] M1（商品マスター）作成・カテゴリ設定・CFシートからインポート ← `ProductMaster.gs`
+- [x] M2（仕入履歴）作成・CFシート自動連携
+- [x] D1（日次データ）への書き込み ← `SheetWriter.gs`
+- [x] D2（経費明細）への Settlement Report 取り込み + 月次集計(D2S)
 - [ ] 暫定→確定の自動更新ロジック
 
 ### Phase 2: 3層ダッシュボード構築
 
-- [ ] L1（事業ダッシュボード）: 全体サマリー + カテゴリ別 + 注意商品
-- [ ] L2（カテゴリ分析）: ドロップダウン連動・QUERY関数
+- [x] L1（事業ダッシュボード）: 全体サマリー + カテゴリ別 + 注意商品 ← `Dashboard.gs`
+- [x] L2（カテゴリ分析）: カテゴリごとの月次推移 + ASIN別 ← `Dashboard.gs`
 - [ ] L3（商品分析）: ASIN/期間ドロップダウン・全体/広告/オーガニック3セクション
 - [ ] M3（販促費マスター）+ レイヤー2（最終利益）計算
-- [ ] 条件付き書式（粗利率・ACOS・TACOS のハイライト）
-- [ ] 既存Excel過去3年データの一括インポート
+- [x] 条件付き書式（粗利率・ACOS・TACOS・ROAS のハイライト）← `Formatting.gs`
+- [x] 既存Excel過去3年データの一括インポート ← `HistoricalImport.gs`
 
 ### Phase 3: 広告データ統合（Ads API稼働後）
 
@@ -82,7 +82,7 @@
 | # | 事項 | 状態 | 必要なアクション |
 |---|---|---|---|
 | 1 | Ads API Profiles: 0 問題 | Refresh Token再発行で解決予定 | advertising.amazon.comでJPプロファイル確認 → Token再発行 |
-| 2 | 既存Excelの共有 | 社長から後日共有 | 3年分のデータ移行マッピング |
+| 2 | 既存Excelの共有 | インポート枠組み完成 / データ共有待ち | `setupHistoricalImportSheet()` 実行後、Excelデータをコピペ → `importHistoricalData()` |
 
 ### 実装時に検証が必要
 

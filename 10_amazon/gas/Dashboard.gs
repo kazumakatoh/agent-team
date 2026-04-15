@@ -48,9 +48,14 @@ function updateDashboardL1() {
   // シート書き込み
   const t4 = Date.now();
   writeOverallSummary(sheet, totals, periods);
-  const alertStartRow = writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, periods);
-  writeAlertProducts(sheet, thisMonthDaily, alertStartRow);
+  const categoryResult = writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, periods);
+  writeAlertProducts(sheet, thisMonthDaily, categoryResult.nextRow);
   Logger.log('シート書き込み: ' + (Date.now()-t4) + 'ms');
+
+  // 条件付き書式（粗利率/TACOS/ACOS/ROAS のハイライト）
+  const t5 = Date.now();
+  applyL1ConditionalFormatting(sheet, categoryResult.dataStartRow, categoryResult.rowCount);
+  Logger.log('条件付き書式: ' + (Date.now()-t5) + 'ms');
 
   Logger.log('===== L1 完了（合計 ' + (Date.now()-t0) + 'ms）=====');
 }
@@ -341,24 +346,28 @@ function writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, p
     ];
   });
 
+  let dataStartRow = startRow + 2;
   if (rows.length > 0) {
-    const dataRow = startRow + 2;
-    sheet.getRange(dataRow, 1, rows.length, headers.length).setValues(rows);
-    sheet.getRange(dataRow, 1, rows.length, 1).setHorizontalAlignment('center');
-    sheet.getRange(dataRow, 2, rows.length, headers.length - 1).setHorizontalAlignment('right');
-    sheet.getRange(dataRow, 2, rows.length, 1).setNumberFormat('#,##0');
-    sheet.getRange(dataRow, 3, rows.length, 1).setNumberFormat('0.0%');
-    sheet.getRange(dataRow, 4, rows.length, 2).setNumberFormat('#,##0');
-    sheet.getRange(dataRow, 6, rows.length, 2).setNumberFormat('#,##0');
-    sheet.getRange(dataRow, 8, rows.length, 1).setNumberFormat('0.0%');
-    sheet.getRange(dataRow, 9, rows.length, 1).setNumberFormat('+0.0%;-0.0%;-');
-    sheet.getRange(dataRow, 10, rows.length, 1).setNumberFormat('0.0%');
-    sheet.getRange(dataRow, 11, rows.length, 1).setNumberFormat('+0.0%;-0.0%;-');
-    sheet.getRange(dataRow, 12, rows.length, 1).setNumberFormat('0.00');
-    sheet.getRange(dataRow, 13, rows.length, 1).setNumberFormat('0.0%');
+    sheet.getRange(dataStartRow, 1, rows.length, headers.length).setValues(rows);
+    sheet.getRange(dataStartRow, 1, rows.length, 1).setHorizontalAlignment('center');
+    sheet.getRange(dataStartRow, 2, rows.length, headers.length - 1).setHorizontalAlignment('right');
+    sheet.getRange(dataStartRow, 2, rows.length, 1).setNumberFormat('#,##0');
+    sheet.getRange(dataStartRow, 3, rows.length, 1).setNumberFormat('0.0%');
+    sheet.getRange(dataStartRow, 4, rows.length, 2).setNumberFormat('#,##0');
+    sheet.getRange(dataStartRow, 6, rows.length, 2).setNumberFormat('#,##0');
+    sheet.getRange(dataStartRow, 8, rows.length, 1).setNumberFormat('0.0%');
+    sheet.getRange(dataStartRow, 9, rows.length, 1).setNumberFormat('+0.0%;-0.0%;-');
+    sheet.getRange(dataStartRow, 10, rows.length, 1).setNumberFormat('0.0%');
+    sheet.getRange(dataStartRow, 11, rows.length, 1).setNumberFormat('+0.0%;-0.0%;-');
+    sheet.getRange(dataStartRow, 12, rows.length, 1).setNumberFormat('0.00');
+    sheet.getRange(dataStartRow, 13, rows.length, 1).setNumberFormat('0.0%');
   }
 
-  return startRow + 2 + rows.length + 2;
+  return {
+    nextRow: startRow + 2 + rows.length + 2,
+    dataStartRow: dataStartRow,
+    rowCount: rows.length,
+  };
 }
 
 // ===== 注意商品 =====
@@ -436,15 +445,28 @@ function updateDashboardL2() {
     dataByCategory[d.category].push(d);
   }
 
+  const blocks = [];
   let currentRow = 3;
   sortedCategories.forEach(cat => {
     const catData = dataByCategory[cat] || [];
-    const blockHeight = writeCategoryBlock(sheet, catData, cat, currentRow, periods, allExpenses);
-    currentRow += blockHeight + 2;
+    const result = writeCategoryBlock(sheet, catData, cat, currentRow, periods, allExpenses);
+    blocks.push({
+      startRow: currentRow,
+      monthRowCount: result.monthRowCount,
+      asinRowCount: result.asinRowCount,
+    });
+    currentRow += result.blockHeight + 2;
   });
 
   if (sortedCategories.length === 0) {
     sheet.getRange(3, 1).setValue('当月売上のあるカテゴリがありません');
+  }
+
+  // 条件付き書式（粗利率/TACOS/ACOS/ROAS のハイライト）
+  if (blocks.length > 0) {
+    const t5 = Date.now();
+    applyL2ConditionalFormatting(sheet, blocks);
+    Logger.log('条件付き書式: ' + (Date.now()-t5) + 'ms');
   }
 
   Logger.log('L2 完了（' + (Date.now()-t0) + 'ms）');
@@ -564,7 +586,11 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpe
     sheet.getRange(r, rightCol + 10, asinRows.length, 1).setNumberFormat('0.0%');     // 利益率
   }
 
-  return 2 + Math.max(monthRows.length, asinRows.length);
+  return {
+    blockHeight: 2 + Math.max(monthRows.length, asinRows.length),
+    monthRowCount: monthRows.length,
+    asinRowCount: asinRows.length,
+  };
 }
 
 // ===== ヘルパー =====
