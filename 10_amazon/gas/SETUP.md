@@ -94,6 +94,15 @@ GitHub Actions が自動で `clasp push --force` を実行する。
 
 → **ローカルに clasp 環境を作らなくても、push するだけで GAS に反映される**
 
+#### トークン切れ時の対応
+
+`CLASPRC_JSON` の RAPT が期限切れすると `invalid_grant` エラーでデプロイが
+失敗する。その時は以下の手順で更新：
+
+1. ローカル PC で `clasp login` 実行 → 新しいトークン発行
+2. `~/.clasprc.json` の内容をクリップボードにコピー
+3. GitHub Secrets の `CLASPRC_JSON` を更新
+
 ### 手動デプロイ（ローカル作業時）
 
 ```bash
