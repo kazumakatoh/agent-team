@@ -102,6 +102,10 @@ GitHub Actions が自動で `clasp push --force` を実行する。
 1. ローカル PC で `clasp login` 実行 → 新しいトークン発行
 2. `~/.clasprc.json` の内容をクリップボードにコピー
 3. GitHub Secrets の `CLASPRC_JSON` を更新
+4. トリガー用に `10_amazon/gas/` 内のファイルを変更して push
+
+> ⚠️ トークンの中身（refresh_token / client_secret）は絶対に外部に見せない。
+> 誤って露出した場合は https://myaccount.google.com/permissions で即座に無効化し再発行する。
 
 ### 手動デプロイ（ローカル作業時）
 
