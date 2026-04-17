@@ -369,22 +369,25 @@ function backfillD1RefundsFromSettlement() {
   }
 
   // 率を算出
+  // 注: Settlement Report の Refund 行に qty が入っていない場合があるため、
+  //     qty率は「金額率」で代替する（refund_amount/principal を qty にも適用）
   const rateByMonth = {};
   let totalRefundAmount = 0, totalRefundQty = 0, totalOrderQty = 0, totalPrincipal = 0;
   Object.keys(byMonth).forEach(ym => {
     const m = byMonth[ym];
-    rateByMonth[ym] = {
-      refundAmountRate: m.principal > 0 ? m.refundAmount / m.principal : 0,
-      refundQtyRate: m.orderQty > 0 ? m.refundQty / m.orderQty : 0,
-    };
+    const amountRate = m.principal > 0 ? m.refundAmount / m.principal : 0;
+    const qtyRate = m.orderQty > 0 && m.refundQty > 0 ? m.refundQty / m.orderQty : amountRate;
+    rateByMonth[ym] = { refundAmountRate: amountRate, refundQtyRate: qtyRate };
     totalRefundAmount += m.refundAmount;
     totalRefundQty += m.refundQty;
     totalOrderQty += m.orderQty;
     totalPrincipal += m.principal;
   });
-  // 全期間平均率（Settlement データがない月のフォールバック）
+  // 全期間平均率
   const fallbackAmountRate = totalPrincipal > 0 ? totalRefundAmount / totalPrincipal : 0;
-  const fallbackQtyRate = totalOrderQty > 0 ? totalRefundQty / totalOrderQty : 0;
+  const fallbackQtyRate = totalOrderQty > 0 && totalRefundQty > 0
+    ? totalRefundQty / totalOrderQty
+    : fallbackAmountRate;  // qtyが取れないなら金額率で代替
   Logger.log('  月別rate: ' + Object.keys(rateByMonth).length + ' 月 / フォールバック率: qty=' +
     (fallbackQtyRate * 100).toFixed(2) + '% / amount=' + (fallbackAmountRate * 100).toFixed(2) + '%');
 
