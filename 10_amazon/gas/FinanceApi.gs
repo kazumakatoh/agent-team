@@ -102,10 +102,12 @@ function fetchAllFinancialEvents(postedAfter, postedBefore) {
     for (const sf of serviceFees) {
       const feeList = sf.FeeList || [];
       for (const fee of feeList) {
+        // PostedDate が欠落する場合、取得期間の終了日をフォールバック
+        const postedDate = sf.PostedDate || postedBefore;
         events.push({
-          date: extractDate(sf.PostedDate || ''),
+          date: extractDate(postedDate),
           eventType: 'ServiceFee',
-          feeReason: sf.FeeReason || sf.FeeDescription || '',
+          feeReason: fee.FeeType || sf.FeeReason || sf.FeeDescription || '',
           amount: fee.FeeAmount ? parseFloat(fee.FeeAmount.CurrencyAmount) : 0,
         });
       }
