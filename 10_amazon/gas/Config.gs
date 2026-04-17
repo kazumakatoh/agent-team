@@ -162,13 +162,18 @@ function setupDailyTriggers() {
   ScriptApp.newTrigger('buildDailySalesSheet')
     .timeBased().everyDays(1).atHour(8).nearMinute(30).create();
 
+  // 毎月3日 6:00 - CFシート → M2 仕入単価同期
+  ScriptApp.newTrigger('syncPurchasePriceFromCfSheet')
+    .timeBased().onMonthDay(3).atHour(6).create();
+
   Logger.log('✅ トリガー設定完了');
-  Logger.log('  6:00 - 注文データ');
-  Logger.log('  6:15 - トラフィック');
-  Logger.log('  6:30 - マスター同期');
-  Logger.log('  7:00 - Settlement');
-  Logger.log('  7:30 - Finance Events');
-  Logger.log('  8:00 - 中間スプシ↔M3 同期');
-  Logger.log('  8:30 - 日次販売実績シート');
+  Logger.log('  毎日 6:00 - 注文データ');
+  Logger.log('  毎日 6:15 - トラフィック');
+  Logger.log('  毎日 6:30 - マスター同期');
+  Logger.log('  毎日 7:00 - Settlement');
+  Logger.log('  毎日 7:30 - Finance Events');
+  Logger.log('  毎日 8:00 - 中間スプシ↔M3 同期');
+  Logger.log('  毎日 8:30 - 日次販売実績シート');
+  Logger.log('  毎月3日 6:00 - CF→M2 仕入単価同期');
 }
 

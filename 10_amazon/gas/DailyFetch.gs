@@ -103,10 +103,17 @@ function fetchAndWriteOrders(dateStr, startOfDay, endOfDay) {
     Utilities.sleep(500);
   }
 
+  // 仕入単価マップを読み込み（M2 から当月分を取得）
+  const yearMonth = dateStr.substring(0, 7);
+  const priceMap = getPriceMapForMonth(yearMonth);
+
   // D1シートに書き込み
   const rows = [];
   for (const [asin, data] of Object.entries(asinSummary)) {
     const master = productMaster[asin] || {};
+    const unitPrice = priceMap[asin] || 0;
+    const cogs = unitPrice * data.units;
+
     rows.push([
       dateStr,                          // 日付
       asin,                             // ASIN
@@ -118,7 +125,8 @@ function fetchAndWriteOrders(dateStr, startOfDay, endOfDay) {
       '', '', '', '', '',               // セッション・PV等（Traffic Reportで後日更新）
       '', '', '',                       // FBA手数料・返品（Settlement Reportで後日更新）
       '', '', '', '',                   // 広告データ（Ads APIで後日更新）
-      '', '',                           // 仕入単価・原価（マスター連携で後日更新）
+      unitPrice || '',                  // 仕入単価
+      cogs || '',                       // 仕入原価合計
       '暫定',                           // ステータス
     ]);
   }

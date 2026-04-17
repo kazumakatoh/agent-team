@@ -173,7 +173,7 @@ function aggregateByAsinWithExpense(dailyData, expByMonthAsin, yearMonth) {
         name: d.name || '',
         category: d.category || '(未分類)',
         sales: 0, cv: 0, units: 0,
-        adCost: 0, adSales: 0,
+        adCost: 0, adSales: 0, cogs: 0,
       };
     }
     const a = byAsin[d.asin];
@@ -182,6 +182,7 @@ function aggregateByAsinWithExpense(dailyData, expByMonthAsin, yearMonth) {
     a.units += d.units;
     a.adCost += d.adCost;
     a.adSales += d.adSales;
+    a.cogs += d.cogs || 0; // CF連携: D1 仕入原価合計から集計
   }
 
   // 経費を付与
@@ -191,7 +192,6 @@ function aggregateByAsinWithExpense(dailyData, expByMonthAsin, yearMonth) {
     const a = byAsin[asin];
     a.commission = exp.commission;
     a.otherExpense = exp.other;
-    a.cogs = 0; // TODO: CF連携
     a.profit = a.sales - a.cogs - a.commission - a.otherExpense - a.adCost;
     a.adRate = a.sales > 0 ? a.adCost / a.sales : 0;
     a.grossMargin = a.sales > 0 ? (a.sales - a.cogs) / a.sales : 0;
@@ -340,7 +340,7 @@ function sumAsinAggs(asinList) {
     total.sales += a.sales;
     total.cv += a.cv;
     total.units += a.units;
-    total.cogs += a.cogs;
+    total.cogs += a.cogs || 0;
     total.commission += a.commission;
     total.adCost += a.adCost;
     total.otherExpense += a.otherExpense;

@@ -63,7 +63,7 @@ function buildDailySalesSheet() {
   for (const d of dailyData) {
     if (!d.date) continue;
     if (!byDate[d.date]) {
-      byDate[d.date] = { sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0 };
+      byDate[d.date] = { sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0, cogs: 0 };
     }
     const x = byDate[d.date];
     x.sales += d.sales;
@@ -71,6 +71,7 @@ function buildDailySalesSheet() {
     x.units += d.units;
     x.adCost += d.adCost;
     x.adSales += d.adSales;
+    x.cogs += d.cogs || 0;
   }
 
   // 月次売上合計（按分用の分母）
@@ -93,7 +94,7 @@ function buildDailySalesSheet() {
     const exp = expByMonth[ym] || { commission: 0, other: 0 };
     const commission = exp.commission * ratio;
     const otherExpense = exp.other * ratio;
-    const cogs = 0; // TODO: CF連携後
+    const cogs = d.cogs; // D1 各日の仕入原価合計（M2連携後はバックフィル済み）
 
     const profit = d.sales - cogs - commission - otherExpense - d.adCost;
     const adRate = d.sales > 0 ? d.adCost / d.sales : 0;

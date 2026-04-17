@@ -81,6 +81,8 @@ function getDailyDataAll() {
     pv: parseFloat(row[8]) || 0,
     adCost: parseFloat(row[15]) || 0,
     adSales: parseFloat(row[16]) || 0,
+    unitPrice: parseFloat(row[19]) || 0, // 仕入単価（列20）
+    cogs: parseFloat(row[20]) || 0,      // 仕入原価合計（列21）
   }));
 }
 
@@ -189,7 +191,7 @@ function aggregateByCategory(filteredDaily, expenses) {
       byCategory[cat] = {
         category: cat,
         sales: 0, cv: 0, units: 0, sessions: 0, pv: 0,
-        adCost: 0, adSales: 0,
+        adCost: 0, adSales: 0, cogs: 0,
         asins: new Set(),
       };
     }
@@ -201,6 +203,7 @@ function aggregateByCategory(filteredDaily, expenses) {
     c.pv += d.pv;
     c.adCost += d.adCost;
     c.adSales += d.adSales;
+    c.cogs += d.cogs;
     if (d.asin) c.asins.add(d.asin);
   }
 
@@ -224,7 +227,7 @@ function computeDerivedMetrics(base, commission, otherExpense) {
   const sales = base.sales;
   const adCost = base.adCost;
   const adSales = base.adSales;
-  const cogs = 0; // TODO: CFシート連携
+  const cogs = base.cogs || 0; // CF連携: D1.仕入原価合計 から集計
   const grossProfit = sales - cogs - commission - otherExpense;
   const profit = grossProfit - adCost;
 
@@ -245,7 +248,7 @@ function computeDerivedMetrics(base, commission, otherExpense) {
 function sumCategoryAggs(byCategory) {
   const total = {
     sales: 0, cv: 0, units: 0, sessions: 0, pv: 0,
-    adCost: 0, adSales: 0, commission: 0, otherExpense: 0,
+    adCost: 0, adSales: 0, commission: 0, otherExpense: 0, cogs: 0,
   };
   for (const cat of Object.values(byCategory)) {
     total.sales += cat.sales;
@@ -257,6 +260,7 @@ function sumCategoryAggs(byCategory) {
     total.adSales += cat.adSales;
     total.commission += cat.commission;
     total.otherExpense += cat.otherExpense;
+    total.cogs += cat.cogs || 0;
   }
   Object.assign(total, computeDerivedMetrics(total, total.commission, total.otherExpense));
   return total;
@@ -330,10 +334,10 @@ function writeFinalProfitSection(sheet, totals, periods, startRow) {
   const thisPromo = calcPromoCostForPeriod(periods.thisMonth.start, periods.thisMonth.end, t.adCost);
   const lastPromo = calcPromoCostForPeriod(periods.lastMonthSameDay.start, periods.lastMonthSameDay.end, lm.adCost);
 
-  // 原価（CF連携未実装 = 暫定0）
-  const thisCogs = 0;
-  const lastCogs = 0;
-  const cogsUnavailable = true;
+  // 原価（M2 月次仕入単価から D1 にバックフィル済み）
+  const thisCogs = t.cogs || 0;
+  const lastCogs = lm.cogs || 0;
+  const cogsUnavailable = thisCogs === 0 && lastCogs === 0; // 両方ゼロなら未連携扱い
 
   // 粗利 = 売上 − 原価
   const thisGross = t.sales - thisCogs;
