@@ -594,13 +594,14 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpe
   for (const d of catData) {
     const month = d.date.substring(0, 7);
     if (!monthMap[month]) {
-      monthMap[month] = { sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0, asins: new Set() };
+      monthMap[month] = { sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0, cogs: 0, asins: new Set() };
     }
     monthMap[month].sales += d.sales;
     monthMap[month].cv += d.cv;
     monthMap[month].units += d.units;
     monthMap[month].adCost += d.adCost;
     monthMap[month].adSales += d.adSales;
+    monthMap[month].cogs += d.cogs || 0;
     if (d.asin) monthMap[month].asins.add(d.asin);
   }
 
@@ -622,7 +623,7 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpe
         otherExpense += monthExp[asin].other || 0;
       }
     }
-    const profit = d.sales - commission - otherExpense - d.adCost;
+    const profit = d.sales - d.cogs - commission - otherExpense - d.adCost;
     return [
       m, d.sales, d.cv, d.units, d.adCost, profit,
       d.sales > 0 ? d.adCost / d.sales : 0,
@@ -654,13 +655,14 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpe
   for (const d of catData) {
     if (d.date < periods.thisMonth.start || d.date > periods.thisMonth.end) continue;
     if (!asinMap[d.asin]) {
-      asinMap[d.asin] = { name: d.name, sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0 };
+      asinMap[d.asin] = { name: d.name, sales: 0, cv: 0, units: 0, adCost: 0, adSales: 0, cogs: 0 };
     }
     asinMap[d.asin].sales += d.sales;
     asinMap[d.asin].cv += d.cv;
     asinMap[d.asin].units += d.units;
     asinMap[d.asin].adCost += d.adCost;
     asinMap[d.asin].adSales += d.adSales;
+    asinMap[d.asin].cogs += d.cogs || 0;
   }
 
   // ASIN別の経費を当月分から取得
@@ -673,7 +675,7 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpe
     .sort((a, b) => b[1].sales - a[1].sales)
     .map(([asin, d]) => {
       const exp = thisMonthExpByAsin[asin] || { commission: 0, other: 0 };
-      const profit = d.sales - exp.commission - exp.other - d.adCost;
+      const profit = d.sales - d.cogs - exp.commission - exp.other - d.adCost;
       return [
         asin, d.name, d.sales,
         catTotal > 0 ? d.sales / catTotal : 0,

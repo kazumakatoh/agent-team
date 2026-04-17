@@ -197,6 +197,77 @@ function markFinanceEventsAsConfirmed(startDate, endDate) {
 }
 
 /**
+ * D2F の日付空欄行を削除（初回取得時の PostedDate 欠落行をクリーンアップ）
+ *
+ * 修正版 fetchDailyFinanceEvents 実行後に1度だけ実行することで、
+ * 日付なしの旧データを除去し、正しい日付付きデータだけを残す。
+ */
+function cleanupD2fEmptyDates() {
+  const sheet = getOrCreateSheet(SHEET_NAMES.D2F_FINANCE_EVENTS);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  const data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  const keep = [];
+  let removed = 0;
+  for (const row of data) {
+    const rawDate = row[0];
+    const dateStr = rawDate instanceof Date
+      ? Utilities.formatDate(rawDate, 'Asia/Tokyo', 'yyyy-MM-dd')
+      : String(rawDate || '').trim();
+    if (!dateStr || dateStr.length < 10) {
+      removed++;
+      continue;
+    }
+    keep.push(row);
+  }
+
+  sheet.getRange(2, 1, lastRow - 1, 5).clearContent();
+  if (keep.length > 0) {
+    sheet.getRange(2, 1, keep.length, 5).setValues(keep);
+  }
+  Logger.log('✅ D2F クリーンアップ: ' + removed + ' 行削除 / ' + keep.length + ' 行残す');
+}
+
+/**
+ * 過去N日分の Finance Events を一括取得（初回バックフィル用）
+ *
+ * @param {number} daysBack 遡る日数（例: 30, 60, 90）
+ */
+function backfillFinanceEvents(daysBack) {
+  daysBack = daysBack || 30;
+  const t0 = Date.now();
+  Logger.log('===== Finance Events バックフィル（過去' + daysBack + '日）=====');
+
+  const now = new Date();
+  const postedBefore = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+  const postedAfter = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+
+  Logger.log('期間: ' + postedAfter + ' 〜 ' + postedBefore);
+
+  setupD2fHeaders();
+  const existingKeys = getExistingD2fKeys();
+
+  const events = fetchAllFinancialEvents(postedAfter, postedBefore);
+  Logger.log('取得イベント総数: ' + events.length);
+
+  const newRows = [];
+  for (const ev of events) {
+    const key = ev.date + '|' + ev.eventType + '|' + ev.feeReason + '|' + ev.amount;
+    if (existingKeys.has(key)) continue;
+    newRows.push([ev.date, ev.eventType, ev.feeReason, ev.amount, '暫定']);
+    existingKeys.add(key);
+  }
+
+  if (newRows.length > 0) {
+    appendRows(SHEET_NAMES.D2F_FINANCE_EVENTS, newRows);
+    Logger.log('✅ D2F: ' + newRows.length + ' 件追記');
+  }
+
+  Logger.log('===== 完了（' + (Date.now() - t0) + 'ms）=====');
+}
+
+/**
  * テスト: 直近1日分の Finance Events を取得して内訳を表示
  */
 function testFinanceApi() {
