@@ -303,3 +303,73 @@ function testReadIntermediate() {
   Logger.log('支払報酬（行' + INTERMEDIATE_ROWS.PAY_REWARD + '）: ' + JSON.stringify(payRewards));
   Logger.log('ヤマト運輸（行' + INTERMEDIATE_ROWS.YAMATO + '）: ' + JSON.stringify(yamatoCosts));
 }
+
+/**
+ * 診断: D2 経費明細の FBA/輸送関連 明細種別を集計
+ *
+ * 荷造運賃の数値検証用。isFbaInboundFeeType() が何を拾っているか確認する。
+ */
+function debugSettlementFbaItems() {
+  const sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
+  if (sheet.getLastRow() <= 1) {
+    Logger.log('D2 経費明細にデータがありません');
+    return;
+  }
+
+  // 列3: 日付, 列4: ASIN, 列5: トランザクション種別, 列6: 明細種別, 列7: 金額
+  const data = sheet.getRange(2, 3, sheet.getLastRow() - 1, 5).getValues();
+
+  const typesAll = {};       // FBA/輸送/納品 関連すべて
+  const typesHit = {};       // isFbaInboundFeeType がヒットするもの
+  const byMonthHit = {};     // ヒットするものの月別集計
+
+  for (const row of data) {
+    const rawDate = row[0];
+    const itemType = String(row[3] || '');
+    const amount = parseFloat(row[4]) || 0;
+    const lower = itemType.toLowerCase();
+
+    const isRelated = lower.includes('inbound') || lower.includes('fba') ||
+                      lower.includes('transport') || itemType.includes('輸送') ||
+                      itemType.includes('納品');
+    if (!isRelated) continue;
+
+    typesAll[itemType] = (typesAll[itemType] || 0) + Math.abs(amount);
+
+    if (isFbaInboundFeeType(itemType)) {
+      typesHit[itemType] = (typesHit[itemType] || 0) + Math.abs(amount);
+
+      // 月別
+      let ym = '';
+      if (rawDate instanceof Date) {
+        ym = rawDate.getFullYear() + '-' + String(rawDate.getMonth() + 1).padStart(2, '0');
+      } else {
+        ym = String(rawDate).substring(0, 7);
+      }
+      if (ym) byMonthHit[ym] = (byMonthHit[ym] || 0) + Math.abs(amount);
+    }
+  }
+
+  Logger.log('═══════════════════════════════════════════');
+  Logger.log('【A】 FBA/輸送/納品 関連すべての明細種別（金額降順）:');
+  Logger.log('═══════════════════════════════════════════');
+  Object.entries(typesAll)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([t, v]) => Logger.log('  "' + t + '": ¥' + v.toLocaleString()));
+
+  Logger.log('');
+  Logger.log('═══════════════════════════════════════════');
+  Logger.log('【B】 isFbaInboundFeeType() で現在ヒットするもの:');
+  Logger.log('═══════════════════════════════════════════');
+  Object.entries(typesHit)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([t, v]) => Logger.log('  "' + t + '": ¥' + v.toLocaleString()));
+
+  Logger.log('');
+  Logger.log('═══════════════════════════════════════════');
+  Logger.log('【C】 ヒットしたものの月別集計:');
+  Logger.log('═══════════════════════════════════════════');
+  Object.entries(byMonthHit)
+    .sort()
+    .forEach(([ym, v]) => Logger.log('  ' + ym + ': ¥' + v.toLocaleString()));
+}
