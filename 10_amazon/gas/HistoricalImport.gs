@@ -290,9 +290,9 @@ function appendSettlementSummary(rows) {
     data.forEach(r => existing.add(String(r[0]).trim() + '_' + String(r[1]).trim()));
   }
 
-  // ヘッダーがなければ追加
+  // ヘッダーがなければ追加（Principal売上列も含む5列）
   if (lastRow === 0) {
-    sheet.getRange(1, 1, 1, 4).setValues([['ASIN', '年月', '販売手数料', 'その他経費']])
+    sheet.getRange(1, 1, 1, 5).setValues([['ASIN', '年月', '販売手数料', 'その他経費', 'Principal売上']])
       .setFontWeight('bold').setBackground('#e8f0fe');
     sheet.setFrozenRows(1);
   }

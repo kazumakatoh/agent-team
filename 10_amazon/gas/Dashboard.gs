@@ -106,12 +106,15 @@ function readAllSettlement() {
     return [];
   }
 
-  const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  // 列1:ASIN / 2:年月 / 3:販売手数料 / 4:その他経費 / 5:Principal売上
+  const lastCol = Math.max(5, sheet.getLastColumn());
+  const data = sheet.getRange(2, 1, lastRow - 1, Math.min(5, lastCol)).getValues();
   return data.map(row => ({
     asin: String(row[0] || '').trim(),
     yearMonth: formatYearMonth(row[1]),  // Date/文字列両対応
     commission: parseFloat(row[2]) || 0,
     other: parseFloat(row[3]) || 0,
+    principal: parseFloat(row[4]) || 0,  // Settlement確定売上（rate算出用）
   }));
 }
 
@@ -122,7 +125,7 @@ function aggregateExpenses(allExpenses, startDate, endDate) {
   const startMonth = startDate.substring(0, 7);
   const endMonth = endDate.substring(0, 7);
 
-  let commission = 0, other = 0;
+  let commission = 0, other = 0, principal = 0;
   const byAsin = {};
 
   // 同月内の部分期間の場合、日数按分
@@ -145,9 +148,11 @@ function aggregateExpenses(allExpenses, startDate, endDate) {
 
     const c = row.commission * ratio;
     const o = row.other * ratio;
+    const p = (row.principal || 0) * ratio;
 
     commission += c;
     other += o;
+    principal += p;
 
     if (row.asin) {
       if (!byAsin[row.asin]) byAsin[row.asin] = { commission: 0, other: 0 };
@@ -156,7 +161,36 @@ function aggregateExpenses(allExpenses, startDate, endDate) {
     }
   }
 
-  return { commission, other, total: commission + other, byAsin };
+  // Settlement確定分から率を算出（D1売上 vs D2 Principal のタイミング不一致を補正）
+  const commissionRate = principal > 0 ? commission / principal : 0;
+  const otherRate = principal > 0 ? other / principal : 0;
+
+  return { commission, other, total: commission + other, byAsin, principal, commissionRate, otherRate };
+}
+
+/**
+ * Settlement確定比率を使って D1売上相当の経費を推定
+ *
+ * @param {number} d1Sales D1日次データから集計した売上（確定+未確定）
+ * @param {Object} expenses aggregateExpensesの戻り値
+ * @returns {Object} { commission, other, isEstimated }
+ */
+function estimateExpensesFromRate(d1Sales, expenses) {
+  // Settlement から算出した比率が有効 かつ
+  // D1売上が D2 Principal より多い（未確定分が残っている）なら推定
+  if (expenses.principal > 0 && d1Sales > expenses.principal && expenses.commissionRate > 0) {
+    return {
+      commission: d1Sales * expenses.commissionRate,
+      other: d1Sales * expenses.otherRate,
+      isEstimated: true,
+    };
+  }
+  // Settlement 完全確定済み or D2 データなし → そのまま返す
+  return {
+    commission: expenses.commission,
+    other: expenses.other,
+    isEstimated: false,
+  };
 }
 
 function getPeriods() {
@@ -256,27 +290,35 @@ function computeDerivedMetrics(base, commission, otherExpense) {
 /**
  * 経費の総計を aggregateExpenses の total で上書き
  *
- * D2 は Settlement Report 由来で SKU (例: RCO-xxxx) で計上されているため、
- * D1 の ASIN (例: B0xxxxxx) とマッチせず ASIN 経由集計では0になる。
- * 代わりに aggregateExpenses が返す「その期間の総額」で上書きして正しい値にする。
+ * 問題1: D2 は Settlement Report 由来で SKU (例: RCO-xxxx) で計上されているため、
+ *        D1 の ASIN (例: B0xxxxxx) とマッチせず ASIN 経由集計では0になる。
+ * 問題2: Settlement は14日サイクル確定のため、当月の大半が未確定 = 過少表示。
+ *
+ * 対策: Settlement 確定分から算出した Commission率 × D1売上 で推定補正。
+ *       Settlement 確定が進むと自動的に実数値に近づく。
  */
 function overrideExpensesFromTotal(total, expenses) {
-  total.commission = expenses.commission || 0;
-  total.otherExpense = expenses.other || 0;
+  const estimated = estimateExpensesFromRate(total.sales, expenses);
+  total.commission = estimated.commission;
+  total.otherExpense = estimated.other;
+  total.isEstimatedExpense = estimated.isEstimated;
   Object.assign(total, computeDerivedMetrics(total, total.commission, total.otherExpense));
 }
 
 /**
  * カテゴリ別の経費を売上比率で按分（SKU/ASINマッピング問題の対策）
+ * 推定値もカテゴリ売上比で按分する。
  */
 function prorateExpensesToCategories(byCategory, expenses) {
   const totalSales = Object.values(byCategory).reduce((s, c) => s + c.sales, 0);
   if (totalSales <= 0) return;
 
+  const estimated = estimateExpensesFromRate(totalSales, expenses);
+
   for (const cat of Object.values(byCategory)) {
     const ratio = cat.sales / totalSales;
-    const commission = expenses.commission * ratio;
-    const otherExpense = expenses.other * ratio;
+    const commission = estimated.commission * ratio;
+    const otherExpense = estimated.other * ratio;
     Object.assign(cat, computeDerivedMetrics(cat, commission, otherExpense));
   }
 }

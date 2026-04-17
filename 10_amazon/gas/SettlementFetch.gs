@@ -413,38 +413,40 @@ function buildSettlementSummary() {
     const itemType = String(row[3]).trim();  // 明細種別
     const amount = parseFloat(row[4]) || 0;
 
-    if (itemType === 'Principal' || itemType === 'Tax') continue;
+    // Tax はスキップ、Principal は売上基準として別集計
+    if (itemType === 'Tax') continue;
 
-    const expense = -amount;
     const key = asin + '_' + yearMonth;
-
     if (!summary[key]) {
-      summary[key] = { asin: asin, yearMonth: yearMonth, commission: 0, other: 0 };
+      summary[key] = { asin: asin, yearMonth: yearMonth, commission: 0, other: 0, principal: 0 };
     }
 
-    if (itemType === 'Commission') {
-      summary[key].commission += expense;
+    if (itemType === 'Principal') {
+      // Principal はプラス値（売上）として記録
+      summary[key].principal += amount;
+    } else if (itemType === 'Commission') {
+      summary[key].commission += -amount;  // 正の経費として
     } else {
-      summary[key].other += expense;
+      summary[key].other += -amount;
     }
   }
   Logger.log('集計: ' + (Date.now()-t2) + 'ms');
 
   // 書き込み
   const t3 = Date.now();
-  const rows = Object.values(summary).map(s => [s.asin, s.yearMonth, s.commission, s.other]);
+  const rows = Object.values(summary).map(s => [s.asin, s.yearMonth, s.commission, s.other, s.principal]);
   rows.sort((a, b) => (a[1] + a[0]).localeCompare(b[1] + b[0]));
 
   const dstSheet = getOrCreateSheet(SHEET_NAMES.D2S_SETTLEMENT_SUMMARY);
   dstSheet.clear();
-  dstSheet.getRange(1, 1, 1, 4).setValues([['ASIN', '年月', '販売手数料', 'その他経費']])
+  dstSheet.getRange(1, 1, 1, 5).setValues([['ASIN', '年月', '販売手数料', 'その他経費', 'Principal売上']])
     .setFontWeight('bold').setBackground('#e8f0fe');
   dstSheet.setFrozenRows(1);
 
   if (rows.length > 0) {
     dstSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@'); // 年月列をテキスト形式に
-    dstSheet.getRange(2, 1, rows.length, 4).setValues(rows);
-    dstSheet.getRange(2, 3, rows.length, 2).setNumberFormat('#,##0');
+    dstSheet.getRange(2, 1, rows.length, 5).setValues(rows);
+    dstSheet.getRange(2, 3, rows.length, 3).setNumberFormat('#,##0');
   }
   Logger.log('書き込み: ' + (Date.now()-t3) + 'ms (' + rows.length + '件)');
 
