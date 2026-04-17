@@ -370,13 +370,23 @@ function backfillD1RefundsFromSettlement() {
 
   // 率を算出
   const rateByMonth = {};
+  let totalRefundAmount = 0, totalRefundQty = 0, totalOrderQty = 0, totalPrincipal = 0;
   Object.keys(byMonth).forEach(ym => {
     const m = byMonth[ym];
     rateByMonth[ym] = {
       refundAmountRate: m.principal > 0 ? m.refundAmount / m.principal : 0,
       refundQtyRate: m.orderQty > 0 ? m.refundQty / m.orderQty : 0,
     };
+    totalRefundAmount += m.refundAmount;
+    totalRefundQty += m.refundQty;
+    totalOrderQty += m.orderQty;
+    totalPrincipal += m.principal;
   });
+  // 全期間平均率（Settlement データがない月のフォールバック）
+  const fallbackAmountRate = totalPrincipal > 0 ? totalRefundAmount / totalPrincipal : 0;
+  const fallbackQtyRate = totalOrderQty > 0 ? totalRefundQty / totalOrderQty : 0;
+  Logger.log('  月別rate: ' + Object.keys(rateByMonth).length + ' 月 / フォールバック率: qty=' +
+    (fallbackQtyRate * 100).toFixed(2) + '% / amount=' + (fallbackAmountRate * 100).toFixed(2) + '%');
 
   // D1 を走査（列1:日付, 列5:売上, 列7:注文点数）
   const d1Sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
@@ -391,10 +401,12 @@ function backfillD1RefundsFromSettlement() {
     const ym = formatYearMonth(row[0]);
     const sales = parseFloat(row[4]) || 0;
     const units = parseFloat(row[6]) || 0;
-    const rate = rateByMonth[ym] || { refundAmountRate: 0, refundQtyRate: 0 };
+    const rate = rateByMonth[ym];
+    const qtyRate = rate ? rate.refundQtyRate : fallbackQtyRate;
+    const amtRate = rate ? rate.refundAmountRate : fallbackAmountRate;
 
-    const refundQty = Math.round(units * rate.refundQtyRate);
-    const refundAmount = Math.round(sales * rate.refundAmountRate);
+    const refundQty = Math.round(units * qtyRate);
+    const refundAmount = Math.round(sales * amtRate);
     updates.push([refundQty || '', refundAmount || '']);
     if (refundQty > 0 || refundAmount > 0) applied++;
   }
@@ -439,10 +451,14 @@ function backfillD1FbaFeeFromSettlement() {
   }
 
   const rateByMonth = {};
+  let totalFba = 0, totalPrincipalFba = 0;
   Object.keys(byMonth).forEach(ym => {
     const m = byMonth[ym];
     rateByMonth[ym] = m.principal > 0 ? m.fba / m.principal : 0;
+    totalFba += m.fba;
+    totalPrincipalFba += m.principal;
   });
+  const fallbackFbaRate = totalPrincipalFba > 0 ? totalFba / totalPrincipalFba : 0;
 
   // D1 を走査し、FBA手数料列（列13）を書き換え
   const d1Sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
@@ -456,7 +472,7 @@ function backfillD1FbaFeeFromSettlement() {
   for (const row of d1Data) {
     const ym = formatYearMonth(row[0]);
     const sales = parseFloat(row[4]) || 0;
-    const rate = rateByMonth[ym] || 0;
+    const rate = rateByMonth[ym] !== undefined ? rateByMonth[ym] : fallbackFbaRate;
     const fba = Math.round(sales * rate);
     fbaFees.push([fba || '']);
     if (fba > 0) applied++;
