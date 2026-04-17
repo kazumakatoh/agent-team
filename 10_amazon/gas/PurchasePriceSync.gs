@@ -326,6 +326,85 @@ function backfillD1CogsFromM2() {
 }
 
 /**
+ * D1 日次データの 返品数（列14）・返品額（列15）を Settlement rate で推定反映
+ *
+ * D2 の Refund トランザクションから月別返品率を算出し、日次売上に掛ける。
+ */
+function backfillD1RefundsFromSettlement() {
+  Logger.log('===== D1 返品数・返品額バックフィル 開始 =====');
+
+  // D2 から月別 返品率を算出
+  const d2Sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
+  const d2LastRow = d2Sheet.getLastRow();
+  if (d2LastRow <= 1) { Logger.log('D2 空'); return; }
+
+  const d2Data = d2Sheet.getRange(2, 3, d2LastRow - 1, 6).getValues();
+  // 列3:日付, 列4:ASIN, 列5:トランザクション種別, 列6:明細種別, 列7:金額, 列8:数量
+  const byMonth = {}; // ym → { refundAmount, refundQty, orderQty, principal }
+
+  for (const row of d2Data) {
+    const rawDate = row[0];
+    const txType = String(row[2] || '').trim();
+    const itemType = String(row[3] || '').trim();
+    const amount = parseFloat(row[4]) || 0;
+    const qty = parseInt(row[5]) || 0;
+
+    let ym = '';
+    if (rawDate instanceof Date) {
+      ym = rawDate.getFullYear() + '-' + String(rawDate.getMonth() + 1).padStart(2, '0');
+    } else if (rawDate) {
+      ym = String(rawDate).substring(0, 7);
+    }
+    if (!ym) continue;
+
+    if (!byMonth[ym]) byMonth[ym] = { refundAmount: 0, refundQty: 0, orderQty: 0, principal: 0 };
+
+    if (txType === 'Refund' && itemType === 'Principal') {
+      byMonth[ym].refundAmount += Math.abs(amount);
+      byMonth[ym].refundQty += Math.abs(qty);
+    } else if (txType === 'Order' && itemType === 'Principal') {
+      byMonth[ym].orderQty += qty;
+      byMonth[ym].principal += amount;
+    }
+  }
+
+  // 率を算出
+  const rateByMonth = {};
+  Object.keys(byMonth).forEach(ym => {
+    const m = byMonth[ym];
+    rateByMonth[ym] = {
+      refundAmountRate: m.principal > 0 ? m.refundAmount / m.principal : 0,
+      refundQtyRate: m.orderQty > 0 ? m.refundQty / m.orderQty : 0,
+    };
+  });
+
+  // D1 を走査（列1:日付, 列5:売上, 列7:注文点数）
+  const d1Sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const d1LastRow = d1Sheet.getLastRow();
+  if (d1LastRow <= 1) return;
+
+  const d1Data = d1Sheet.getRange(2, 1, d1LastRow - 1, 7).getValues();
+  const updates = [];  // [[返品数, 返品額], ...]
+  let applied = 0;
+
+  for (const row of d1Data) {
+    const ym = formatYearMonth(row[0]);
+    const sales = parseFloat(row[4]) || 0;
+    const units = parseFloat(row[6]) || 0;
+    const rate = rateByMonth[ym] || { refundAmountRate: 0, refundQtyRate: 0 };
+
+    const refundQty = Math.round(units * rate.refundQtyRate);
+    const refundAmount = Math.round(sales * rate.refundAmountRate);
+    updates.push([refundQty || '', refundAmount || '']);
+    if (refundQty > 0 || refundAmount > 0) applied++;
+  }
+
+  // 列14（返品数）、列15（返品額）に書込
+  d1Sheet.getRange(2, 14, updates.length, 2).setValues(updates);
+  Logger.log('✅ D1 返品バックフィル: ' + applied + ' / ' + updates.length + ' 行');
+}
+
+/**
  * D1 日次データの FBA手数料列（列13）を Settlement のFBA率 × 日次売上 で推定反映
  *
  * D2 の明細種別 "FBAPerUnitFulfillmentFee" を月次集計して Principal に対する率を算出。

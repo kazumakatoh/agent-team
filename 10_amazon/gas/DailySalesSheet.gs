@@ -65,6 +65,16 @@ function buildDailySalesSheet() {
     m.otherRate = m.principal > 0 ? m.other / m.principal : 0;
   });
 
+  // 全月平均率（Settlement データがない月のフォールバック用）
+  let totalComm = 0, totalOther = 0, totalPrincipal = 0;
+  Object.values(expByMonth).forEach(m => {
+    totalComm += m.commission;
+    totalOther += m.other;
+    totalPrincipal += m.principal;
+  });
+  const fallbackCommRate = totalPrincipal > 0 ? totalComm / totalPrincipal : 0;
+  const fallbackOtherRate = totalPrincipal > 0 ? totalOther / totalPrincipal : 0;
+
   // 日次データを「日付」で集計（全ASIN合計）
   const byDate = {};
   for (const d of dailyData) {
@@ -95,10 +105,12 @@ function buildDailySalesSheet() {
     const d = byDate[date];
     const ym = date.substring(0, 7);
 
-    // Settlement 率ベースで経費推定（D2 Principal 基準、Settlement 確定時は実数値に近づく）
-    const exp = expByMonth[ym] || { commissionRate: 0, otherRate: 0 };
-    const commission = d.sales * exp.commissionRate;
-    const otherExpense = d.sales * exp.otherRate;
+    // Settlement 率ベースで経費推定。該当月にデータなければ全月平均率でフォールバック
+    const exp = expByMonth[ym];
+    const commRate = exp ? exp.commissionRate : fallbackCommRate;
+    const othRate = exp ? exp.otherRate : fallbackOtherRate;
+    const commission = d.sales * commRate;
+    const otherExpense = d.sales * othRate;
     const cogs = d.cogs; // D1 各日の仕入原価合計（M2連携後はバックフィル済み）
 
     const profit = d.sales - cogs - commission - otherExpense - d.adCost;
