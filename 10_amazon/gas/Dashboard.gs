@@ -45,6 +45,14 @@ function updateDashboardL1() {
     lastMonthSameDay: sumCategoryAggs(lastMonthByCategory),
   };
 
+  // 経費の総計を aggregateExpenses の総計値で上書き（D2はSKUで計上されASIN経由の紐付けが0になる対策）
+  overrideExpensesFromTotal(totals.thisMonth, thisMonthExp);
+  overrideExpensesFromTotal(totals.lastMonthSameDay, lastMonthSameDayExp);
+
+  // カテゴリ別も売上比率で按分（ASIN経由で0だったものを実数値に）
+  prorateExpensesToCategories(thisMonthByCategory, thisMonthExp);
+  prorateExpensesToCategories(lastMonthByCategory, lastMonthSameDayExp);
+
   // シート書き込み
   const t4 = Date.now();
   const summaryEndRow = writeOverallSummary(sheet, totals, periods);
@@ -243,6 +251,34 @@ function computeDerivedMetrics(base, commission, otherExpense) {
     roas: adCost > 0 ? (sales / adCost) : 0,
     organicShare: sales > 0 ? ((sales - adSales) / sales * 100) : 0,
   };
+}
+
+/**
+ * 経費の総計を aggregateExpenses の total で上書き
+ *
+ * D2 は Settlement Report 由来で SKU (例: RCO-xxxx) で計上されているため、
+ * D1 の ASIN (例: B0xxxxxx) とマッチせず ASIN 経由集計では0になる。
+ * 代わりに aggregateExpenses が返す「その期間の総額」で上書きして正しい値にする。
+ */
+function overrideExpensesFromTotal(total, expenses) {
+  total.commission = expenses.commission || 0;
+  total.otherExpense = expenses.other || 0;
+  Object.assign(total, computeDerivedMetrics(total, total.commission, total.otherExpense));
+}
+
+/**
+ * カテゴリ別の経費を売上比率で按分（SKU/ASINマッピング問題の対策）
+ */
+function prorateExpensesToCategories(byCategory, expenses) {
+  const totalSales = Object.values(byCategory).reduce((s, c) => s + c.sales, 0);
+  if (totalSales <= 0) return;
+
+  for (const cat of Object.values(byCategory)) {
+    const ratio = cat.sales / totalSales;
+    const commission = expenses.commission * ratio;
+    const otherExpense = expenses.other * ratio;
+    Object.assign(cat, computeDerivedMetrics(cat, commission, otherExpense));
+  }
 }
 
 function sumCategoryAggs(byCategory) {
