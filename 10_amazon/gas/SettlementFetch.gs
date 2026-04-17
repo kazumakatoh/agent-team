@@ -160,6 +160,59 @@ function findCol(colIndex, candidates) {
 }
 
 /**
+ * 診断: D2 経費明細の月×明細種別で集計表示
+ *
+ * 2026-04 の Commission が何%か・他にどんな明細種別があるか確認する。
+ */
+function debugSettlementItemTypes() {
+  const sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) { Logger.log('D2 空'); return; }
+
+  // 列3〜7
+  const data = sheet.getRange(2, 3, lastRow - 1, 5).getValues();
+
+  // 月×明細種別の集計 + Principal (売上) も別途
+  const stats = {};        // ym -> { itemType: sum }
+  const principalByMonth = {}; // ym -> principal sum
+
+  for (const row of data) {
+    const rawDate = row[0];
+    let ym = '';
+    if (rawDate instanceof Date) {
+      ym = rawDate.getFullYear() + '-' + String(rawDate.getMonth() + 1).padStart(2, '0');
+    } else if (rawDate) {
+      ym = String(rawDate).substring(0, 7);
+    }
+    if (!ym) continue;
+
+    const itemType = String(row[3] || '').trim();
+    const amount = parseFloat(row[4]) || 0;
+
+    if (!stats[ym]) stats[ym] = {};
+    stats[ym][itemType] = (stats[ym][itemType] || 0) + amount;
+
+    if (itemType === 'Principal') {
+      principalByMonth[ym] = (principalByMonth[ym] || 0) + amount;
+    }
+  }
+
+  Logger.log('===== D2 月×明細種別 集計 =====');
+  Object.keys(stats).sort().forEach(ym => {
+    const principal = principalByMonth[ym] || 0;
+    Logger.log('');
+    Logger.log('■ ' + ym + ' (Principal売上: ¥' + principal.toLocaleString() + ')');
+
+    // 金額の絶対値で降順ソート
+    const sorted = Object.entries(stats[ym]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+    for (const [t, v] of sorted) {
+      const pct = principal > 0 ? (Math.abs(v) / principal * 100).toFixed(1) : '-';
+      Logger.log('  ' + t.padEnd(40) + ' ¥' + String(Math.round(v)).padStart(12) + '  (vs売上 ' + pct + '%)');
+    }
+  });
+}
+
+/**
  * 既に取り込み済みの Settlement 期間を取得
  *
  * ⚠️ D2 には日付部分 (YYYY-MM-DD) のみ保存されているため、
