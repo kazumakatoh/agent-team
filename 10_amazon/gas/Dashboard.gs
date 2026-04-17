@@ -376,15 +376,15 @@ function writeFinalProfitSection(sheet, totals, periods, startRow) {
       ? { label: '− 原価',      vals: ['-', '-', '-', '-'], type: ROW_NORMAL }
       : { label: '− 原価',      vals: [-thisCogs, -lastCogs, pctChangeNum(thisCogs, lastCogs), -thisCogs * fc], type: ROW_NORMAL },
     { label: '    原価率',       vals: [dash(r(thisCogs, t.sales)), dash(r(lastCogs, lm.sales)), '-', '-'], type: ROW_RATE },
-    { label: '= 粗利',          vals: [thisGross, lastGross, pctChangeNum(thisGross, lastGross), thisGross * fc], type: ROW_SUBTOTAL },
+    { label: '＝ 粗利',          vals: [thisGross, lastGross, pctChangeNum(thisGross, lastGross), thisGross * fc], type: ROW_SUBTOTAL },
     { label: '    粗利率',       vals: [dash(r(thisGross, t.sales)), dash(r(lastGross, lm.sales)), '-', '-'], type: ROW_RATE },
     { label: '− 広告費',         vals: [-t.adCost, -lm.adCost, pctChangeNum(t.adCost, lm.adCost), -t.adCost * fc], type: ROW_NORMAL },
     { label: '    広告比率',     vals: [dash(r(t.adCost, t.sales)), dash(r(lm.adCost, lm.sales)), '-', '-'], type: ROW_RATE },
     { label: '− 販売手数料',     vals: [-t.commission, -lm.commission, pctChangeNum(t.commission, lm.commission), -t.commission * fc], type: ROW_NORMAL },
     { label: '− 経費等',         vals: [-t.otherExpense, -lm.otherExpense, pctChangeNum(t.otherExpense, lm.otherExpense), -t.otherExpense * fc], type: ROW_NORMAL },
-    { label: '= Amazon内粗利',   vals: [thisAmazonProfit, lastAmazonProfit, pctChangeNum(thisAmazonProfit, lastAmazonProfit), thisAmazonProfit * fc], type: ROW_AMZNET },
+    { label: '＝ Amazon内粗利',   vals: [thisAmazonProfit, lastAmazonProfit, pctChangeNum(thisAmazonProfit, lastAmazonProfit), thisAmazonProfit * fc], type: ROW_AMZNET },
     { label: '− 販促費',         vals: [-thisPromo.total, -lastPromo.total, pctChangeNum(thisPromo.total, lastPromo.total), -thisPromo.total * fc], type: ROW_NORMAL },
-    { label: '= 最終利益',       vals: [thisFinal, lastFinal, pctChangeNum(thisFinal, lastFinal), thisFinal * fc], type: ROW_FINAL },
+    { label: '＝ 最終利益',       vals: [thisFinal, lastFinal, pctChangeNum(thisFinal, lastFinal), thisFinal * fc], type: ROW_FINAL },
     { label: '    最終利益率',   vals: [dash(r(thisFinal, t.sales)), dash(r(lastFinal, lm.sales)), '-', '-'], type: ROW_RATE },
   ];
 

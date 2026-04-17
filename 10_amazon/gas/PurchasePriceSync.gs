@@ -321,6 +321,40 @@ function getPriceMapForMonth(yearMonth) {
 }
 
 /**
+ * 診断: D1 日次データの仕入原価合計を年月別に集計表示
+ *
+ * 現月・前月に cogs が正しく入っているか確認する。
+ */
+function debugD1CogsByMonth() {
+  const sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) { Logger.log('D1 空'); return; }
+
+  // 列1: 日付, 列20: 仕入単価, 列21: 仕入原価合計
+  const data = sheet.getRange(2, 1, lastRow - 1, 21).getValues();
+
+  const stats = {};  // ym => { rowCount, cogsSum, withCogsCount }
+  for (const row of data) {
+    const ym = formatYearMonth(row[0]);
+    if (!ym) continue;
+    if (!stats[ym]) stats[ym] = { rowCount: 0, cogsSum: 0, withCogsCount: 0 };
+
+    stats[ym].rowCount++;
+    const cogs = parseFloat(row[20]) || 0;
+    stats[ym].cogsSum += cogs;
+    if (cogs > 0) stats[ym].withCogsCount++;
+  }
+
+  Logger.log('===== D1 年月別 cogs 集計 =====');
+  Logger.log('年月      | D1行数 | cogs有 | cogs合計');
+  Object.keys(stats).sort().reverse().slice(0, 24).forEach(ym => {
+    const s = stats[ym];
+    Logger.log('  ' + ym + ' | ' + String(s.rowCount).padStart(5) + ' | ' +
+               String(s.withCogsCount).padStart(5) + ' | ¥' + s.cogsSum.toLocaleString());
+  });
+}
+
+/**
  * 診断: CFシートの構造を表示（書き込みなし）
  *
  * 実行結果を見て CF シート構造を把握し、必要に応じて本体ロジックを調整する。
