@@ -109,7 +109,7 @@ function readAllSettlement() {
   const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
   return data.map(row => ({
     asin: String(row[0] || '').trim(),
-    yearMonth: String(row[1] || '').trim(),
+    yearMonth: formatYearMonth(row[1]),  // Date/文字列両対応
     commission: parseFloat(row[2]) || 0,
     other: parseFloat(row[3]) || 0,
   }));

@@ -389,6 +389,7 @@ function buildSettlementSummary() {
   dstSheet.setFrozenRows(1);
 
   if (rows.length > 0) {
+    dstSheet.getRange(2, 2, rows.length, 1).setNumberFormat('@'); // 年月列をテキスト形式に
     dstSheet.getRange(2, 1, rows.length, 4).setValues(rows);
     dstSheet.getRange(2, 3, rows.length, 2).setNumberFormat('#,##0');
   }
