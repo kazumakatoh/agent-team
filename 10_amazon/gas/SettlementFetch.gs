@@ -48,8 +48,8 @@ function fetchSettlementReports() {
       continue;
     }
 
-    // レポートの期間を識別キーにする
-    const periodKey = report.dataStartTime + '_' + report.dataEndTime;
+    // レポートの期間を識別キー（YYYY-MM-DD 正規化）で照合
+    const periodKey = normalizeDateKey(report.dataStartTime) + '_' + normalizeDateKey(report.dataEndTime);
     if (processedPeriods.includes(periodKey)) {
       Logger.log('スキップ（取り込み済み）: ' + periodKey);
       continue;
@@ -161,6 +161,9 @@ function findCol(colIndex, candidates) {
 
 /**
  * 既に取り込み済みの Settlement 期間を取得
+ *
+ * ⚠️ D2 には日付部分 (YYYY-MM-DD) のみ保存されているため、
+ * 比較時も Report の dataStartTime/EndTime を YYYY-MM-DD に正規化して返す。
  */
 function getProcessedSettlementPeriods() {
   const sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
@@ -170,11 +173,24 @@ function getProcessedSettlementPeriods() {
   const data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
   const periods = new Set();
   data.forEach(row => {
-    if (row[0] && row[1]) {
-      periods.add(row[0] + '_' + row[1]);
+    const start = normalizeDateKey(row[0]);
+    const end = normalizeDateKey(row[1]);
+    if (start && end) {
+      periods.add(start + '_' + end);
     }
   });
   return Array.from(periods);
+}
+
+/**
+ * 任意の日付値（Date/文字列/ISO）を 'YYYY-MM-DD' 文字列に正規化
+ */
+function normalizeDateKey(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, 'Asia/Tokyo', 'yyyy-MM-dd');
+  }
+  return String(value).substring(0, 10);
 }
 
 /**
@@ -186,6 +202,117 @@ function testSettlementList() {
   reports.forEach(r => {
     Logger.log('  ' + r.reportId + ' | ' + r.processingStatus + ' | ' + (r.dataStartTime || '') + ' 〜 ' + (r.dataEndTime || ''));
   });
+}
+
+/**
+ * 診断: D2 経費明細の重複状況を調査
+ *
+ * 出力内容:
+ *   【A】 決済期間ごとの行数
+ *   【B】 重複行（決済期間開始+終了+日付+ASIN+種別+明細+金額+数量 が同一）
+ *   【C】 重複除外後の想定行数
+ */
+function debugSettlementDuplicates() {
+  const sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) { Logger.log('D2 空'); return; }
+
+  Logger.log('D2 総行数: ' + (lastRow - 1));
+
+  const data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+
+  // 【A】 決済期間ごとの行数
+  const periodCounts = {};
+  for (const row of data) {
+    const start = String(row[0] || '').substring(0, 10);
+    const end = String(row[1] || '').substring(0, 10);
+    const key = start + ' 〜 ' + end;
+    periodCounts[key] = (periodCounts[key] || 0) + 1;
+  }
+
+  Logger.log('');
+  Logger.log('【A】 決済期間ごとの行数:');
+  Object.entries(periodCounts)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([k, v]) => Logger.log('  ' + k + ': ' + v + ' 行'));
+
+  // 【B】 完全重複チェック（全8列が同一）
+  const seen = new Set();
+  let duplicates = 0;
+  const sampleDups = [];
+  for (const row of data) {
+    const key = row.map(v => {
+      if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+      return String(v);
+    }).join('|');
+    if (seen.has(key)) {
+      duplicates++;
+      if (sampleDups.length < 5) sampleDups.push(key);
+    } else {
+      seen.add(key);
+    }
+  }
+
+  Logger.log('');
+  Logger.log('【B】 完全重複（全8列同一）:');
+  Logger.log('  重複行数: ' + duplicates);
+  Logger.log('  ユニーク行数: ' + seen.size);
+  if (sampleDups.length > 0) {
+    Logger.log('  重複サンプル（先頭5件）:');
+    sampleDups.forEach((k, i) => Logger.log('    ' + (i + 1) + ') ' + k.substring(0, 150)));
+  }
+
+  // 【C】 重複除外後
+  Logger.log('');
+  Logger.log('【C】 重複除外後の想定行数: ' + seen.size);
+  Logger.log('  削減見込み: ' + duplicates + ' 行（' + ((duplicates / (lastRow - 1) * 100).toFixed(1)) + '%）');
+}
+
+/**
+ * D2 経費明細の完全重複行を削除
+ *
+ * ヘッダーは残し、2行目以降で全列が同一の重複を1件だけ残す。
+ * 実行前に debugSettlementDuplicates で重複状況を確認すること。
+ */
+function deduplicateSettlement() {
+  const t0 = Date.now();
+  const sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) { Logger.log('D2 空'); return; }
+
+  Logger.log('===== D2 経費明細 重複除外 開始 =====');
+  Logger.log('処理前: ' + (lastRow - 1) + ' 行');
+
+  const data = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+  const seen = new Set();
+  const unique = [];
+
+  for (const row of data) {
+    const key = row.map(v => {
+      if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd');
+      return String(v);
+    }).join('|');
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(row);
+    }
+  }
+
+  const removed = data.length - unique.length;
+  Logger.log('重複除外: ' + removed + ' 行削除');
+  Logger.log('残存: ' + unique.length + ' 行');
+
+  // シートをクリアして書き戻し
+  sheet.getRange(2, 1, lastRow - 1, 8).clearContent();
+  if (unique.length > 0) {
+    sheet.getRange(2, 1, unique.length, 8).setValues(unique);
+  }
+
+  // D2S 月次集計を再構築
+  Logger.log('D2S 月次集計を再構築...');
+  buildSettlementSummary();
+
+  Logger.log('===== 完了（' + (Date.now() - t0) + 'ms）=====');
 }
 
 /**
