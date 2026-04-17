@@ -50,13 +50,20 @@ function buildDailySalesSheet() {
 
   const allExpenses = readAllSettlement();
 
-  // 経費を年月別にインデックス化（ASIN問わず月合計）
+  // 経費を年月別にインデックス化（ASIN問わず月合計） + Principal で率を算出
   const expByMonth = {};
   for (const e of allExpenses) {
-    if (!expByMonth[e.yearMonth]) expByMonth[e.yearMonth] = { commission: 0, other: 0 };
+    if (!expByMonth[e.yearMonth]) expByMonth[e.yearMonth] = { commission: 0, other: 0, principal: 0 };
     expByMonth[e.yearMonth].commission += e.commission;
     expByMonth[e.yearMonth].other += e.other;
+    expByMonth[e.yearMonth].principal += e.principal || 0;
   }
+  // 率を計算
+  Object.keys(expByMonth).forEach(ym => {
+    const m = expByMonth[ym];
+    m.commissionRate = m.principal > 0 ? m.commission / m.principal : 0;
+    m.otherRate = m.principal > 0 ? m.other / m.principal : 0;
+  });
 
   // 日次データを「日付」で集計（全ASIN合計）
   const byDate = {};
@@ -87,13 +94,11 @@ function buildDailySalesSheet() {
   for (const date of sortedDates) {
     const d = byDate[date];
     const ym = date.substring(0, 7);
-    const monthSales = monthlySales[ym] || 0;
-    const ratio = monthSales > 0 ? d.sales / monthSales : 0;
 
-    // 月次経費を売上比率で按分
-    const exp = expByMonth[ym] || { commission: 0, other: 0 };
-    const commission = exp.commission * ratio;
-    const otherExpense = exp.other * ratio;
+    // Settlement 率ベースで経費推定（D2 Principal 基準、Settlement 確定時は実数値に近づく）
+    const exp = expByMonth[ym] || { commissionRate: 0, otherRate: 0 };
+    const commission = d.sales * exp.commissionRate;
+    const otherExpense = d.sales * exp.otherRate;
     const cogs = d.cogs; // D1 各日の仕入原価合計（M2連携後はバックフィル済み）
 
     const profit = d.sales - cogs - commission - otherExpense - d.adCost;

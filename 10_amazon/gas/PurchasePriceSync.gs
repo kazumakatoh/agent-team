@@ -326,6 +326,69 @@ function backfillD1CogsFromM2() {
 }
 
 /**
+ * D1 日次データの FBA手数料列（列13）を Settlement のFBA率 × 日次売上 で推定反映
+ *
+ * D2 の明細種別 "FBAPerUnitFulfillmentFee" を月次集計して Principal に対する率を算出。
+ * 各D1行の「売上 × 率」を FBA手数料列に書込む（推定値）。
+ */
+function backfillD1FbaFeeFromSettlement() {
+  Logger.log('===== D1 FBA手数料バックフィル 開始 =====');
+
+  // D2 から月別 FBA率を算出
+  const d2Sheet = getOrCreateSheet(SHEET_NAMES.D2_SETTLEMENT);
+  const d2LastRow = d2Sheet.getLastRow();
+  if (d2LastRow <= 1) { Logger.log('D2 空'); return; }
+
+  const d2Data = d2Sheet.getRange(2, 3, d2LastRow - 1, 5).getValues();
+  const byMonth = {}; // ym → { fba, principal }
+  for (const row of d2Data) {
+    const rawDate = row[0];
+    const itemType = String(row[3] || '').trim();
+    const amount = parseFloat(row[4]) || 0;
+
+    let ym = '';
+    if (rawDate instanceof Date) {
+      ym = rawDate.getFullYear() + '-' + String(rawDate.getMonth() + 1).padStart(2, '0');
+    } else if (rawDate) {
+      ym = String(rawDate).substring(0, 7);
+    }
+    if (!ym) continue;
+
+    if (!byMonth[ym]) byMonth[ym] = { fba: 0, principal: 0 };
+    if (itemType === 'FBAPerUnitFulfillmentFee') byMonth[ym].fba += Math.abs(amount);
+    else if (itemType === 'Principal') byMonth[ym].principal += amount;
+  }
+
+  const rateByMonth = {};
+  Object.keys(byMonth).forEach(ym => {
+    const m = byMonth[ym];
+    rateByMonth[ym] = m.principal > 0 ? m.fba / m.principal : 0;
+  });
+
+  // D1 を走査し、FBA手数料列（列13）を書き換え
+  const d1Sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const d1LastRow = d1Sheet.getLastRow();
+  if (d1LastRow <= 1) return;
+
+  // 列1: 日付, 列5: 売上
+  const d1Data = d1Sheet.getRange(2, 1, d1LastRow - 1, 5).getValues();
+  const fbaFees = [];
+  let applied = 0;
+  for (const row of d1Data) {
+    const ym = formatYearMonth(row[0]);
+    const sales = parseFloat(row[4]) || 0;
+    const rate = rateByMonth[ym] || 0;
+    const fba = Math.round(sales * rate);
+    fbaFees.push([fba || '']);
+    if (fba > 0) applied++;
+  }
+
+  // 列13 に一括書込
+  d1Sheet.getRange(2, 13, fbaFees.length, 1).setValues(fbaFees);
+  Logger.log('✅ D1 FBA手数料バックフィル: ' + applied + ' / ' + fbaFees.length + ' 行');
+}
+
+/**
  * 診断: D1 で売上ありながら cogs=0 の ASIN を上位表示
  *
  * 売上のうち原価未計上分の規模を把握し、CF シートへの追加入力が必要な

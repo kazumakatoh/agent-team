@@ -504,8 +504,15 @@ function writeFinalProfitSection(sheet, totals, periods, startRow) {
 function writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, periods, startRow) {
   if (!startRow) startRow = 10; // デフォルト（後方互換）
   sheet.getRange(startRow, 1).setValue('━━━ カテゴリ別サマリー（当月）━━━').setFontWeight('bold').setFontSize(14);
+  sheet.getRange(startRow, 6).setValue('※ ヘッダーの▼でカテゴリ絞込み可能').setFontStyle('italic').setFontColor('#888');
 
-  const headers = ['カテゴリ', '売上', '売上比', 'CV', '点数', '広告費', '利益', 'TACOS', 'TACOS前月比', 'ACOS', 'ACOS前月比', 'ROAS', '利益率'];
+  // PL形式に準じた列構成（17列）
+  const headers = [
+    'カテゴリ', '売上', '売上比', 'CV', '点数',
+    '仕入', '販売手数料', '広告費', '経費等',
+    '利益', '広告比率', '粗利率', '利益率', 'ROAS',
+    'TACOS', 'ACOS', '前月比(利益率)',
+  ];
   sheet.getRange(startRow + 1, 1, 1, headers.length).setValues([headers])
     .setFontWeight('bold').setBackground('#e8f0fe').setHorizontalAlignment('center');
 
@@ -516,21 +523,25 @@ function writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, p
     .sort((a, b) => b.sales - a.sales);
 
   const rows = filtered.map(c => {
-    const lm = lastMonthByCategory[c.category] || { tacos: 0, acos: 0 };
+    const lm = lastMonthByCategory[c.category] || { profitMargin: 0 };
     return [
       c.category,
       c.sales,
       totalSales > 0 ? c.sales / totalSales : 0,
       c.cv,
       c.units,
+      c.cogs || 0,
+      c.commission || 0,
       c.adCost,
+      c.otherExpense || 0,
       c.profit,
-      c.tacos / 100,
-      pctChangeNum(c.tacos, lm.tacos),
-      c.acos / 100,
-      pctChangeNum(c.acos, lm.acos),
+      c.adRate || 0,
+      c.grossMargin || 0,
+      c.profitMargin || 0,
       c.roas,
-      c.profitMargin,
+      c.tacos / 100,
+      c.acos / 100,
+      pctChangeNum(c.profitMargin, lm.profitMargin),
     ];
   });
 
@@ -539,16 +550,27 @@ function writeCategorySummary(sheet, thisMonthByCategory, lastMonthByCategory, p
     sheet.getRange(dataStartRow, 1, rows.length, headers.length).setValues(rows);
     sheet.getRange(dataStartRow, 1, rows.length, 1).setHorizontalAlignment('center');
     sheet.getRange(dataStartRow, 2, rows.length, headers.length - 1).setHorizontalAlignment('right');
-    sheet.getRange(dataStartRow, 2, rows.length, 1).setNumberFormat('#,##0');
-    sheet.getRange(dataStartRow, 3, rows.length, 1).setNumberFormat('0.0%');
-    sheet.getRange(dataStartRow, 4, rows.length, 2).setNumberFormat('#,##0');
-    sheet.getRange(dataStartRow, 6, rows.length, 2).setNumberFormat('#,##0');
-    sheet.getRange(dataStartRow, 8, rows.length, 1).setNumberFormat('0.0%');
-    sheet.getRange(dataStartRow, 9, rows.length, 1).setNumberFormat('+0.0%;-0.0%;-');
-    sheet.getRange(dataStartRow, 10, rows.length, 1).setNumberFormat('0.0%');
-    sheet.getRange(dataStartRow, 11, rows.length, 1).setNumberFormat('+0.0%;-0.0%;-');
-    sheet.getRange(dataStartRow, 12, rows.length, 1).setNumberFormat('0.00');
-    sheet.getRange(dataStartRow, 13, rows.length, 1).setNumberFormat('0.0%');
+    // 整数: 売上(2), CV(4), 点数(5), 仕入(6), 販売手数料(7), 広告費(8), 経費等(9), 利益(10)
+    [2, 4, 5, 6, 7, 8, 9, 10].forEach(col => {
+      sheet.getRange(dataStartRow, col, rows.length, 1).setNumberFormat('#,##0');
+    });
+    // 比率: 売上比(3), 広告比率(11), 粗利率(12), 利益率(13), TACOS(15), ACOS(16)
+    [3, 11, 12, 13, 15, 16].forEach(col => {
+      sheet.getRange(dataStartRow, col, rows.length, 1).setNumberFormat('0.0%');
+    });
+    // ROAS(14)
+    sheet.getRange(dataStartRow, 14, rows.length, 1).setNumberFormat('0.00');
+    // 前月比(17)
+    sheet.getRange(dataStartRow, 17, rows.length, 1).setNumberFormat('+0.0%;-0.0%;-');
+
+    // フィルター作成（カテゴリ選択可能に）
+    try {
+      const existingFilter = sheet.getFilter();
+      if (existingFilter) existingFilter.remove();
+      sheet.getRange(startRow + 1, 1, rows.length + 1, headers.length).createFilter();
+    } catch (e) {
+      Logger.log('⚠️ フィルター作成スキップ: ' + e.message);
+    }
   }
 
   return {
@@ -661,13 +683,15 @@ function updateDashboardL2() {
 }
 
 function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpenses) {
-  // 左側: 月次推移（10列: 年月, 売上, CV, 点数, 広告費, 利益, TACOS, ACOS, ROAS, 利益率）
+  // 左側: 月次推移（13列）
+  // 年月 | 売上 | CV | 点数 | 仕入 | 販売手数料 | 広告費 | 経費等 | 利益 | TACOS | ACOS | ROAS | 利益率
   sheet.getRange(startRow, 1).setValue('━━━ ' + category + ' 月次推移（直近12ヶ月）━━━')
     .setFontWeight('bold').setFontSize(12);
-  sheet.getRange(startRow + 1, 1, 1, 10).setValues([['年月', '売上', 'CV', '点数', '広告費', '利益', 'TACOS', 'ACOS', 'ROAS', '利益率']])
+  const monthHeaders = ['年月', '売上', 'CV', '点数', '仕入', '販売手数料', '広告費', '経費等', '利益', 'TACOS', 'ACOS', 'ROAS', '利益率'];
+  sheet.getRange(startRow + 1, 1, 1, monthHeaders.length).setValues([monthHeaders])
     .setFontWeight('bold').setBackground('#e8f0fe').setHorizontalAlignment('center');
 
-  // 月別集計（月ごとに ASIN セットも記録）
+  // 月別集計
   const monthMap = {};
   for (const d of catData) {
     const month = d.date.substring(0, 7);
@@ -683,50 +707,58 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpe
     if (d.asin) monthMap[month].asins.add(d.asin);
   }
 
-  // 月ごとに経費を集計
-  const expenseByMonthAsin = {};
+  // D2S から月ごとの commission率 / other率 を算出（Principal基準、SKU/ASINマッチ不要）
+  const rateByMonth = {};  // ym → { commissionRate, otherRate }
   for (const exp of allExpenses) {
-    if (!expenseByMonthAsin[exp.yearMonth]) expenseByMonthAsin[exp.yearMonth] = {};
-    expenseByMonthAsin[exp.yearMonth][exp.asin] = exp;
+    if (!rateByMonth[exp.yearMonth]) rateByMonth[exp.yearMonth] = { totalCommission: 0, totalOther: 0, totalPrincipal: 0 };
+    rateByMonth[exp.yearMonth].totalCommission += exp.commission;
+    rateByMonth[exp.yearMonth].totalOther += exp.other;
+    rateByMonth[exp.yearMonth].totalPrincipal += exp.principal || 0;
   }
+  Object.keys(rateByMonth).forEach(m => {
+    const p = rateByMonth[m].totalPrincipal;
+    rateByMonth[m].commissionRate = p > 0 ? rateByMonth[m].totalCommission / p : 0;
+    rateByMonth[m].otherRate = p > 0 ? rateByMonth[m].totalOther / p : 0;
+  });
 
   const months = Object.keys(monthMap).sort().slice(-12);
   const monthRows = months.map(m => {
     const d = monthMap[m];
-    let commission = 0, otherExpense = 0;
-    const monthExp = expenseByMonthAsin[m] || {};
-    for (const asin of d.asins) {
-      if (monthExp[asin]) {
-        commission += monthExp[asin].commission || 0;
-        otherExpense += monthExp[asin].other || 0;
-      }
-    }
+    const rate = rateByMonth[m] || { commissionRate: 0, otherRate: 0 };
+    // 率 × カテゴリ売上 で推定
+    const commission = d.sales * rate.commissionRate;
+    const otherExpense = d.sales * rate.otherRate;
     const profit = d.sales - d.cogs - commission - otherExpense - d.adCost;
     return [
-      m, d.sales, d.cv, d.units, d.adCost, profit,
-      d.sales > 0 ? d.adCost / d.sales : 0,
-      d.adSales > 0 ? d.adCost / d.adSales : 0,
-      d.adCost > 0 ? d.sales / d.adCost : 0,
-      d.sales > 0 ? profit / d.sales : 0,
+      m, d.sales, d.cv, d.units, d.cogs, commission, d.adCost, otherExpense, profit,
+      d.sales > 0 ? d.adCost / d.sales : 0,        // TACOS
+      d.adSales > 0 ? d.adCost / d.adSales : 0,    // ACOS
+      d.adCost > 0 ? d.sales / d.adCost : 0,       // ROAS
+      d.sales > 0 ? profit / d.sales : 0,          // 利益率
     ];
   });
 
   if (monthRows.length > 0) {
     const r = startRow + 2;
-    sheet.getRange(r, 1, monthRows.length, 10).setValues(monthRows);
+    sheet.getRange(r, 1, monthRows.length, monthHeaders.length).setValues(monthRows);
     sheet.getRange(r, 1, monthRows.length, 1).setHorizontalAlignment('center');
-    sheet.getRange(r, 2, monthRows.length, 9).setHorizontalAlignment('right');
-    sheet.getRange(r, 2, monthRows.length, 5).setNumberFormat('#,##0');  // 売上,CV,点数,広告費,利益
-    sheet.getRange(r, 7, monthRows.length, 2).setNumberFormat('0.0%');   // TACOS,ACOS
-    sheet.getRange(r, 9, monthRows.length, 1).setNumberFormat('0.00');   // ROAS
-    sheet.getRange(r, 10, monthRows.length, 1).setNumberFormat('0.0%');  // 利益率
+    sheet.getRange(r, 2, monthRows.length, monthHeaders.length - 1).setHorizontalAlignment('right');
+    // 整数: 売上(2)〜利益(9)
+    sheet.getRange(r, 2, monthRows.length, 8).setNumberFormat('#,##0');
+    // 率: TACOS(10), ACOS(11)
+    sheet.getRange(r, 10, monthRows.length, 2).setNumberFormat('0.0%');
+    // ROAS(12)
+    sheet.getRange(r, 12, monthRows.length, 1).setNumberFormat('0.00');
+    // 利益率(13)
+    sheet.getRange(r, 13, monthRows.length, 1).setNumberFormat('0.0%');
   }
 
-  // 右側: ASIN別（11列目以降）
-  const rightCol = 12;
+  // 右側: ASIN別（14列開始で1列空けて、14列スパン）
+  const rightCol = 15;
   sheet.getRange(startRow, rightCol).setValue('━━━ ' + category + ' 内ASIN別（当月）━━━')
     .setFontWeight('bold').setFontSize(12);
-  sheet.getRange(startRow + 1, rightCol, 1, 11).setValues([['ASIN', '商品名', '売上', '売上比', 'CV', '点数', '広告費', '利益', 'TACOS', 'ACOS', '利益率']])
+  const asinHeaders = ['ASIN', '商品名', '売上', '売上比', 'CV', '点数', '仕入', '販売手数料', '広告費', '経費等', '利益', 'TACOS', 'ACOS', '利益率'];
+  sheet.getRange(startRow + 1, rightCol, 1, asinHeaders.length).setValues([asinHeaders])
     .setFontWeight('bold').setBackground('#e8f0fe').setHorizontalAlignment('center');
 
   const asinMap = {};
@@ -743,21 +775,22 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpe
     asinMap[d.asin].cogs += d.cogs || 0;
   }
 
-  // ASIN別の経費を当月分から取得
+  // 当月の rate を使って ASIN別の経費を推定
   const thisMonthYM = periods.thisMonth.start.substring(0, 7);
-  const thisMonthExpByAsin = expenseByMonthAsin[thisMonthYM] || {};
+  const thisRate = rateByMonth[thisMonthYM] || { commissionRate: 0, otherRate: 0 };
 
   const catTotal = Object.values(asinMap).reduce((s, d) => s + d.sales, 0);
 
   const asinRows = Object.entries(asinMap)
     .sort((a, b) => b[1].sales - a[1].sales)
     .map(([asin, d]) => {
-      const exp = thisMonthExpByAsin[asin] || { commission: 0, other: 0 };
-      const profit = d.sales - d.cogs - exp.commission - exp.other - d.adCost;
+      const commission = d.sales * thisRate.commissionRate;
+      const otherExpense = d.sales * thisRate.otherRate;
+      const profit = d.sales - d.cogs - commission - otherExpense - d.adCost;
       return [
         asin, d.name, d.sales,
         catTotal > 0 ? d.sales / catTotal : 0,
-        d.cv, d.units, d.adCost, profit,
+        d.cv, d.units, d.cogs, commission, d.adCost, otherExpense, profit,
         d.sales > 0 ? d.adCost / d.sales : 0,
         d.adSales > 0 ? d.adCost / d.adSales : 0,
         d.sales > 0 ? profit / d.sales : 0,
@@ -766,14 +799,19 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpe
 
   if (asinRows.length > 0) {
     const r = startRow + 2;
-    sheet.getRange(r, rightCol, asinRows.length, 11).setValues(asinRows);
+    sheet.getRange(r, rightCol, asinRows.length, asinHeaders.length).setValues(asinRows);
     sheet.getRange(r, rightCol, asinRows.length, 1).setHorizontalAlignment('center');
-    sheet.getRange(r, rightCol + 2, asinRows.length, 9).setHorizontalAlignment('right');
-    sheet.getRange(r, rightCol + 2, asinRows.length, 1).setNumberFormat('#,##0');     // 売上
-    sheet.getRange(r, rightCol + 3, asinRows.length, 1).setNumberFormat('0.0%');      // 売上比
-    sheet.getRange(r, rightCol + 4, asinRows.length, 4).setNumberFormat('#,##0');     // CV,点数,広告費,利益
-    sheet.getRange(r, rightCol + 8, asinRows.length, 2).setNumberFormat('0.0%');      // TACOS,ACOS
-    sheet.getRange(r, rightCol + 10, asinRows.length, 1).setNumberFormat('0.0%');     // 利益率
+    sheet.getRange(r, rightCol + 2, asinRows.length, asinHeaders.length - 2).setHorizontalAlignment('right');
+    // 売上(3)
+    sheet.getRange(r, rightCol + 2, asinRows.length, 1).setNumberFormat('#,##0');
+    // 売上比(4)
+    sheet.getRange(r, rightCol + 3, asinRows.length, 1).setNumberFormat('0.0%');
+    // CV(5),点数(6),仕入(7),販売手数料(8),広告費(9),経費等(10),利益(11)
+    sheet.getRange(r, rightCol + 4, asinRows.length, 7).setNumberFormat('#,##0');
+    // TACOS(12),ACOS(13)
+    sheet.getRange(r, rightCol + 11, asinRows.length, 2).setNumberFormat('0.0%');
+    // 利益率(14)
+    sheet.getRange(r, rightCol + 13, asinRows.length, 1).setNumberFormat('0.0%');
   }
 
   return {

@@ -185,13 +185,22 @@ function aggregateByAsinWithExpense(dailyData, expByMonthAsin, yearMonth) {
     a.cogs += d.cogs || 0; // CF連携: D1 仕入原価合計から集計
   }
 
-  // 経費を付与
+  // その月の commission率 / other率 を算出（D2S の全ASIN合計から）
   const monthExp = expByMonthAsin[yearMonth] || {};
+  let totalCommission = 0, totalOther = 0, totalPrincipal = 0;
+  for (const exp of Object.values(monthExp)) {
+    totalCommission += exp.commission || 0;
+    totalOther += exp.other || 0;
+    totalPrincipal += exp.principal || 0;
+  }
+  const commissionRate = totalPrincipal > 0 ? totalCommission / totalPrincipal : 0;
+  const otherRate = totalPrincipal > 0 ? totalOther / totalPrincipal : 0;
+
+  // 各ASINの経費を売上 × 率 で推定
   for (const asin of Object.keys(byAsin)) {
-    const exp = monthExp[asin] || { commission: 0, other: 0 };
     const a = byAsin[asin];
-    a.commission = exp.commission;
-    a.otherExpense = exp.other;
+    a.commission = a.sales * commissionRate;
+    a.otherExpense = a.sales * otherRate;
     a.profit = a.sales - a.cogs - a.commission - a.otherExpense - a.adCost;
     a.adRate = a.sales > 0 ? a.adCost / a.sales : 0;
     a.grossMargin = a.sales > 0 ? (a.sales - a.cogs) / a.sales : 0;
