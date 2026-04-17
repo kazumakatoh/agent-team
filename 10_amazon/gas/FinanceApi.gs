@@ -35,11 +35,10 @@ function fetchDailyFinanceEvents() {
   const t0 = Date.now();
   Logger.log('===== Finance API 日次フィー取得 開始 =====');
 
-  // 日付範囲: 過去2日（タイムゾーンずれ吸収のため広めに取得）
+  // 日付範囲: 過去2日 〜 5分前（PostedBefore は「現在から2分以上過去」が必須）
   const now = new Date();
-  const postedBefore = now.toISOString();
-  const past = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-  const postedAfter = past.toISOString();
+  const postedBefore = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+  const postedAfter = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
 
   Logger.log('期間: ' + postedAfter + ' 〜 ' + postedBefore);
 
@@ -200,8 +199,10 @@ function markFinanceEventsAsConfirmed(startDate, endDate) {
  */
 function testFinanceApi() {
   const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const events = fetchAllFinancialEvents(yesterday.toISOString(), now.toISOString());
+  // PostedBefore は「現在から2分以上過去」が必須。5分前にしてバッファ確保
+  const postedBefore = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+  const postedAfter = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const events = fetchAllFinancialEvents(postedAfter, postedBefore);
 
   Logger.log('取得件数: ' + events.length);
   const byReason = {};
