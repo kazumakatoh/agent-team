@@ -66,6 +66,16 @@ function fetchSettlementReports() {
         appendRows(SHEET_NAMES.D2_SETTLEMENT, rows);
         Logger.log('✅ D2 経費明細: ' + rows.length + ' 行書き込み');
         newReports++;
+
+        // D2F の暫定データを「確定」にマーク（重複集計防止）
+        try {
+          markFinanceEventsAsConfirmed(
+            String(report.dataStartTime).substring(0, 10),
+            String(report.dataEndTime).substring(0, 10)
+          );
+        } catch (mErr) {
+          Logger.log('⚠️ D2F 確定マークエラー: ' + mErr.message);
+        }
       }
     } catch (e) {
       Logger.log('⚠️ レポート取得エラー: ' + e.message);

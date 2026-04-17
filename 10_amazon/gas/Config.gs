@@ -21,6 +21,10 @@ function getCfSpreadsheetId() {
   return PropertiesService.getScriptProperties().getProperty('CF_SHEET_ID');
 }
 
+function getIntermediateSheetId() {
+  return PropertiesService.getScriptProperties().getProperty('INTERMEDIATE_SHEET_ID');
+}
+
 // ===== シート名定数 =====
 const SHEET_NAMES = {
   // 見るシート（ダッシュボード）
@@ -29,8 +33,10 @@ const SHEET_NAMES = {
   L3_PRODUCT: '商品分析',
   // データシート
   D1_DAILY: '日次データ',
+  D1S_DAILY_SALES: '日次販売実績',  // D1から日次集計（売上/CV/点数/経費比例配分/利益）
   D2_SETTLEMENT: '経費明細',
   D2S_SETTLEMENT_SUMMARY: '経費月次集計',  // ASIN×月の事前集計（高速化用）
+  D2F_FINANCE_EVENTS: '日次フィー（Finance）',  // Finance APIから日次でフィー取得
   D3_ADS_DETAIL: '広告詳細',
   // マスターシート
   M1_PRODUCT_MASTER: '商品マスター',
@@ -39,6 +45,17 @@ const SHEET_NAMES = {
   // インポートシート
   HISTORICAL_IMPORT: 'インポート_履歴データ',  // 過去Excelデータの一括取り込み用
 };
+
+// ===== 中間スプシ（就業管理表）の構造 =====
+// 「管理表」シートでの行マッピング（年×項目テーブル想定、列C=1月〜N=12月）
+const INTERMEDIATE_MGMT_SHEET = '管理表';
+const INTERMEDIATE_ROWS = {
+  SALES: 2,             // 販売数
+  PAY_REWARD: 5,        // 支払報酬（→ M3 納品人件費）
+  FBA_SHIPPING: 6,      // FBA輸送手数料（参考表示・GAS自動更新）
+  YAMATO: 7,            // ヤマト運輸（→ M3 荷造運賃に合算）
+};
+const INTERMEDIATE_MONTH_COL_START = 3;  // C列 = 1月
 
 // ===== 対象商品の定義 =====
 const ACTIVE_PRODUCT_DAYS = 60; // 直近60日以内に注文がある商品を対象
@@ -78,6 +95,7 @@ function setupCredentials() {
     // スプレッドシート
     'MAIN_SHEET_ID': '',         // メインダッシュボードのスプレッドシートID
     'CF_SHEET_ID': '',           // キャッシュフロー管理シートのID
+    'INTERMEDIATE_SHEET_ID': '', // 就業管理表のスプレッドシートID（中間スプシ）
 
     // Claude API
     'CLAUDE_API_KEY': '',        // Anthropic API Key
@@ -99,7 +117,7 @@ function checkCredentials() {
   const keys = [
     'SP_SELLER_ID', 'SP_CLIENT_ID', 'SP_CLIENT_SECRET', 'SP_REFRESH_TOKEN',
     'ADS_CLIENT_ID', 'ADS_CLIENT_SECRET', 'ADS_REFRESH_TOKEN', 'ADS_PROFILE_ID',
-    'MAIN_SHEET_ID', 'CF_SHEET_ID',
+    'MAIN_SHEET_ID', 'CF_SHEET_ID', 'INTERMEDIATE_SHEET_ID',
     'CLAUDE_API_KEY', 'GMAIL_TO', 'LINE_CHANNEL_TOKEN', 'LINE_USER_ID'
   ];
 
@@ -132,10 +150,25 @@ function setupDailyTriggers() {
   ScriptApp.newTrigger('fetchSettlementReports')
     .timeBased().everyDays(1).atHour(7).create();
 
+  // 毎日 7:30 - Finance API（日次フィー取得）
+  ScriptApp.newTrigger('fetchDailyFinanceEvents')
+    .timeBased().everyDays(1).atHour(7).nearMinute(30).create();
+
+  // 毎日 8:00 - 中間スプシ ↔ M3 同期
+  ScriptApp.newTrigger('syncIntermediateAndM3')
+    .timeBased().everyDays(1).atHour(8).create();
+
+  // 毎日 8:30 - 日次販売実績シート構築
+  ScriptApp.newTrigger('buildDailySalesSheet')
+    .timeBased().everyDays(1).atHour(8).nearMinute(30).create();
+
   Logger.log('✅ トリガー設定完了');
   Logger.log('  6:00 - 注文データ');
   Logger.log('  6:15 - トラフィック');
   Logger.log('  6:30 - マスター同期');
   Logger.log('  7:00 - Settlement');
+  Logger.log('  7:30 - Finance Events');
+  Logger.log('  8:00 - 中間スプシ↔M3 同期');
+  Logger.log('  8:30 - 日次販売実績シート');
 }
 
