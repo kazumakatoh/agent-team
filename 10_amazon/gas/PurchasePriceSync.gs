@@ -247,10 +247,15 @@ function writeM2Sheet(entries) {
 /**
  * D1 日次データに仕入単価・仕入原価合計を反映（バックフィル）
  *
+ * マッチロジック:
+ * 1. ASIN × 年月 で M2 から厳密一致する単価を探す
+ * 2. 無ければ ASIN の**直近過去月**の単価を使う（価格はカテゴリ削除後も継続）
+ * 3. それも無ければ 0
+ *
  * @returns {number} 更新行数
  */
 function backfillD1CogsFromM2() {
-  // M2 を (ASIN_YM → price) マップに
+  // M2 を (ASIN_YM → price) マップと、ASIN別の月リストに
   const m2Sheet = getOrCreateSheet(SHEET_NAMES.M2_PURCHASE_PRICE);
   const m2Last = m2Sheet.getLastRow();
   if (m2Last <= 1) {
@@ -258,14 +263,22 @@ function backfillD1CogsFromM2() {
     return 0;
   }
   const m2Data = m2Sheet.getRange(2, 1, m2Last - 1, 3).getValues();
-  const priceMap = {};
+  const priceMap = {};            // asin_ym → price（厳密一致）
+  const monthsByAsin = {};         // asin → [ym昇順リスト]
   for (const row of m2Data) {
     const asin = String(row[0] || '').trim();
-    const ym = formatYearMonth(row[1]);  // Date型/文字列両対応
+    const ym = formatYearMonth(row[1]);
     const price = parseFloat(row[2]) || 0;
-    if (asin && ym && price > 0) priceMap[asin + '_' + ym] = price;
+    if (asin && ym && price > 0) {
+      priceMap[asin + '_' + ym] = price;
+      if (!monthsByAsin[asin]) monthsByAsin[asin] = [];
+      monthsByAsin[asin].push(ym);
+    }
   }
+  Object.keys(monthsByAsin).forEach(asin => monthsByAsin[asin].sort());
+
   Logger.log('  priceMap 件数: ' + Object.keys(priceMap).length);
+  Logger.log('  ASIN数: ' + Object.keys(monthsByAsin).length);
 
   // D1 を読み込み（列1: 日付, 列2: ASIN, 列7: 点数, 列20: 仕入単価, 列21: 仕入原価合計）
   const d1Sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
@@ -273,8 +286,8 @@ function backfillD1CogsFromM2() {
   if (d1Last <= 1) return 0;
 
   const d1Data = d1Sheet.getRange(2, 1, d1Last - 1, 21).getValues();
-  const updates = [];  // [[price, cogs], ...] for col 20-21
-  let matched = 0;
+  const updates = [];
+  let exactMatch = 0, fallbackMatch = 0, noMatch = 0;
 
   for (const row of d1Data) {
     const rawDate = row[0];
@@ -282,20 +295,94 @@ function backfillD1CogsFromM2() {
     const units = parseFloat(row[6]) || 0;
 
     const ym = formatYearMonth(rawDate);
-    const price = priceMap[asin + '_' + ym] || 0;
+    let price = priceMap[asin + '_' + ym] || 0;
+
+    if (price > 0) {
+      exactMatch++;
+    } else if (monthsByAsin[asin]) {
+      // フォールバック: 該当月以前の最新単価（なければ最古単価）
+      const months = monthsByAsin[asin];
+      let bestYm = null;
+      for (const m of months) {
+        if (m <= ym) bestYm = m;  // 過去方向で最新
+      }
+      if (!bestYm) bestYm = months[0];  // 過去になければ最古
+      price = priceMap[asin + '_' + bestYm] || 0;
+      if (price > 0) fallbackMatch++;
+    } else {
+      noMatch++;
+    }
+
     const cogs = price * units;
-    if (price > 0) matched++;
     updates.push([price, cogs]);
   }
 
-  Logger.log('  D1 マッチ行数: ' + matched + ' / ' + d1Data.length);
+  Logger.log('  マッチ詳細: 厳密=' + exactMatch + ' / フォールバック=' + fallbackMatch + ' / なし=' + noMatch);
 
-  // 一括書き込み（列20-21）
   if (updates.length > 0) {
     d1Sheet.getRange(2, 20, updates.length, 2).setValues(updates);
   }
   return updates.length;
 }
+
+/**
+ * 診断: D1 で売上ありながら cogs=0 の ASIN を上位表示
+ *
+ * 売上のうち原価未計上分の規模を把握し、CF シートへの追加入力が必要な
+ * ASIN を特定する。
+ */
+function debugD1CogsGap() {
+  const sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  // 今月の範囲を想定（直近2ヶ月を対象）
+  const now = new Date();
+  const currentYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevYm = prevMonth.getFullYear() + '-' + String(prevMonth.getMonth() + 1).padStart(2, '0');
+
+  const data = sheet.getRange(2, 1, lastRow - 1, 21).getValues();
+  const byAsin = {};  // asin → { name, salesNoCogs, salesWithCogs, totalSales, ymList }
+
+  for (const row of data) {
+    const ym = formatYearMonth(row[0]);
+    if (ym !== currentYm && ym !== prevYm) continue;
+
+    const asin = String(row[1] || '').trim();
+    const name = String(row[2] || '').trim();
+    if (!asin) continue;
+
+    const sales = parseFloat(row[4]) || 0;
+    const cogs = parseFloat(row[20]) || 0;
+
+    if (!byAsin[asin]) byAsin[asin] = { name, salesNoCogs: 0, salesWithCogs: 0 };
+    if (cogs > 0) byAsin[asin].salesWithCogs += sales;
+    else byAsin[asin].salesNoCogs += sales;
+  }
+
+  const noCogsList = Object.entries(byAsin)
+    .filter(([, v]) => v.salesNoCogs > 0)
+    .sort((a, b) => b[1].salesNoCogs - a[1].salesNoCogs);
+
+  const totalSalesNoCogs = noCogsList.reduce((s, [, v]) => s + v.salesNoCogs, 0);
+  const totalSalesAll = Object.values(byAsin).reduce((s, v) => s + v.salesNoCogs + v.salesWithCogs, 0);
+
+  Logger.log('===== D1 cogs ギャップ診断（当月＋前月）=====');
+  Logger.log('対象期間: ' + prevYm + ' / ' + currentYm);
+  Logger.log('総売上: ¥' + totalSalesAll.toLocaleString());
+  Logger.log('うち cogs=0 売上: ¥' + totalSalesNoCogs.toLocaleString() +
+    ' (' + (totalSalesAll > 0 ? (totalSalesNoCogs / totalSalesAll * 100).toFixed(1) : '-') + '%)');
+  Logger.log('');
+  Logger.log('--- cogs=0 の売上上位20商品 ---');
+  noCogsList.slice(0, 20).forEach(([asin, v]) => {
+    Logger.log('  ' + asin + ' | 売上: ¥' + v.salesNoCogs.toLocaleString() + ' | ' + (v.name || '(名前なし)'));
+  });
+  if (noCogsList.length > 20) Logger.log('  ... 他 ' + (noCogsList.length - 20) + ' 件');
+}
+
+/**
+ * 診断: D1 日次データの仕入原価合計を年月別に集計表示
 
 /**
  * 指定年月の (ASIN → 仕入単価) マップを M2 から取得
