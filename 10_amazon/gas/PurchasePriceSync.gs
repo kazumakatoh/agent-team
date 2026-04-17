@@ -233,6 +233,9 @@ function writeM2Sheet(entries) {
     return a[1].localeCompare(b[1]);
   });
 
+  // 年月列はテキスト形式に固定（自動Date変換を防ぐ）
+  sheet.getRange(2, 2, rows.length, 1).setNumberFormat('@');
+
   sheet.getRange(2, 1, rows.length, M2_HEADERS.length).setValues(rows);
   sheet.getRange(2, 3, rows.length, 1).setNumberFormat('#,##0');
   sheet.setColumnWidth(1, 110);
@@ -258,10 +261,11 @@ function backfillD1CogsFromM2() {
   const priceMap = {};
   for (const row of m2Data) {
     const asin = String(row[0] || '').trim();
-    const ym = String(row[1] || '').trim().substring(0, 7);
+    const ym = formatYearMonth(row[1]);  // Date型/文字列両対応
     const price = parseFloat(row[2]) || 0;
     if (asin && ym && price > 0) priceMap[asin + '_' + ym] = price;
   }
+  Logger.log('  priceMap 件数: ' + Object.keys(priceMap).length);
 
   // D1 を読み込み（列1: 日付, 列2: ASIN, 列7: 点数, 列20: 仕入単価, 列21: 仕入原価合計）
   const d1Sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
@@ -270,23 +274,21 @@ function backfillD1CogsFromM2() {
 
   const d1Data = d1Sheet.getRange(2, 1, d1Last - 1, 21).getValues();
   const updates = [];  // [[price, cogs], ...] for col 20-21
+  let matched = 0;
 
   for (const row of d1Data) {
     const rawDate = row[0];
     const asin = String(row[1] || '').trim();
     const units = parseFloat(row[6]) || 0;
 
-    let ym = '';
-    if (rawDate instanceof Date) {
-      ym = rawDate.getFullYear() + '-' + String(rawDate.getMonth() + 1).padStart(2, '0');
-    } else {
-      ym = String(rawDate).substring(0, 7);
-    }
-
+    const ym = formatYearMonth(rawDate);
     const price = priceMap[asin + '_' + ym] || 0;
     const cogs = price * units;
+    if (price > 0) matched++;
     updates.push([price, cogs]);
   }
+
+  Logger.log('  D1 マッチ行数: ' + matched + ' / ' + d1Data.length);
 
   // 一括書き込み（列20-21）
   if (updates.length > 0) {
@@ -309,7 +311,7 @@ function getPriceMapForMonth(yearMonth) {
   const data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
   for (const row of data) {
     const asin = String(row[0] || '').trim();
-    const ym = String(row[1] || '').trim().substring(0, 7);
+    const ym = formatYearMonth(row[1]);  // Date/文字列両対応
     const price = parseFloat(row[2]) || 0;
     if (asin && ym === yearMonth && price > 0) {
       map[asin] = price;
