@@ -721,13 +721,25 @@ function writeCategoryBlock(sheet, catData, category, startRow, periods, allExpe
     rateByMonth[m].otherRate = p > 0 ? rateByMonth[m].totalOther / p : 0;
   });
 
+  // 全月平均率（Settlement データがない月のフォールバック用）
+  let totalCommAll = 0, totalOtherAll = 0, totalPrincipalAll = 0;
+  Object.values(rateByMonth).forEach(m => {
+    totalCommAll += m.totalCommission;
+    totalOtherAll += m.totalOther;
+    totalPrincipalAll += m.totalPrincipal;
+  });
+  const fallbackCommRate = totalPrincipalAll > 0 ? totalCommAll / totalPrincipalAll : 0;
+  const fallbackOtherRate = totalPrincipalAll > 0 ? totalOtherAll / totalPrincipalAll : 0;
+
   const months = Object.keys(monthMap).sort().slice(-12);
   const monthRows = months.map(m => {
     const d = monthMap[m];
-    const rate = rateByMonth[m] || { commissionRate: 0, otherRate: 0 };
-    // 率 × カテゴリ売上 で推定
-    const commission = d.sales * rate.commissionRate;
-    const otherExpense = d.sales * rate.otherRate;
+    const rate = rateByMonth[m];
+    // 率 × カテゴリ売上 で推定（なければ全月平均率でフォールバック）
+    const commRate = rate ? rate.commissionRate : fallbackCommRate;
+    const othRate = rate ? rate.otherRate : fallbackOtherRate;
+    const commission = d.sales * commRate;
+    const otherExpense = d.sales * othRate;
     const profit = d.sales - d.cogs - commission - otherExpense - d.adCost;
     return [
       m, d.sales, d.cv, d.units, d.cogs, commission, d.adCost, otherExpense, profit,
