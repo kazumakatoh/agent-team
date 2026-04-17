@@ -1,0 +1,13 @@
+# clasp設定（認証情報を含む可能性）
+.clasp.json
+
+# Node modules
+node_modules/
+
+# 環境変数
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db

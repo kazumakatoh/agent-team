@@ -1,4 +1,4 @@
-name: Deploy GAS - 民泊管理
+name: Deploy GAS - Amazon自動集計
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
       - 'claude/**'
     paths:
-      - '11_minpaku/gas/**'
+      - '10_amazon/gas/**'
 
 jobs:
   deploy:
@@ -31,5 +31,5 @@ jobs:
         run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
 
       - name: Push to GAS
-        working-directory: 11_minpaku/gas
+        working-directory: 10_amazon/gas
         run: clasp push --force
