@@ -106,6 +106,7 @@ GitHub Actions が自動で `clasp push --force` を実行する。
 
 > ⚠️ トークンの中身（refresh_token / client_secret）は絶対に外部に見せない。
 > 誤って露出した場合は https://myaccount.google.com/permissions で即座に無効化し再発行する。
+> 更新後は `10_amazon/gas/` 内のファイルを変更して push すると自動デプロイが起動。
 
 ### 手動デプロイ（ローカル作業時）
 
