@@ -162,6 +162,26 @@ function setupDailyTriggers() {
   ScriptApp.newTrigger('buildDailySalesSheet')
     .timeBased().everyDays(1).atHour(8).nearMinute(30).create();
 
+  // 毎日 9:00 - LINE 緊急アラート
+  ScriptApp.newTrigger('runDailyAlerts')
+    .timeBased().everyDays(1).atHour(9).create();
+
+  // 毎日 9:15 - アカウント健全性ログ
+  ScriptApp.newTrigger('runAccountHealthCheck')
+    .timeBased().everyDays(1).atHour(9).nearMinute(15).create();
+
+  // 毎日 9:30 - 競合価格取得（Phase 4b）
+  ScriptApp.newTrigger('fetchCompetitorPricing')
+    .timeBased().everyDays(1).atHour(9).nearMinute(30).create();
+
+  // 毎週月曜 7:30 - セールカレンダー点検
+  ScriptApp.newTrigger('checkUpcomingSales')
+    .timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).nearMinute(30).create();
+
+  // 毎週月曜 8:00 - 週次AIレポート（Claude → Gmail）
+  ScriptApp.newTrigger('sendWeeklyAiReport')
+    .timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create();
+
   // 毎月3日 6:00 - CFシート → M2 仕入単価同期
   ScriptApp.newTrigger('syncPurchasePriceFromCfSheet')
     .timeBased().onMonthDay(3).atHour(6).create();
@@ -174,6 +194,11 @@ function setupDailyTriggers() {
   Logger.log('  毎日 7:30 - Finance Events');
   Logger.log('  毎日 8:00 - 中間スプシ↔M3 同期');
   Logger.log('  毎日 8:30 - 日次販売実績シート');
+  Logger.log('  毎日 9:00 - LINE 緊急アラート');
+  Logger.log('  毎日 9:15 - アカウント健全性');
+  Logger.log('  毎日 9:30 - 競合価格');
+  Logger.log('  毎週月 7:30 - セール準備チェック');
+  Logger.log('  毎週月 8:00 - 週次AIレポート');
   Logger.log('  毎月3日 6:00 - CF→M2 仕入単価同期');
 }
 

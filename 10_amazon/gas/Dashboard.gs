@@ -87,6 +87,9 @@ function getDailyDataAll() {
     units: parseFloat(row[6]) || 0,
     sessions: parseFloat(row[7]) || 0,
     pv: parseFloat(row[8]) || 0,
+    fbaFee: parseFloat(row[12]) || 0,    // FBA手数料（列13）
+    returnUnits: parseFloat(row[13]) || 0, // 返品数（列14）
+    returnAmount: parseFloat(row[14]) || 0, // 返品額（列15）
     adCost: parseFloat(row[15]) || 0,
     adSales: parseFloat(row[16]) || 0,
     unitPrice: parseFloat(row[19]) || 0, // 仕入単価（列20）

@@ -1,6 +1,6 @@
 # 実装フェーズ・未解決事項
 
-*v2.4 - Phase 2 完了（L3 商品分析を実装）（2026-04-15）*
+*v2.5 - Phase 4a/4b 主要機能を実装（週次AI / LINE / 競合 / セール / 健全性）（2026-04-18）*
 
 ## 実装フェーズ
 
@@ -49,18 +49,19 @@
 ### Phase 4: 改善提案・通知（5カテゴリ + 戦略）
 
 #### Phase 4a: 基本通知
-- [ ] Claude API 連携（claude-sonnet-4-6）
-- [ ] 週次改善提案の生成ロジック（①商品登録チェック + ②販売改善）
-- [ ] Gmail送信（GmailApp）
-- [ ] LINE Messaging API 連携
-- [ ] 緊急アラートのトリガー条件実装
+- [x] Claude API 連携（claude-sonnet-4-6）← `ClaudeApi.gs`
+- [x] 週次改善提案の生成ロジック（KPI比較・TOP/BOTTOM・5セクション）← `WeeklyAiReport.gs`
+- [x] Gmail送信（GmailApp）← `WeeklyAiReport.gs`
+- [x] LINE Messaging API 連携 ← `LineAlert.gs`
+- [x] 緊急アラートのトリガー条件実装（広告費スパイク / 大型返金 / 重複抑止）← `LineAlert.gs`
 
 #### Phase 4b: 高度分析
-- [ ] ③競合チェック: Product Pricing API連携
-- [ ] ④セール対策: セールカレンダー + Claude分析
-- [ ] ⑤アカウント健全性: Account Health API連携
+- [x] ③競合チェック: Product Pricing API連携（D4 競合価格シート + BuyBox喪失通知）← `Competitor.gs`
+- [x] ④セール対策: セールカレンダー + Claude分析（M4 + 6/4/2週前の自動レポート）← `SaleCalendar.gs`
+- [x] ⑤アカウント健全性: 返品率急増の検知 + 健全性スコア記録（D5）← `AccountHealth.gs`
+- [ ] Account Health API 直接連携（権限取得後）
 - [ ] 月次改善提案（claude-opus-4-6）: 戦略立案・逆算分析
-- [ ] GASトリガーの全自動化設定
+- [x] GASトリガーの全自動化設定 ← `Config.gs#setupDailyTriggers`
 
 ### Phase 5: 安定化・本番運用・将来改良
 

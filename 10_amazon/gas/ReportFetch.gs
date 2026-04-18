@@ -296,13 +296,23 @@ function writeTrafficToDaily(asinData, dateStr) {
   }
 }
 
-function bulkFetchTraffic() {
+/**
+ * 過去N日分の Traffic Report を1日ずつ取得（推奨：N=7）
+ * 1日ずつ呼ぶことで dateStr マッチングが正しく動く。
+ */
+function bulkFetchTraffic(days) {
+  const n = days || 7;
   const today = new Date();
-  for (let d = 1; d <= 7; d++) {
+  for (let d = 1; d <= n; d++) {
     const target = new Date(today);
     target.setDate(target.getDate() - d);
     const dateStr = Utilities.formatDate(target, 'Asia/Tokyo', 'yyyy-MM-dd');
-    fetchTrafficReport(dateStr, dateStr);
+    Logger.log('--- Traffic ' + dateStr + ' ---');
+    try {
+      fetchTrafficReport(dateStr, dateStr);
+    } catch (e) {
+      Logger.log('エラー: ' + e.message);
+    }
   }
 }
 
@@ -466,17 +476,47 @@ function parseTrafficTsv(content) {
 }
 
 /**
- * 過去30日分のTraffic Reportを取得
+ * D1 にトラフィックが入っているか診断
+ *   - 直近7日分について、ASIN×日付ベースで「セッション>0 行 / 総行数」を集計
+ *   - PV/CTR/CVR/BuyBox 列の最新値を5件サンプリング表示
+ *
+ * GAS エディタから手動実行して動作確認に使う。
  */
-function bulkFetchTraffic() {
-  const today = new Date();
-  const start = new Date(today);
-  start.setDate(start.getDate() - 30);
+function diagnoseTrafficCoverage() {
+  Logger.log('===== Traffic カバレッジ診断 =====');
+  const sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) { Logger.log('D1 が空'); return; }
 
-  fetchTrafficReport(
-    Utilities.formatDate(start, 'Asia/Tokyo', 'yyyy-MM-dd'),
-    Utilities.formatDate(today, 'Asia/Tokyo', 'yyyy-MM-dd')
-  );
+  const data = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
+  const today = new Date();
+  const fmt = d => Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  const start = fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7));
+
+  const byDate = {};
+  for (const row of data) {
+    const date = row[0] instanceof Date ? fmt(row[0]) : String(row[0]).substring(0, 10);
+    if (!date || date < start) continue;
+    if (!byDate[date]) byDate[date] = { rows: 0, withTraffic: 0, sessions: 0, pv: 0, buybox: 0, buyboxN: 0 };
+    const x = byDate[date];
+    x.rows++;
+    const sessions = parseFloat(row[7]) || 0;
+    const pv = parseFloat(row[8]) || 0;
+    const buybox = parseFloat(row[11]) || 0;
+    if (sessions > 0 || pv > 0) x.withTraffic++;
+    x.sessions += sessions; x.pv += pv;
+    if (buybox > 0) { x.buybox += buybox; x.buyboxN++; }
+  }
+
+  const dates = Object.keys(byDate).sort();
+  Logger.log('日付 | 行数 | トラフィックあり | セッション計 | PV計 | BuyBox平均');
+  for (const d of dates) {
+    const x = byDate[d];
+    const cov = x.rows > 0 ? Math.round(x.withTraffic / x.rows * 100) + '%' : '-';
+    const bb = x.buyboxN > 0 ? (x.buybox / x.buyboxN).toFixed(1) + '%' : '-';
+    Logger.log(`${d} | ${x.rows} | ${x.withTraffic}(${cov}) | ${x.sessions} | ${x.pv} | ${bb}`);
+  }
+  Logger.log('===== 終了 =====');
 }
 /**
  * FBA在庫データを取得
