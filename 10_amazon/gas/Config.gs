@@ -182,6 +182,14 @@ function setupDailyTriggers() {
   ScriptApp.newTrigger('sendWeeklyAiReport')
     .timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create();
 
+  // 毎日 10:00 - 在庫取得＋在庫切れアラート
+  ScriptApp.newTrigger('fetchInventoryAndAlert')
+    .timeBased().everyDays(1).atHour(10).create();
+
+  // 毎月1日 9:00 - 月次AI戦略レポート（Claude Opus → Gmail）
+  ScriptApp.newTrigger('sendMonthlyAiReport')
+    .timeBased().onMonthDay(1).atHour(9).create();
+
   // 毎月3日 6:00 - CFシート → M2 仕入単価同期
   ScriptApp.newTrigger('syncPurchasePriceFromCfSheet')
     .timeBased().onMonthDay(3).atHour(6).create();
@@ -197,8 +205,10 @@ function setupDailyTriggers() {
   Logger.log('  毎日 9:00 - LINE 緊急アラート');
   Logger.log('  毎日 9:15 - アカウント健全性');
   Logger.log('  毎日 9:30 - 競合価格');
+  Logger.log('  毎日 10:00 - 在庫＋在庫切れアラート');
   Logger.log('  毎週月 7:30 - セール準備チェック');
   Logger.log('  毎週月 8:00 - 週次AIレポート');
+  Logger.log('  毎月1日 9:00 - 月次AI戦略レポート');
   Logger.log('  毎月3日 6:00 - CF→M2 仕入単価同期');
 }
 
@@ -226,6 +236,35 @@ function addPhase4Triggers() {
       create: () => ScriptApp.newTrigger('checkUpcomingSales').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).nearMinute(30).create() },
     { fn: 'sendWeeklyAiReport',     desc: '毎週月 8:00 - 週次AIレポート',
       create: () => ScriptApp.newTrigger('sendWeeklyAiReport').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create() },
+  ];
+
+  let added = 0;
+  for (const s of specs) {
+    if (existingFns.has(s.fn)) {
+      Logger.log('⏭  既に登録済みスキップ: ' + s.fn);
+      continue;
+    }
+    s.create();
+    Logger.log('✅ 追加: ' + s.desc);
+    added++;
+  }
+  Logger.log('完了: ' + added + '本追加（既存は保持）');
+}
+
+/**
+ * Phase 5 のトリガーを既存を保持したまま追加する
+ * - fetchInventoryAndAlert     毎日 10:00
+ * - sendMonthlyAiReport        毎月1日 9:00
+ */
+function addPhase5Triggers() {
+  const existing = ScriptApp.getProjectTriggers();
+  const existingFns = new Set(existing.map(t => t.getHandlerFunction()));
+
+  const specs = [
+    { fn: 'fetchInventoryAndAlert', desc: '毎日 10:00 - 在庫取得＋在庫切れアラート',
+      create: () => ScriptApp.newTrigger('fetchInventoryAndAlert').timeBased().everyDays(1).atHour(10).create() },
+    { fn: 'sendMonthlyAiReport',    desc: '毎月1日 9:00 - 月次AI戦略レポート',
+      create: () => ScriptApp.newTrigger('sendMonthlyAiReport').timeBased().onMonthDay(1).atHour(9).create() },
   ];
 
   let added = 0;

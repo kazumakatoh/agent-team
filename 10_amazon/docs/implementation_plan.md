@@ -1,6 +1,6 @@
 # 実装フェーズ・未解決事項
 
-*v2.5 - Phase 4a/4b 主要機能を実装（週次AI / LINE / 競合 / セール / 健全性）（2026-04-18）*
+*v2.6 - 月次AI戦略 / 在庫アラート / Account Health 強化を追加（2026-04-18）*
 
 ## 実装フェーズ
 
@@ -58,9 +58,9 @@
 #### Phase 4b: 高度分析
 - [x] ③競合チェック: Product Pricing API連携（D4 競合価格シート + BuyBox喪失通知）← `Competitor.gs`
 - [x] ④セール対策: セールカレンダー + Claude分析（M4 + 6/4/2週前の自動レポート）← `SaleCalendar.gs`
-- [x] ⑤アカウント健全性: 返品率急増の検知 + 健全性スコア記録（D5）← `AccountHealth.gs`
-- [ ] Account Health API 直接連携（権限取得後）
-- [ ] 月次改善提案（claude-opus-4-6）: 戦略立案・逆算分析
+- [x] ⑤アカウント健全性: 返品率 + sellers/v1/account + 在庫切れ比率 → 総合スコア（D5）← `AccountHealth.gs`
+- [x] 月次改善提案（claude-opus-4-6）: 戦略立案・逆算分析 ← `MonthlyAiReport.gs`
+- [x] 在庫トラッキング + 在庫切れアラート（D6 在庫シート, LINE通知）← `Inventory.gs`
 - [x] GASトリガーの全自動化設定 ← `Config.gs#setupDailyTriggers`
 
 ### Phase 5: 安定化・本番運用・将来改良
