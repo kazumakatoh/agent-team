@@ -52,6 +52,10 @@ function fetchInventoryAndAlert() {
     const asin = inv.asin;
     if (!asin) continue;
     const avgDaily = salesAvg[asin] || 0;
+
+    // 死にSKU（在庫0 かつ 直近7日の日販も0）は除外
+    if (inv.qty === 0 && avgDaily === 0) continue;
+
     const daysLeft = avgDaily > 0 ? (inv.qty / avgDaily) : (inv.qty > 0 ? 999 : 0);
     const status = statusFromDaysLeft(daysLeft, inv.qty);
     const name = (productMaster[asin] || {}).name || inv.name || '';
