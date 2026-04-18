@@ -232,6 +232,39 @@ function findCfMonthlyStockRow(sheet, yearMonth) {
 }
 
 /**
+ * デバッグ: 「在庫」行のマッチング挙動を詳細に確認
+ */
+function debugStockRowLookup() {
+  const sheet = openCfStockSheet();
+  const lastRow = sheet.getLastRow();
+  const range = sheet.getRange(1, 1, lastRow, 3).getValues();
+  const target = formatCurrentYearMonth();
+  Logger.log('Target yearMonth = ' + JSON.stringify(target));
+  let currentYm = '';
+  for (let i = 0; i < range.length; i++) {
+    const rawB = range[i][1];
+    const b = normalizeYearMonthCell(rawB);
+    const c = String(range[i][2] || '').trim();
+    const matchesRegex = b ? /^\d{4}\.\d{2}$/.test(b) : false;
+    if (b && matchesRegex) currentYm = b;
+    if (c === '在庫') {
+      const match = (currentYm === target);
+      Logger.log('row ' + (i+1) +
+                 ' | rawB=' + JSON.stringify(rawB) + '(type=' + typeof rawB + ')' +
+                 ' | normalized=' + JSON.stringify(b) +
+                 ' | regexOk=' + matchesRegex +
+                 ' | currentYm=' + JSON.stringify(currentYm) +
+                 ' | 一致=' + match);
+      if (match) {
+        Logger.log('✅ 発見: row ' + (i+1));
+        return;
+      }
+    }
+  }
+  Logger.log('❌ 一致なし');
+}
+
+/**
  * デバッグ: 年月ラベルが入っている列を特定する
  * A〜F列をスキャンして "2026" を含むセルを全部ログ出力
  */
