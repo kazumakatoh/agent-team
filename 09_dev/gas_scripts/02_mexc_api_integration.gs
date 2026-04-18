@@ -233,3 +233,89 @@ function appendRawTrades_(trades) {
   // raw_MEXC_trades シートに重複排除で追記
   // 実装詳細はDay2で
 }
+
+// ======================================================
+// 接続テスト
+// ======================================================
+function testMEXCConnection() {
+  const props = PropertiesService.getScriptProperties();
+  const apiKey = props.getProperty('MEXC_API_KEY');
+  const secretKey = props.getProperty('MEXC_SECRET_KEY');
+
+  if (!apiKey || !secretKey) {
+    Logger.log('❌ APIキー未設定');
+    return;
+  }
+  Logger.log('✅ APIキー読み込みOK');
+
+  try {
+    const balances = fetchAccountBalances_(apiKey, secretKey);
+    Logger.log(`✅ 口座残高取得成功：${balances.length}通貨`);
+    balances.forEach(b => Logger.log(`  ${b.asset}: ${b.total}`));
+  } catch (e) {
+    Logger.log(`❌ 残高取得失敗：${e.message}`);
+    return;
+  }
+
+  try {
+    const prices = fetchCurrentPrices_();
+    Logger.log(`✅ 価格取得成功：${Object.keys(prices).length}銘柄`);
+    MEXC_CONFIG.TARGET_COINS.forEach(c => {
+      Logger.log(`  ${c}USDT: $${prices[c] || 'N/A'}`);
+    });
+  } catch (e) {
+    Logger.log(`❌ 価格取得失敗：${e.message}`);
+    return;
+  }
+
+  Logger.log('🎉 MEXC接続テスト完了！');
+}
+
+// ======================================================
+// スプシへ書き込みテスト（現物スナップショット）
+// ======================================================
+function testWriteHoldingsToSheet() {
+  const props = PropertiesService.getScriptProperties();
+  const apiKey = props.getProperty('MEXC_API_KEY');
+  const secretKey = props.getProperty('MEXC_SECRET_KEY');
+
+  const balances = fetchAccountBalances_(apiKey, secretKey);
+  const prices = fetchCurrentPrices_();
+  const holdings = calculateHoldings_(balances, prices);
+
+  const ss = SpreadsheetApp.getActive();
+  let sheet = ss.getSheetByName('現物_スナップショット');
+  if (!sheet) sheet = ss.insertSheet('現物_スナップショット');
+  else sheet.clear();
+
+  // ヘッダー
+  sheet.getRange('A1:F1')
+    .setValues([['取得日時', '通貨', '保有量', '時価($)', '評価額($)', '構成比']])
+    .setFontWeight('bold')
+    .setBackground('#4a86e8')
+    .setFontColor('white')
+    .setHorizontalAlignment('center');
+
+  const now = new Date();
+  const rows = holdings.items.map(h => [
+    now, h.asset, h.amount, h.priceUSD, h.valueUSD, h.ratio
+  ]);
+  rows.push(['', '合計', '', '', holdings.totalUSD, 1]);
+
+  sheet.getRange(2, 1, rows.length, 6).setValues(rows);
+
+  const lastRow = rows.length + 1;
+  sheet.getRange(2, 1, rows.length, 1).setNumberFormat('yyyy/MM/dd HH:mm:ss').setHorizontalAlignment('center');
+  sheet.getRange(2, 2, rows.length, 1).setHorizontalAlignment('center');
+  sheet.getRange(2, 3, rows.length, 1).setNumberFormat('#,##0');
+  sheet.getRange(2, 4, rows.length, 1).setNumberFormat('$#,##0.0000');
+  sheet.getRange(2, 5, rows.length, 1).setNumberFormat('$#,##0.00');
+  sheet.getRange(2, 6, rows.length, 1).setNumberFormat('0.00%');
+  sheet.getRange(lastRow, 1, 1, 6).setFontWeight('bold').setBackground('#fff2cc');
+
+  sheet.getRange(1, 1, lastRow, 6).setFontSize(10);
+  sheet.autoResizeColumn(1);
+  sheet.setColumnWidths(2, 5, 110);
+
+  Logger.log(`✅ 書き込み完了：${holdings.items.length}通貨、総資産$${holdings.totalUSD.toFixed(2)}`);
+}

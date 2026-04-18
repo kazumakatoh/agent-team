@@ -15,12 +15,12 @@
 // 設定値
 // ======================================================
 const MT4_CONFIG = {
-  FOLDER_NAME: 'SageMaster/FX/MT4_Reports',
+  FOLDER_ID: '1JzrH902S5Vy1ZYFgQy3FzxD6exK7Q0js',  // MT4_Reports フォルダの直接ID
   SHEET_RAW: 'raw_FX_trades',
   SHEET_MONTHLY: 'FX_月次',
   SHEET_SUMMARY: 'FX_サマリー',
   ACCOUNT_ID: '1139773',
-  CREDIT_BONUS_USD: 3128.76  // 出金不可のクレジットボーナス（参考値扱い）
+  CREDIT_BONUS_USD: 3128.76
 };
 
 // ======================================================
@@ -48,19 +48,24 @@ function runMT4Aggregation() {
 // Drive から最新HTML取得
 // ======================================================
 function getLatestReportFromDrive_() {
-  const folder = getOrCreateFolder_(MT4_CONFIG.FOLDER_NAME);
-  const files = folder.getFilesByType(MimeType.HTML);
+  const folder = DriveApp.getFolderById(MT4_CONFIG.FOLDER_ID);
+  const files = folder.getFiles();
   let latest = null;
   let latestDate = new Date(0);
 
   while (files.hasNext()) {
     const f = files.next();
+    const name = f.getName();
+    if (!name.toLowerCase().endsWith('.htm') && !name.toLowerCase().endsWith('.html')) continue;
     if (f.getLastUpdated() > latestDate) {
       latest = f;
       latestDate = f.getLastUpdated();
     }
   }
-  return latest ? latest.getBlob().getDataAsString('UTF-8') : null;
+
+  if (!latest) return null;
+  Logger.log(`📄 読み込みファイル：${latest.getName()}（更新：${latestDate}）`);
+  return latest.getBlob().getDataAsString('UTF-8');
 }
 
 // ======================================================
@@ -112,26 +117,26 @@ function extractClosedTrades_(html) {
 }
 
 /**
- * Details セクションから詳細統計を抽出
+ * Details セクションから詳細統計を抽出（複数行マッチ対応）
  */
 function extractDetailedStats_(html) {
   return {
-    grossProfit: extractNumber_(html, /Gross Profit:.*?<b>([\d\s.,]+)<\/b>/),
-    grossLoss: extractNumber_(html, /Gross Loss:.*?<b>([\d\s.,]+)<\/b>/),
-    totalNetProfit: extractNumber_(html, /Total Net Profit:.*?<b>([-\d\s.,]+)<\/b>/),
-    profitFactor: extractNumber_(html, /Profit Factor:.*?<b>([\d.]+)<\/b>/),
-    expectedPayoff: extractNumber_(html, /Expected Payoff:.*?<b>([-\d.,]+)<\/b>/),
-    absoluteDrawdown: extractNumber_(html, /Absolute Drawdown:.*?<b>([\d\s.,]+)<\/b>/),
-    maximalDrawdown: extractNumber_(html, /Maximal Drawdown:.*?<b>([\d\s.,]+)/),
-    maximalDrawdownPct: extractNumber_(html, /Maximal Drawdown:.*?\(([\d.]+)%\)/),
-    totalTrades: extractNumber_(html, /Total Trades:.*?<b>(\d+)<\/b>/),
-    winRate: extractNumber_(html, /Profit Trades.*?\(([\d.]+)%\)/),
-    largestProfit: extractNumber_(html, /Largest[\s\S]*?profit trade:.*?<b>([\d.,]+)<\/b>/),
-    largestLoss: extractNumber_(html, /Largest[\s\S]*?loss trade:.*?<b>([-\d.,]+)<\/b>/),
-    avgProfit: extractNumber_(html, /Average[\s\S]*?profit trade:.*?<b>([\d.,]+)<\/b>/),
-    avgLoss: extractNumber_(html, /Average[\s\S]*?loss trade:.*?<b>([-\d.,]+)<\/b>/),
-    maxConsecWins: extractNumber_(html, /consecutive wins.*?<b>(\d+)/),
-    maxConsecLosses: extractNumber_(html, /consecutive losses.*?<b>(\d+)/)
+    grossProfit: extractNumber_(html, /Gross Profit:[\s\S]*?<b>([\d\s.,]+)<\/b>/),
+    grossLoss: extractNumber_(html, /Gross Loss:[\s\S]*?<b>([\d\s.,]+)<\/b>/),
+    totalNetProfit: extractNumber_(html, /Total Net Profit:[\s\S]*?<b>([-\d\s.,]+)<\/b>/),
+    profitFactor: extractNumber_(html, /Profit Factor:[\s\S]*?<b>([\d.]+)<\/b>/),
+    expectedPayoff: extractNumber_(html, /Expected Payoff:[\s\S]*?<b>([-\d.,]+)<\/b>/),
+    absoluteDrawdown: extractNumber_(html, /Absolute Drawdown:[\s\S]*?<b>([\d\s.,]+)<\/b>/),
+    maximalDrawdown: extractNumber_(html, /Maximal Drawdown:[\s\S]*?<b>([\d\s.,]+)/),
+    maximalDrawdownPct: extractNumber_(html, /Maximal Drawdown:[\s\S]*?\(([\d.]+)%\)/),
+    totalTrades: extractNumber_(html, /Total Trades:[\s\S]*?<b>(\d+)<\/b>/),
+    winRate: extractNumber_(html, /Profit Trades[\s\S]*?\(([\d.]+)%\)/),
+    largestProfit: extractNumber_(html, /Largest[\s\S]*?profit trade:[\s\S]*?<b>([\d.,]+)<\/b>/),
+    largestLoss: extractNumber_(html, /Largest[\s\S]*?loss trade:[\s\S]*?<b>([-\d.,]+)<\/b>/),
+    avgProfit: extractNumber_(html, /Average[\s\S]*?profit trade:[\s\S]*?<b>([\d.,]+)<\/b>/),
+    avgLoss: extractNumber_(html, /Average[\s\S]*?loss trade:[\s\S]*?<b>([-\d.,]+)<\/b>/),
+    maxConsecWins: extractNumber_(html, /consecutive wins[\s\S]*?<b>(\d+)/),
+    maxConsecLosses: extractNumber_(html, /consecutive losses[\s\S]*?<b>(\d+)/)
   };
 }
 
@@ -140,16 +145,15 @@ function extractDetailedStats_(html) {
  */
 function extractSummary_(html) {
   return {
-    deposit: extractNumber_(html, /Deposit\/Withdrawal:.*?<b>([\d\s.,]+)<\/b>/),
-    creditFacility: extractNumber_(html, /Credit Facility:.*?<b>([\d\s.,]+)<\/b>/),
-    closedTradePL: extractNumber_(html, /Closed Trade P\/L:.*?<b>([-\d\s.,]+)<\/b>/),
-    floatingPL: extractNumber_(html, /Floating P\/L:.*?<b>([-\d\s.,]+)<\/b>/),
-    balance: extractNumber_(html, /Balance:.*?<b>([\d\s.,]+)<\/b>/),
-    equity: extractNumber_(html, /Equity:.*?<b>([\d\s.,]+)<\/b>/),
-    freeMargin: extractNumber_(html, /Free Margin:.*?<b>([\d\s.,]+)<\/b>/),
-    margin: extractNumber_(html, /Margin:.*?<b>([\d\s.,]+)<\/b>/),
-    // 真正資産（クレジット除外）
-    realBalance: 0  // calculateRealBalance_() で上書き
+    deposit: extractNumber_(html, /Deposit\/Withdrawal:[\s\S]*?<b>([\d\s.,]+)<\/b>/),
+    creditFacility: extractNumber_(html, /Credit Facility:[\s\S]*?<b>([\d\s.,]+)<\/b>/),
+    closedTradePL: extractNumber_(html, /Closed Trade P\/L:[\s\S]*?<b>([-\d\s.,]+)<\/b>/),
+    floatingPL: extractNumber_(html, /Floating P\/L:[\s\S]*?<b>([-\d\s.,]+)<\/b>/),
+    balance: extractNumber_(html, /Balance:[\s\S]*?<b>([\d\s.,]+)<\/b>/),
+    equity: extractNumber_(html, /Equity:[\s\S]*?<b>([\d\s.,]+)<\/b>/),
+    freeMargin: extractNumber_(html, /Free Margin:[\s\S]*?<b>([\d\s.,]+)<\/b>/),
+    margin: extractNumber_(html, /Margin:[\s\S]*?<b>([\d\s.,]+)<\/b>/),
+    realBalance: 0
   };
 }
 
@@ -318,4 +322,158 @@ function updateSummarySheet_(summary) {
   // 真正Balance = Balance - Credit Facility
   summary.realBalance = summary.balance;  // Credit除外済み
   // ...実装詳細はDay2で
+}
+
+// ======================================================
+// 接続テスト＆データ確認用
+// ======================================================
+function testMT4Parse() {
+  const html = getLatestReportFromDrive_();
+  if (!html) {
+    Logger.log('❌ Driveに HTMLファイルが見つかりません');
+    Logger.log(`   フォルダID：${MT4_CONFIG.FOLDER_ID}`);
+    return;
+  }
+  Logger.log(`✅ HTMLファイル読み込みOK（${html.length.toLocaleString()}文字）`);
+
+  const parsed = parseMT4HTML_(html);
+
+  Logger.log('━━━━━━━━━━━━━━━━');
+  Logger.log('📊 サマリー');
+  Logger.log(`  Deposit: $${parsed.summary.deposit}`);
+  Logger.log(`  Credit: $${parsed.summary.creditFacility}`);
+  Logger.log(`  Balance（真正資産）: $${parsed.summary.balance}`);
+  Logger.log(`  Equity: $${parsed.summary.equity}`);
+  Logger.log(`  Free Margin: $${parsed.summary.freeMargin}`);
+
+  Logger.log('━━━━━━━━━━━━━━━━');
+  Logger.log('📈 パフォーマンス');
+  Logger.log(`  Total Trades: ${parsed.stats.totalTrades}`);
+  Logger.log(`  勝率: ${parsed.stats.winRate}%`);
+  Logger.log(`  PF: ${parsed.stats.profitFactor}`);
+  Logger.log(`  Net Profit: $${parsed.stats.totalNetProfit}`);
+  Logger.log(`  最大DD: $${parsed.stats.maximalDrawdown} (${parsed.stats.maximalDrawdownPct}%)`);
+
+  const rrRatio = parsed.stats.avgLoss !== 0
+    ? Math.abs(parsed.stats.avgProfit / parsed.stats.avgLoss) : 0;
+  const breakEven = 1 / (1 + rrRatio) * 100;
+  Logger.log(`  RR比: ${rrRatio.toFixed(2)} / 損益分岐勝率: ${breakEven.toFixed(2)}%`);
+
+  Logger.log('━━━━━━━━━━━━━━━━');
+  Logger.log(`🔍 取引明細：${parsed.trades.length}件抽出`);
+  Logger.log('🎉 MT4パース完了！');
+}
+
+// ======================================================
+// FX実績をスナップショットシートへ書き込み
+// ======================================================
+function testWriteFXToSheet() {
+  const html = getLatestReportFromDrive_();
+  if (!html) { Logger.log('❌ HTMLなし'); return; }
+  const parsed = parseMT4HTML_(html);
+
+  const ss = SpreadsheetApp.getActive();
+  let sheet = ss.getSheetByName('FX_スナップショット');
+  if (!sheet) sheet = ss.insertSheet('FX_スナップショット');
+  else sheet.clear();
+
+  const rrRatio = parsed.stats.avgLoss !== 0
+    ? Math.abs(parsed.stats.avgProfit / parsed.stats.avgLoss) : 0;
+  const breakEven = 1 / (1 + rrRatio) * 100;
+  const now = new Date();
+
+  // 残高サマリー
+  const summary = [
+    ['📊 残高サマリー', '', '取得日時', now],
+    ['項目', '金額($)', '備考', ''],
+    ['Deposit（入金額）', parsed.summary.deposit, '初期入金', ''],
+    ['Credit（ボーナス）', parsed.summary.creditFacility, '⚠️ 出金不可・参考値', ''],
+    ['Balance（真正資産）', parsed.summary.balance, '✅ 実資産', ''],
+    ['Equity', parsed.summary.equity, 'Balance＋Credit＋含み損益', ''],
+    ['Free Margin', parsed.summary.freeMargin, '取引可能証拠金', '']
+  ];
+
+  // パフォーマンス
+  const perfHeader = [['📈 パフォーマンス指標', '実績', '目標', '判定']];
+  const perf = [
+    ['総トレード数', parsed.stats.totalTrades, '—', ''],
+    ['勝率', parsed.stats.winRate / 100, breakEven / 100, judgeFX_(parsed.stats.winRate, breakEven)],
+    ['プロフィットファクター（PF）', parsed.stats.profitFactor, 1.3, judgeFX_(parsed.stats.profitFactor, 1.3)],
+    ['RR比', rrRatio, 0.7, judgeFX_(rrRatio, 0.7)],
+    ['期待値（$/トレード）', parsed.stats.expectedPayoff, 0, judgeFX_(parsed.stats.expectedPayoff, 0)],
+    ['Gross Profit', parsed.stats.grossProfit, '—', ''],
+    ['Gross Loss', parsed.stats.grossLoss, '—', ''],
+    ['Net Profit', parsed.stats.totalNetProfit, 149, judgeFX_(parsed.stats.totalNetProfit, 149)],
+    ['最大DD（$）', parsed.stats.maximalDrawdown, '—', ''],
+    ['最大DD（%）', parsed.stats.maximalDrawdownPct / 100, 0.10, judgeFX_(0.10, parsed.stats.maximalDrawdownPct / 100)],
+    ['損益分岐勝率', breakEven / 100, '—', '']
+  ];
+
+  // 取引明細
+  const tradeHeader = [['📋 取引明細（直近）', '', '', '', '', '', '']];
+  const tradeCols = [['チケット', '建玉時刻', 'タイプ', 'ロット', '建値', '決済', 'P/L($)']];
+  const tradingOnly = parsed.trades.filter(t => ['buy', 'sell'].includes(t.type));
+  const tradeRows = tradingOnly.map(t => [
+    t.ticket, t.openTime, t.type, t.size, t.openPrice, t.closePrice, t.profit
+  ]);
+
+  // 書き込み
+  let row = 1;
+  sheet.getRange(row, 1, summary.length, 4).setValues(summary);
+  sheet.getRange(row, 1, 1, 4).setFontWeight('bold').setBackground('#4a86e8').setFontColor('white');
+  sheet.getRange(row + 1, 1, 1, 4).setFontWeight('bold').setBackground('#cfe2f3');
+  row += summary.length + 1;
+
+  sheet.getRange(row, 1, 1, 4).setValues(perfHeader)
+    .setFontWeight('bold').setBackground('#4a86e8').setFontColor('white');
+  row++;
+  sheet.getRange(row, 1, perf.length, 4).setValues(perf);
+  row += perf.length + 1;
+
+  sheet.getRange(row, 1, 1, 7).setValues(tradeHeader)
+    .setFontWeight('bold').setBackground('#4a86e8').setFontColor('white');
+  row++;
+  sheet.getRange(row, 1, 1, 7).setValues(tradeCols)
+    .setFontWeight('bold').setBackground('#cfe2f3');
+  row++;
+  if (tradeRows.length > 0) {
+    sheet.getRange(row, 1, tradeRows.length, 7).setValues(tradeRows);
+  }
+
+  // 書式
+  const lastRow = sheet.getLastRow();
+  sheet.getRange(1, 1, lastRow, 7).setFontSize(10);
+  sheet.getRange('A1:D1').setHorizontalAlignment('center');
+  sheet.getRange('A2:C2').setHorizontalAlignment('center');
+  sheet.getRange('A9:D9').setHorizontalAlignment('center');
+  sheet.getRange('A22:G22').setHorizontalAlignment('center');
+  sheet.getRange('A23:G23').setHorizontalAlignment('center');
+  sheet.getRange(3, 1, 5, 1).setHorizontalAlignment('center');
+  sheet.getRange(10, 1, 11, 1).setHorizontalAlignment('center');
+
+  const tradeDataRows = lastRow - 23;
+  if (tradeDataRows > 0) {
+    sheet.getRange(24, 1, tradeDataRows, 3).setHorizontalAlignment('center');
+    sheet.getRange(24, 2, tradeDataRows, 1).setNumberFormat('yyyy/MM/dd HH:mm');
+    sheet.getRange(24, 5, tradeDataRows, 3).setNumberFormat('#,##0');
+  }
+
+  sheet.getRange('B11:C11').setNumberFormat('0.0%');
+  sheet.getRange('B13:C13').setNumberFormat('0.0%');
+  sheet.getRange('B19:C19').setNumberFormat('0.0%');
+  sheet.getRange('B20:C20').setNumberFormat('0.0%');
+  sheet.getRange('B3:B7').setNumberFormat('#,##0');
+  sheet.getRange('D1').setNumberFormat('yyyy/MM/dd HH:mm:ss');
+
+  sheet.setColumnWidth(1, 220);
+  sheet.setColumnWidths(2, 6, 170);
+
+  Logger.log('✅ FX_スナップショット書き込み完了');
+}
+
+function judgeFX_(actual, target) {
+  if (typeof actual !== 'number' || typeof target !== 'number') return '';
+  if (actual >= target) return '🟢';
+  if (actual >= target * 0.85) return '🟡';
+  return '🔴';
 }
