@@ -1,182 +1,165 @@
 /**
  * 週次レビュー自動生成
  *
- * 実行タイミング：毎週月曜 7:00 JST（トリガー）
- * 出力先：
- *   1. スプシ「週次レビュー」シートに追記
+ * 実行：毎週月曜 7:00 JST（トリガー）
+ * 出力：
+ *   1. スプシ「週次レビュー」シートに追記（timeline式・最新が一番上）
  *   2. 社長のGmailに通知
- *   3. Looker Studioダッシュボードは自動更新
- *
- * 設計原則：
- *   - 一喜一憂しない（短期ノイズは強調しない）
- *   - 目標vs実績を明示
- *   - アクションは閾値判定で自動提案
- *   - FX用語には★マーク（用語集へのリンク）
+ *   3. MEXC・MT4データを自動更新後にレビュー作成
  */
 
-// ======================================================
-// 目標値（スプシ ④目標vs実績対比 シートと同期）
-// ======================================================
-const TARGETS = {
-  fxMonthlyYield: 5.0,      // FX 月次利回り %
-  fxWinRate: 71,            // FX 勝率 %（損益分岐）
-  fxProfitFactor: 1.3,      // FX PF
-  fxRRRatio: 0.7,           // FX RR比
-  fxMaxDD: 10,              // FX 最大DD %
-  spotMonthlyYield: 8.0,    // 現物 月次利回り %
-  spotFeeRate: 0.5,         // 現物 手数料率 %
-  totalMoMGrowth: 6.5,      // 総資産 前月比 %
-  sageMasterFee: 149        // サブスク費用 $
+const REVIEW_CONFIG = {
+  SHEET: '週次レビュー',
+  DASH_SHEET: '統合ダッシュボード',
+  SPOT_SNAP: '現物_スナップショット',
+  FX_SNAP: 'FX_スナップショット'
 };
+
+// 目標値（統合ダッシュボードと同期）
+const TARGETS = {
+  fxMonthlyYield: 0.05,
+  fxWinRate: 0.71,
+  fxPF: 1.3,
+  fxRR: 0.7,
+  fxMaxDD: 0.10,
+  spotMonthlyYield: 0.10,
+  totalMoMGrowth: 0.065,
+  sageMasterFee: 149
+};
+
+// FX用語集（週次ローテーション）
+const GLOSSARY = [
+  ['PF（プロフィットファクター）', '総利益÷総損失。1超えで黒字戦略。1.3以上が安定ライン'],
+  ['RR比（リスクリワード比）', '平均利益÷平均損失。0.7以上推奨。低いと勝率でカバー必要'],
+  ['損益分岐勝率', '1÷(1+RR比)×100%。この勝率を超えないと赤字'],
+  ['最大DD（ドローダウン）', '高値からの最大下落率。10%以下が安全圏'],
+  ['期待値', '1トレードあたり平均損益。プラスなら続ける意味あり'],
+  ['pips', '価格変動の単位。ゴールドは1pip=$0.1'],
+  ['レバレッジ', '証拠金の何倍取引可能か。BigBossは最大2222倍'],
+  ['証拠金維持率', '有効証拠金÷必要証拠金。100%割れで強制決済'],
+  ['スプレッド', '買値と売値の差。実質的な取引手数料'],
+  ['スワップ', '通貨間金利差の日割り。長期保有時のコスト/収益'],
+  ['TP Ladder', '利確を段階的に設定する手法。MelodyTradeの戦略名'],
+  ['SL/TP', 'ストップロス（損切）/テイクプロフィット（利確）']
+];
 
 // ======================================================
 // メイン関数
 // ======================================================
 function generateWeeklyReview() {
-  const data = collectCurrentWeekData_();
-  const lastWeek = getLastWeekSnapshot_();
+  const ss = SpreadsheetApp.getActive();
+
+  // 最新データ取得（MEXC・MT4パース）
+  try { testWriteHoldingsToSheet(); } catch (e) { Logger.log(`MEXC更新失敗: ${e.message}`); }
+  try { testWriteFXToSheet(); } catch (e) { Logger.log(`FX更新失敗: ${e.message}`); }
+
+  const data = collectReviewData_(ss);
+  const lastWeek = getLastSnapshot_();
   const review = buildReviewText_(data, lastWeek);
 
-  writeReviewToSheet_(review, data);
+  writeReviewToSheet_(ss, review, data);
   sendEmailNotification_(review);
-  takeSnapshot_(data);  // 来週の前週比計算用
+  saveSnapshot_(data);
+
+  Logger.log('✅ 週次レビュー生成完了');
 }
 
 // ======================================================
 // データ収集
 // ======================================================
-function collectCurrentWeekData_() {
-  const ss = SpreadsheetApp.getActive();
-  return {
-    date: new Date(),
-    spot: readSpotData_(ss),
-    fx: readFXData_(ss),
-    mtd: readMonthToDate_(ss),
-    scenarios: runFutureSimulations_(ss)
+function collectReviewData_(ss) {
+  const now = new Date();
+  const data = {
+    date: now,
+    weekNum: getWeekNumber_(now),
+    spot: { totalUSD: 0, holdings: [] },
+    fx: {},
+    mtd: { spotYield: 0, fxYield: 0, netProfit: 0 }
   };
-}
 
-function readSpotData_(ss) {
-  // 現物_月次 シートから今週の残高・通貨別内訳
-  // return { totalUSD, holdings: [{asset, principal, current, profit, yieldPct}] }
-  return { totalUSD: 0, holdings: [] };  // プレースホルダ
-}
+  const spotSheet = ss.getSheetByName(REVIEW_CONFIG.SPOT_SNAP);
+  if (spotSheet) {
+    const rows = spotSheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length - 1; i++) {
+      const r = rows[i];
+      data.spot.holdings.push({
+        asset: r[1], amount: r[2], price: r[3], value: r[4], ratio: r[5]
+      });
+    }
+    data.spot.totalUSD = rows[rows.length - 1][4];
+  }
 
-function readFXData_(ss) {
-  // FX_月次 シートから今週の残高・統計
-  return {
-    balance: 0,          // 真正資産
-    equity: 0,           // クレジット込み
-    credit: 0,           // 参考値
-    weeklyTrades: 0,
-    winRate: 0,
-    profitFactor: 0,
-    rrRatio: 0,
-    maxDDPct: 0,
-    expectedPayoff: 0,
-    avgLotSize: 0,
-    maxLotSize: 0
-  };
-}
+  const fxSheet = ss.getSheetByName(REVIEW_CONFIG.FX_SNAP);
+  if (fxSheet) {
+    const g = (a) => Number(fxSheet.getRange(a).getValue()) || 0;
+    data.fx = {
+      balance: g('B5'), equity: g('B6'), credit: g('B4'),
+      trades: g('B10'), winRate: g('B11'), pf: g('B12'),
+      rr: g('B13'), expectedPayoff: g('B14'),
+      netProfit: g('B17'), maxDDPct: g('B19'), breakEven: g('B20')
+    };
+  }
 
-function readMonthToDate_(ss) {
-  return {
-    spotYieldMTD: 0,
-    fxYieldMTD: 0,
-    totalNetProfit: 0,
-    totalExpenses: 0
-  };
-}
+  const dashSheet = ss.getSheetByName(REVIEW_CONFIG.DASH_SHEET);
+  if (dashSheet) {
+    const months = generateMonthList_();
+    const idx = months.findIndex(m => m.year === now.getFullYear() && m.month === now.getMonth() + 1);
+    if (idx >= 0) {
+      const col = DASH_CONFIG.FIRST_DATA_COL + idx;
+      data.mtd.netProfit = Number(dashSheet.getRange(7, col).getValue()) || 0;
+      data.mtd.spotYield = Number(dashSheet.getRange(14, col).getValue()) || 0;
+      data.mtd.fxYield = Number(dashSheet.getRange(20, col).getValue()) || 0;
+    }
+  }
 
-function runFutureSimulations_(ss) {
-  // 3シナリオ（A/B/C）× 12ヶ月後の予測総資産
-  return {
-    scenarioA: 0,  // ハイ
-    scenarioB: 0,  // ミドル
-    scenarioC: 0   // ロー
-  };
+  return data;
 }
 
 // ======================================================
 // レビュー文面生成
 // ======================================================
 function buildReviewText_(data, lastWeek) {
-  const weekNum = getWeekNumber_(data.date);
   const lines = [];
+  const total = data.spot.totalUSD + data.fx.balance;
+  const totalPrev = lastWeek ? (lastWeek.spotUSD + lastWeek.fxBalance) : total;
+  const totalDiff = total - totalPrev;
+  const totalPct = totalPrev > 0 ? totalDiff / totalPrev : 0;
 
-  lines.push(`📊 ${data.date.getFullYear()}年${data.date.getMonth() + 1}月第${weekNum}週 運用レビュー`);
+  lines.push(`📊 ${data.date.getFullYear()}年${data.date.getMonth() + 1}月第${data.weekNum}週 運用レビュー`);
   lines.push('━━━━━━━━━━━━━━━━━━━━━━');
   lines.push('');
 
-  // ----- 総資産 -----
-  const totalCurr = data.spot.totalUSD + data.fx.balance;
-  const totalPrev = lastWeek ? (lastWeek.spot.totalUSD + lastWeek.fx.balance) : totalCurr;
-  const totalDiff = totalCurr - totalPrev;
-  const totalPct = totalPrev > 0 ? (totalDiff / totalPrev * 100) : 0;
-
-  lines.push(`💰 総資産：$${fmt_(totalPrev)} → $${fmt_(totalCurr)}（${signed_(totalDiff)} / ${signed_(totalPct, 2)}%）`);
-  lines.push(`  現物（MEXC）：$${fmt_(data.spot.totalUSD)}`);
-  lines.push(`  FX（BigBoss Balance）：$${fmt_(data.fx.balance)}`);
-  lines.push(`  ※ FX Equity $${fmt_(data.fx.equity)} にはクレジット$${fmt_(data.fx.credit)}含む（出金不可）`);
+  lines.push(`💰 総資産：$${fmtN_(totalPrev)} → $${fmtN_(total)}（${sgn_(totalDiff)} / ${sgnPct_(totalPct)}）`);
+  lines.push(`  現物（MEXC）：$${fmtN_(data.spot.totalUSD)}`);
+  lines.push(`  FX Balance：$${fmtN_(data.fx.balance)}（真正資産）`);
+  lines.push(`  FX Equity：$${fmtN_(data.fx.equity)}（クレジット$${fmtN_(data.fx.credit)}含む・出金不可）`);
   lines.push('');
 
-  // ----- 現物 -----
-  lines.push('📈 現物（MEXC／AIグリッド）通貨別内訳');
-  lines.push('  ┌──────────┬────────┬────────┬────────┬────────┐');
-  lines.push('  │ 通貨     │ 元本($) │ 現在($) │ 利益($) │ 利回り │');
-  lines.push('  ├──────────┼────────┼────────┼────────┼────────┤');
-  data.spot.holdings.forEach(h => {
-    lines.push(`  │ ${pad_(h.asset, 8)} │ ${fmt_(h.principal, 8)} │ ${fmt_(h.current, 8)} │ ${signed_(h.profit, 2, 8)} │ ${signed_(h.yieldPct, 2, 6)}% │`);
-  });
-  lines.push('  └──────────┴────────┴────────┴────────┴────────┘');
+  lines.push('📈 現物（MEXC／AIグリッド）');
+  if (data.spot.holdings.length > 0) {
+    lines.push('  通貨別内訳：');
+    data.spot.holdings.slice(0, 8).forEach(h => {
+      lines.push(`  ・${h.asset.padEnd(8)}：$${fmtN_(h.value).padStart(8)}（${fmtPct_(h.ratio)}）`);
+    });
+  }
   lines.push('');
 
-  // ----- FX -----
-  lines.push('💱 FX（BigBoss／MelodyTrade）');
-  lines.push('  📊 週次パフォーマンス');
-  lines.push(`    新規トレード数：${data.fx.weeklyTrades}`);
-  lines.push(`    勝率：${fmt_(data.fx.winRate, 2)}%（目標${TARGETS.fxWinRate}%★）${judge_(data.fx.winRate, TARGETS.fxWinRate)}`);
-  lines.push(`    PF★：${fmt_(data.fx.profitFactor, 2)}（目標${TARGETS.fxProfitFactor}）${judge_(data.fx.profitFactor, TARGETS.fxProfitFactor)}`);
-  lines.push(`    RR比★：${fmt_(data.fx.rrRatio, 2)}（目標${TARGETS.fxRRRatio}）${judge_(data.fx.rrRatio, TARGETS.fxRRRatio)}`);
-  lines.push(`    最大DD：${fmt_(data.fx.maxDDPct, 2)}%（目標${TARGETS.fxMaxDD}%以下）${judge_(TARGETS.fxMaxDD, data.fx.maxDDPct)}`);
-  lines.push(`    期待値：$${fmt_(data.fx.expectedPayoff, 2)}`);
+  lines.push('💱 FX（BigBoss／MelodyTrade - TP Ladder）');
+  lines.push(`  📊 累計パフォーマンス（${data.fx.trades}トレード）`);
+  lines.push(`    勝率：${fmtPct_(data.fx.winRate)}（目標${fmtPct_(TARGETS.fxWinRate)}★）${judge_(data.fx.winRate, TARGETS.fxWinRate)}`);
+  lines.push(`    PF★：${data.fx.pf.toFixed(2)}（目標${TARGETS.fxPF}）${judge_(data.fx.pf, TARGETS.fxPF)}`);
+  lines.push(`    RR比★：${data.fx.rr.toFixed(2)}（目標${TARGETS.fxRR}）${judge_(data.fx.rr, TARGETS.fxRR)}`);
+  lines.push(`    最大DD：${fmtPct_(data.fx.maxDDPct)}（目標${fmtPct_(TARGETS.fxMaxDD)}以下）${judgeMax_(data.fx.maxDDPct, TARGETS.fxMaxDD)}`);
+  lines.push(`    期待値：$${data.fx.expectedPayoff.toFixed(2)}/トレード`);
+  lines.push(`    損益分岐勝率：${fmtPct_(data.fx.breakEven)}`);
   lines.push('');
 
-  // ----- ロット分析 -----
-  lines.push('  💡 ロット分析');
-  const lotTable = buildLotAnalysis_(data.fx.balance, 6);  // 平均SL6pips
-  lines.push(`    今週の平均ロット：${fmt_(data.fx.avgLotSize, 2)}`);
-  lines.push(`    今週の最大ロット：${fmt_(data.fx.maxLotSize, 2)}`);
-  lines.push('    元本ベース推奨ロット：');
-  lotTable.forEach(s => {
-    lines.push(`      リスク${s.riskPct}%：${fmt_(s.maxLot, 2)}ロット（最大損失$${fmt_(s.maxLoss, 0)}）[${s.label}]`);
-  });
-  lines.push('');
-
-  // ----- 月次目標達成 -----
   lines.push('🎯 月次目標達成状況');
-  lines.push(`  FX 月次利回り：実績${fmt_(data.mtd.fxYieldMTD, 2)}% / 目標${TARGETS.fxMonthlyYield}%（達成率${progress_(data.mtd.fxYieldMTD, TARGETS.fxMonthlyYield)}）`);
-  lines.push(`  現物 月次利回り：実績${fmt_(data.mtd.spotYieldMTD, 2)}% / 目標${TARGETS.spotMonthlyYield}%（達成率${progress_(data.mtd.spotYieldMTD, TARGETS.spotMonthlyYield)}）`);
-  lines.push(`  純利益 vs SageMaster費：$${fmt_(data.mtd.totalNetProfit, 0)} vs $${TARGETS.sageMasterFee}`);
+  lines.push(`  FX 月次利回り：${fmtPct_(data.mtd.fxYield)} / 目標${fmtPct_(TARGETS.fxMonthlyYield)}（達成率${progress_(data.mtd.fxYield, TARGETS.fxMonthlyYield)}）`);
+  lines.push(`  現物 月次利回り：${fmtPct_(data.mtd.spotYield)} / 目標${fmtPct_(TARGETS.spotMonthlyYield)}（達成率${progress_(data.mtd.spotYield, TARGETS.spotMonthlyYield)}）`);
+  lines.push(`  純利益：$${fmtN_(data.mtd.netProfit)}（SageMaster費$${TARGETS.sageMasterFee}）`);
   lines.push('');
 
-  // ----- 配信者スコア -----
-  lines.push('👤 配信者スコア（MelodyTrade - TP Ladder）');
-  const scores = calculateProviderScores_(data.fx);
-  lines.push(`  収益性：${scores.profitability}/10`);
-  lines.push(`  安定性：${scores.stability}/10`);
-  lines.push(`  持続性：${scores.sustainability}/10`);
-  lines.push(`  総合：${scores.total}/30（判定：${scoreLabel_(scores.total)}）`);
-  lines.push('');
-
-  // ----- 将来予測 -----
-  lines.push('🎲 将来予測（12ヶ月後）');
-  lines.push(`  Aシナリオ（ハイ）：$${fmt_(data.scenarios.scenarioA, 0)}`);
-  lines.push(`  Bシナリオ（ミドル）：$${fmt_(data.scenarios.scenarioB, 0)}`);
-  lines.push(`  Cシナリオ（ロー）：$${fmt_(data.scenarios.scenarioC, 0)}`);
-  lines.push('');
-
-  // ----- アラート -----
   const alerts = detectAlerts_(data);
   if (alerts.length > 0) {
     lines.push('⚠️ アラート');
@@ -184,187 +167,144 @@ function buildReviewText_(data, lastWeek) {
     lines.push('');
   }
 
-  // ----- アクション -----
   lines.push('💡 来週のアクション');
   suggestActions_(data).forEach(a => lines.push(`  ${a}`));
   lines.push('');
 
-  // ----- 用語解説 -----
+  const wkIdx = Math.floor(data.date.getTime() / (7 * 24 * 60 * 60 * 1000));
   lines.push('📖 今週の用語解説');
-  lines.push('  ★ PF（プロフィットファクター）：総利益÷総損失。1超えで黒字戦略');
-  lines.push('  ★ RR比：平均利益÷平均損失。勝率と並ぶ重要指標');
-  lines.push('  → 全用語集は スプシ「📖 FX用語集」シート参照');
+  lines.push(`  ★ ${GLOSSARY[wkIdx % GLOSSARY.length][0]}：${GLOSSARY[wkIdx % GLOSSARY.length][1]}`);
+  lines.push(`  ★ ${GLOSSARY[(wkIdx + 1) % GLOSSARY.length][0]}：${GLOSSARY[(wkIdx + 1) % GLOSSARY.length][1]}`);
 
   return lines.join('\n');
 }
 
 // ======================================================
-// 判定・アラート・アクション提案
+// 判定ロジック
 // ======================================================
 function detectAlerts_(data) {
   const alerts = [];
-  if (data.fx.profitFactor < 1.0 && data.fx.weeklyTrades >= 20) {
-    alerts.push('🔴 FX：PFが1.0を下回る。戦略見直し検討');
+  if (data.fx.pf < 1.0 && data.fx.trades >= 20) {
+    alerts.push(`🔴 FX：PFが1.0を下回る（${data.fx.pf.toFixed(2)}）。赤字戦略の可能性`);
   }
-  const breakEven = 1 / (1 + data.fx.rrRatio) * 100;
-  if (data.fx.winRate < breakEven) {
-    alerts.push(`🔴 FX：損益分岐勝率${fmt_(breakEven, 1)}%未達（実際${fmt_(data.fx.winRate, 1)}%）`);
+  if (data.fx.winRate < data.fx.breakEven && data.fx.trades >= 10) {
+    alerts.push(`🔴 FX：損益分岐勝率${fmtPct_(data.fx.breakEven)}未達（実際${fmtPct_(data.fx.winRate)}）`);
   }
   if (data.fx.maxDDPct > TARGETS.fxMaxDD) {
-    alerts.push(`🟡 FX：最大DD${fmt_(data.fx.maxDDPct, 2)}%が目標${TARGETS.fxMaxDD}%超過`);
+    alerts.push(`🟡 FX：最大DD${fmtPct_(data.fx.maxDDPct)}が目標${fmtPct_(TARGETS.fxMaxDD)}超過`);
   }
   return alerts;
 }
 
 function suggestActions_(data) {
   const actions = [];
-  if (data.fx.profitFactor < 1.0 && data.fx.weeklyTrades >= 30) {
+  if (data.fx.trades < 30) {
+    actions.push('🔸 FX：データ蓄積中（30トレード未満）、様子見継続');
+  } else if (data.fx.pf < 1.0) {
     actions.push('🔸 FX：SageMasterでリスク5%→3%に引き下げ検討');
-  } else if (data.fx.profitFactor >= 1.3 && data.fx.profitFactor < 1.5) {
-    actions.push('🟢 FX：PF良好。リスク5%継続、1.5達成でリスク7%検討');
-  } else if (data.fx.profitFactor >= 1.5) {
+  } else if (data.fx.pf >= 1.5) {
     actions.push('🟢 FX：PF優秀。リスク5%→7%引き上げ検討可能');
-  } else {
-    actions.push('🔸 FX：データ蓄積中。判断保留、様子見継続');
+  } else if (data.fx.pf >= 1.3) {
+    actions.push('🟢 FX：PF良好。現状維持');
   }
 
   if (data.spot.totalUSD > 0) {
-    actions.push('🔸 現物：このまま継続、月末時点で月利8%達成か確認');
+    actions.push('🔸 現物：継続、月末時点で月利10%達成か確認');
   }
-
   actions.push(`🔸 経費計上：SageMaster $${TARGETS.sageMasterFee}を当月コストに反映`);
   return actions;
 }
 
-function calculateProviderScores_(fx) {
-  // 簡易版（詳細ロジックは 01_mt4_html_parser.gs の scoreXXX_ を利用）
-  let profitability = 0, stability = 0, sustainability = 0;
+// ======================================================
+// 書き込み・通知
+// ======================================================
+function writeReviewToSheet_(ss, review, data) {
+  let sheet = ss.getSheetByName(REVIEW_CONFIG.SHEET);
+  if (!sheet) sheet = ss.insertSheet(REVIEW_CONFIG.SHEET);
 
-  if (fx.profitFactor >= 2.0) profitability = 10;
-  else if (fx.profitFactor >= 1.5) profitability = 8;
-  else if (fx.profitFactor >= 1.3) profitability = 6;
-  else if (fx.profitFactor >= 1.0) profitability = 4;
-  else profitability = 2;
-
-  if (fx.winRate >= 70) stability += 3;
-  if (fx.rrRatio >= 0.7) stability += 3;
-  if (fx.maxDDPct < 10) stability += 3;
-
-  // 持続性は取引数で判定（簡易）
-  if (fx.weeklyTrades >= 30) sustainability = 8;
-  else if (fx.weeklyTrades >= 10) sustainability = 5;
-  else sustainability = 3;
-
-  return {
-    profitability: profitability,
-    stability: Math.min(stability, 10),
-    sustainability: sustainability,
-    total: profitability + Math.min(stability, 10) + sustainability
-  };
+  sheet.insertRowsBefore(1, 2);
+  sheet.getRange(1, 1).setValue(data.date).setNumberFormat('yyyy/MM/dd HH:mm');
+  sheet.getRange(1, 2).setValue(review);
+  sheet.getRange(1, 1).setVerticalAlignment('top').setFontWeight('bold').setBackground('#cfe2f3');
+  sheet.getRange(1, 2).setVerticalAlignment('top').setWrap(true);
+  sheet.setColumnWidth(1, 140);
+  sheet.setColumnWidth(2, 800);
+  sheet.setRowHeight(1, 600);
+  sheet.getRange(1, 1, 1, 2).setFontSize(10);
 }
 
-function scoreLabel_(total) {
-  if (total >= 24) return 'A（優秀・継続）';
-  if (total >= 18) return 'B（良好・継続）';
-  if (total >= 12) return 'C（要観察）';
-  if (total >= 6) return 'D（データ不足 or 改善要）';
-  return 'E（解約検討）';
+function sendEmailNotification_(review) {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    MailApp.sendEmail({
+      to: email,
+      subject: `📊 SageMaster週次レビュー ${Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd')}`,
+      body: review
+    });
+  } catch (e) {
+    Logger.log(`メール送信失敗: ${e.message}`);
+  }
 }
 
 // ======================================================
-// ユーティリティ
+// スナップショット
 // ======================================================
-function fmt_(n, digits, width) {
-  if (n === undefined || n === null || isNaN(n)) return '-';
-  const d = digits === undefined ? 2 : digits;
-  let s = n.toLocaleString('en-US', {
-    minimumFractionDigits: d,
-    maximumFractionDigits: d
-  });
-  if (width) s = s.padStart(width);
-  return s;
+function getLastSnapshot_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('LAST_REVIEW_SNAPSHOT');
+  return raw ? JSON.parse(raw) : null;
 }
 
-function signed_(n, digits, width) {
-  const s = fmt_(n, digits, width);
-  if (n > 0) return '+' + s.trim();
-  return s;
+function saveSnapshot_(data) {
+  PropertiesService.getScriptProperties()
+    .setProperty('LAST_REVIEW_SNAPSHOT', JSON.stringify({
+      date: data.date.toISOString(),
+      spotUSD: data.spot.totalUSD,
+      fxBalance: data.fx.balance
+    }));
 }
 
-function pad_(s, width) {
-  return String(s || '').padEnd(width);
+// ======================================================
+// フォーマット
+// ======================================================
+function fmtN_(n) {
+  if (typeof n !== 'number' || isNaN(n)) return '0';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
-
+function fmtPct_(n) { return (n * 100).toFixed(2) + '%'; }
+function sgn_(n) { return (n > 0 ? '+' : '') + fmtN_(n); }
+function sgnPct_(n) { return (n > 0 ? '+' : '') + fmtPct_(n); }
 function judge_(actual, target) {
   if (actual >= target) return '🟢';
   if (actual >= target * 0.85) return '🟡';
   return '🔴';
 }
-
+function judgeMax_(actual, target) {
+  if (actual <= target) return '🟢';
+  if (actual <= target * 1.15) return '🟡';
+  return '🔴';
+}
 function progress_(actual, target) {
   if (!target) return '-';
-  return `${Math.round(actual / target * 100)}%`;
+  return Math.round(actual / target * 100) + '%';
 }
-
 function getWeekNumber_(date) {
   const first = new Date(date.getFullYear(), date.getMonth(), 1);
   return Math.ceil((date.getDate() + first.getDay()) / 7);
 }
 
-function buildLotAnalysis_(balance, avgSLPips) {
-  const scenarios = [2, 3, 5, 7];
-  const pipValue = 10;  // XAUUSD
-  return scenarios.map(riskPct => {
-    const maxLot = Math.floor(balance * riskPct / 100 / (avgSLPips * pipValue) * 100) / 100;
-    return {
-      riskPct: riskPct,
-      maxLot: maxLot,
-      maxLoss: balance * riskPct / 100,
-      label: riskPct === 2 ? '安全' : riskPct === 3 ? '標準' : riskPct === 5 ? '現状' : '攻め'
-    };
-  });
-}
-
-function getLastWeekSnapshot_() {
-  // Script Propertiesから前週スナップショット取得
-  const raw = PropertiesService.getScriptProperties().getProperty('LAST_WEEK_SNAPSHOT');
-  return raw ? JSON.parse(raw) : null;
-}
-
-function takeSnapshot_(data) {
-  PropertiesService.getScriptProperties()
-    .setProperty('LAST_WEEK_SNAPSHOT', JSON.stringify({
-      date: data.date.toISOString(),
-      spot: { totalUSD: data.spot.totalUSD },
-      fx: { balance: data.fx.balance, equity: data.fx.equity }
-    }));
-}
-
-function writeReviewToSheet_(review, data) {
-  const ss = SpreadsheetApp.getActive();
-  const sheet = ss.getSheetByName('週次レビュー') || ss.insertSheet('週次レビュー');
-  sheet.insertRowBefore(1);
-  sheet.getRange(1, 1).setValue(data.date);
-  sheet.getRange(1, 2).setValue(review);
-}
-
-function sendEmailNotification_(review) {
-  const email = Session.getActiveUser().getEmail();
-  MailApp.sendEmail({
-    to: email,
-    subject: `📊 SageMaster週次レビュー ${new Date().toLocaleDateString('ja-JP')}`,
-    body: review
-  });
-}
-
 // ======================================================
-// トリガー設定（初回セットアップ時に手動実行）
+// テスト＆トリガー設定
 // ======================================================
-function setupTriggers() {
-  // 既存のトリガーを削除
-  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+function testWeeklyReview() {
+  generateWeeklyReview();
+  Logger.log('テスト完了。スプシ「週次レビュー」シート＋Gmailを確認してください');
+}
 
-  // 月曜7:00 JSTで週次レビュー
+function setupWeeklyReviewTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'generateWeeklyReview')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+
   ScriptApp.newTrigger('generateWeeklyReview')
     .timeBased()
     .onWeekDay(ScriptApp.WeekDay.MONDAY)
@@ -372,18 +312,5 @@ function setupTriggers() {
     .inTimezone('Asia/Tokyo')
     .create();
 
-  // 毎日6:00 JSTでMT4/MEXC集計
-  ScriptApp.newTrigger('runMT4Aggregation')
-    .timeBased()
-    .everyDays(1)
-    .atHour(6)
-    .inTimezone('Asia/Tokyo')
-    .create();
-
-  ScriptApp.newTrigger('runMEXCAggregation')
-    .timeBased()
-    .everyDays(1)
-    .atHour(6)
-    .inTimezone('Asia/Tokyo')
-    .create();
+  Logger.log('✅ 月曜7:00 JSTトリガー設定完了');
 }
