@@ -319,3 +319,38 @@ function testWriteHoldingsToSheet() {
 
   Logger.log(`✅ 書き込み完了：${holdings.items.length}通貨、総資産$${holdings.totalUSD.toFixed(2)}`);
 }
+
+// ======================================================
+// 日次自動更新（朝6:00 JST）
+// ======================================================
+function dailyMEXCUpdate() {
+  try {
+    testWriteHoldingsToSheet();
+    Logger.log('✅ MEXC現物データ更新完了');
+  } catch (e) {
+    Logger.log(`❌ MEXC更新失敗: ${e.message}`);
+    return;
+  }
+
+  try {
+    populateIntegratedDashboard();
+    Logger.log('✅ 統合ダッシュボード更新完了');
+  } catch (e) {
+    Logger.log(`❌ ダッシュボード更新失敗: ${e.message}`);
+  }
+}
+
+function setupDailyMEXCTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'dailyMEXCUpdate')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+
+  ScriptApp.newTrigger('dailyMEXCUpdate')
+    .timeBased()
+    .everyDays(1)
+    .atHour(6)
+    .inTimezone('Asia/Tokyo')
+    .create();
+
+  Logger.log('✅ 毎日6:00 JST トリガー設定完了');
+}
