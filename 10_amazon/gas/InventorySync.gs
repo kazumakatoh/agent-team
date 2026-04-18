@@ -160,6 +160,22 @@ function formatCurrentYearMonth() {
 }
 
 /**
+ * セル値（文字列 or Date）を "YYYY.MM" 形式に正規化
+ * 受け入れフォーマット: "2026.04" / "2026.4" / "2026/4" / "2026-4" / Date / "2026年4月"
+ */
+function normalizeYearMonthCell(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (value instanceof Date) {
+    return value.getFullYear() + '.' + String(value.getMonth() + 1).padStart(2, '0');
+  }
+  const s = String(value).trim();
+  // 4桁年 + 区切り + 1〜2桁月
+  const m = s.match(/^(\d{4})[.\-\/年](\d{1,2})/);
+  if (m) return m[1] + '.' + m[2].padStart(2, '0');
+  return s;
+}
+
+/**
  * CF管理シートの 1行目 ASIN ヘッダーから ASIN → 列番号 マップを作成
  * ASIN は E列以降（CF_STOCK_ASIN_START_COL = 5）
  */
@@ -189,14 +205,40 @@ function findCfMonthlyStockRow(sheet, yearMonth) {
   const range = sheet.getRange(1, 1, lastRow, 3).getValues();
   let currentYm = '';
   for (let i = 0; i < range.length; i++) {
-    const a = String(range[i][0] || '').trim();
+    const a = normalizeYearMonthCell(range[i][0]);
     const c = String(range[i][2] || '').trim();
-    if (a) currentYm = a;
+    if (a && /^\d{4}\.\d{2}$/.test(a)) currentYm = a;
     if (currentYm === yearMonth && c === CF_STOCK_KBN_VALUE) {
       return i + 1;
     }
   }
   return -1;
+}
+
+/**
+ * デバッグ: CF管理シートのA列（年月）の実値を調べる
+ * findCfMonthlyStockRow が「未発見」を返すときの原因調査用
+ */
+function debugCfMonthColumn() {
+  const sheet = openCfStockSheet();
+  const lastRow = sheet.getLastRow();
+  const range = sheet.getRange(1, 1, lastRow, 3).getValues();
+  let shown = 0;
+  for (let i = 0; i < range.length; i++) {
+    const rawA = range[i][0];
+    const rawC = range[i][2];
+    if (rawA !== '' || rawC === CF_STOCK_KBN_VALUE) {
+      const norm = normalizeYearMonthCell(rawA);
+      Logger.log('row ' + (i + 1) +
+                 ' | A=' + JSON.stringify(rawA) +
+                 ' (type=' + (rawA instanceof Date ? 'Date' : typeof rawA) + ')' +
+                 ' | normalized=' + norm +
+                 ' | C=' + JSON.stringify(rawC));
+      shown++;
+      if (shown >= 40) break;
+    }
+  }
+  Logger.log('===== 終了 =====');
 }
 
 /**
