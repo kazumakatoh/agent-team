@@ -216,6 +216,31 @@ function findCfMonthlyStockRow(sheet, yearMonth) {
 }
 
 /**
+ * デバッグ: 年月ラベルが入っている列を特定する
+ * A〜F列をスキャンして "2026" を含むセルを全部ログ出力
+ */
+function debugFindMonthColumn() {
+  const sheet = openCfStockSheet();
+  const lastRow = sheet.getLastRow();
+  const range = sheet.getRange(1, 1, lastRow, 6).getValues();  // A-F列
+  const colNames = ['A', 'B', 'C', 'D', 'E', 'F'];
+  let shown = 0;
+  for (let i = 0; i < range.length; i++) {
+    for (let c = 0; c < 6; c++) {
+      const v = range[i][c];
+      if (v && String(v).match(/20\d{2}/)) {
+        Logger.log('row ' + (i + 1) + ' / col ' + colNames[c] +
+                   ' | value=' + JSON.stringify(v) +
+                   ' (type=' + (v instanceof Date ? 'Date' : typeof v) + ')');
+        shown++;
+        if (shown >= 80) { Logger.log('... (表示上限)'); return; }
+      }
+    }
+  }
+  Logger.log('===== 終了（' + shown + '件発見） =====');
+}
+
+/**
  * デバッグ: CF管理シートのA列（年月）の実値を調べる
  * findCfMonthlyStockRow が「未発見」を返すときの原因調査用
  */
