@@ -202,3 +202,53 @@ function setupDailyTriggers() {
   Logger.log('  毎月3日 6:00 - CF→M2 仕入単価同期');
 }
 
+/**
+ * Phase 4 のトリガー5本だけを既存を保持したまま追加する
+ * setupDailyTriggers() は全削除→再登録なので、既存トリガーの実行履歴を残したい場合はこちらを使う。
+ *
+ * 実行前に checkCredentials() で以下が設定済みか確認:
+ *   - CLAUDE_API_KEY    (sendWeeklyAiReport, checkUpcomingSales)
+ *   - GMAIL_TO          (sendWeeklyAiReport, checkUpcomingSales)
+ *   - LINE_CHANNEL_TOKEN, LINE_USER_ID  (runDailyAlerts)
+ */
+function addPhase4Triggers() {
+  const existing = ScriptApp.getProjectTriggers();
+  const existingFns = new Set(existing.map(t => t.getHandlerFunction()));
+
+  const specs = [
+    { fn: 'runDailyAlerts',         desc: '毎日 9:00 - LINE緊急アラート',
+      create: () => ScriptApp.newTrigger('runDailyAlerts').timeBased().everyDays(1).atHour(9).create() },
+    { fn: 'runAccountHealthCheck',  desc: '毎日 9:15 - アカウント健全性',
+      create: () => ScriptApp.newTrigger('runAccountHealthCheck').timeBased().everyDays(1).atHour(9).nearMinute(15).create() },
+    { fn: 'fetchCompetitorPricing', desc: '毎日 9:30 - 競合価格',
+      create: () => ScriptApp.newTrigger('fetchCompetitorPricing').timeBased().everyDays(1).atHour(9).nearMinute(30).create() },
+    { fn: 'checkUpcomingSales',     desc: '毎週月 7:30 - セール準備チェック',
+      create: () => ScriptApp.newTrigger('checkUpcomingSales').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).nearMinute(30).create() },
+    { fn: 'sendWeeklyAiReport',     desc: '毎週月 8:00 - 週次AIレポート',
+      create: () => ScriptApp.newTrigger('sendWeeklyAiReport').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).create() },
+  ];
+
+  let added = 0;
+  for (const s of specs) {
+    if (existingFns.has(s.fn)) {
+      Logger.log('⏭  既に登録済みスキップ: ' + s.fn);
+      continue;
+    }
+    s.create();
+    Logger.log('✅ 追加: ' + s.desc);
+    added++;
+  }
+  Logger.log('完了: ' + added + '本追加（既存は保持）');
+}
+
+/**
+ * Phase 4 で新規追加したシート（D4 競合価格 / D5 健全性 / M4 セールカレンダー）を一括初期化
+ * 1回だけ実行すればOK
+ */
+function setupPhase4Sheets() {
+  setupCompetitorSheet();        // D4 競合価格
+  setupHealthSheet();            // D5 アカウント健全性
+  setupSaleCalendar();           // M4 セールカレンダー（プライムデー等を自動投入）
+  Logger.log('✅ Phase 4 シート初期化完了');
+}
+
