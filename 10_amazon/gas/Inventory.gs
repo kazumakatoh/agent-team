@@ -116,7 +116,7 @@ function fetchInventoryData() {
   const all = [];
   let nextToken = null;
   let page = 0;
-  const maxPages = 20;  // 35商品想定なので1ページで済むはずだが安全マージン
+  const maxPages = 50;  // 登録商品が数百ある可能性も考慮
 
   do {
     const params = {
@@ -141,7 +141,8 @@ function fetchInventoryData() {
       });
     }
 
-    nextToken = payload.nextToken || null;
+    // nextToken は payload ではなくルート直下の pagination にある
+    nextToken = (res.pagination && res.pagination.nextToken) || null;
     page++;
     if (nextToken) Utilities.sleep(500);
   } while (nextToken && page < maxPages);
