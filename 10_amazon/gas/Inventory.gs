@@ -229,7 +229,28 @@ function testFetchInventoryOnly() {
   const inv = fetchInventoryData();
   Logger.log('取得件数: ' + inv.length);
   const sold = inv.filter(i => i.qty > 0).sort((a, b) => b.qty - a.qty);
+  Logger.log('在庫あり（qty > 0）: ' + sold.length + ' 件');
   sold.slice(0, 20).forEach(i => {
     Logger.log('  ' + i.asin + ' / ' + i.sku + ' / qty=' + i.qty);
+  });
+}
+
+/**
+ * デバッグ: SP-API の生レスポンスを確認
+ * fulfillableQuantity が入っているか構造を調べる
+ */
+function debugInventoryRaw() {
+  const params = {
+    granularityType: 'Marketplace',
+    granularityId: MARKETPLACE_ID_JP,
+    marketplaceIds: MARKETPLACE_ID_JP,
+    details: 'true',
+  };
+  const res = callSpApi('GET', '/fba/inventory/v1/summaries', params);
+  const summaries = (res.payload && res.payload.inventorySummaries) || [];
+  Logger.log('総件数: ' + summaries.length);
+  Logger.log('--- 先頭3件の構造 ---');
+  summaries.slice(0, 3).forEach((s, i) => {
+    Logger.log('[' + i + '] ' + JSON.stringify(s, null, 2));
   });
 }
