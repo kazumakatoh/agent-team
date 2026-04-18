@@ -173,18 +173,18 @@ function buildMonthlyPrompt(m) {
   s += '## 月次KPI（前月 vs 前々月 vs 前年同月）\n\n';
   s += '| 指標 | 前月 | 前々月 | 前年同月 | 前月比 | 前年比 |\n|---|---:|---:|---:|---:|---:|\n';
   const rows = [
-    ['売上', L.sales, P.sales, Y.sales, fmtN, null],
-    ['CV(注文件数)', L.cv, P.cv, Y.cv, fmtN, null],
-    ['注文点数', L.units, P.units, Y.units, fmtN, null],
-    ['セッション数', L.sessions, P.sessions, Y.sessions, fmtN, null],
-    ['広告費', L.adCost, P.adCost, Y.adCost, fmtN, null],
-    ['広告売上', L.adSales, P.adSales, Y.adSales, fmtN, null],
-    ['仕入原価', L.cogs, P.cogs, Y.cogs, fmtN, null],
-    ['販売手数料(推定)', L.commission, P.commission, Y.commission, fmtN, null],
-    ['利益', L.profit, P.profit, Y.profit, fmtN, null],
+    ['売上', L.sales, P.sales, Y.sales],
+    ['CV(注文件数)', L.cv, P.cv, Y.cv],
+    ['注文点数', L.units, P.units, Y.units],
+    ['セッション数', L.sessions, P.sessions, Y.sessions],
+    ['広告費', L.adCost, P.adCost, Y.adCost],
+    ['広告売上', L.adSales, P.adSales, Y.adSales],
+    ['仕入原価', L.cogs, P.cogs, Y.cogs],
+    ['販売手数料(推定)', L.commission, P.commission, Y.commission],
+    ['利益', L.profit, P.profit, Y.profit],
   ];
   rows.forEach(r => {
-    s += '| ' + r[0] + ' | ' + r[5](r[1]) + ' | ' + r[5](r[2]) + ' | ' + r[5](r[3]) +
+    s += '| ' + r[0] + ' | ' + fmtN(r[1]) + ' | ' + fmtN(r[2]) + ' | ' + fmtN(r[3]) +
          ' | ' + dPct(r[1], r[2]) + ' | ' + dPct(r[1], r[3]) + ' |\n';
   });
   // 比率系は別枠
