@@ -515,7 +515,15 @@ function parseTrafficTsv(content) {
  * GAS エディタから手動実行して動作確認に使う。
  */
 function diagnoseTrafficCoverage() {
-  Logger.log('===== Traffic カバレッジ診断 =====');
+  diagnoseTrafficCoverageRange(7);
+}
+
+function diagnoseTrafficCoverage30() { diagnoseTrafficCoverageRange(30); }
+function diagnoseTrafficCoverage60() { diagnoseTrafficCoverageRange(60); }
+
+function diagnoseTrafficCoverageRange(days) {
+  days = days || 7;
+  Logger.log('===== Traffic カバレッジ診断（過去' + days + '日） =====');
   const sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) { Logger.log('D1 が空'); return; }
@@ -523,7 +531,7 @@ function diagnoseTrafficCoverage() {
   const data = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
   const today = new Date();
   const fmt = d => Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
-  const start = fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7));
+  const start = fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() - days));
 
   const byDate = {};
   for (const row of data) {
