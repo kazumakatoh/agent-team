@@ -91,7 +91,7 @@ function fetchInventoryAndAlert() {
         const daysText = daysLeft < 1 ? '在庫切れ' : 'あと' + Math.floor(daysLeft) + '日';
         alerts.push({
           key: 'STOCK_' + asin + '_' + alert.threshold,
-          type: alert.threshold === 0 ? '🚨在庫切れ' : '📦在庫アラート',
+          type: alert.threshold === 0 ? '在庫切れ' : '在庫少なめ',
           line: displayName + '：残り' + inv.qty + '個／' + daysText,
         });
       }
@@ -178,7 +178,7 @@ function notifyStockAlerts(alerts) {
     return !last || (now - last) > ALERT_DEDUP_HOURS * 3600 * 1000;
   });
   if (fresh.length === 0) return;
-  pushLineAlert(formatAlertMessage(fresh));
+  pushLineAlert(formatAlertMessage(fresh, 'Amazon在庫アラート'));
   fresh.forEach(a => { sent[a.key] = now; });
   saveSentAlertMap(sent);
 }

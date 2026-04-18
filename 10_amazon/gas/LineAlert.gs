@@ -183,8 +183,9 @@ function pushLineAlert(text) {
   }
 }
 
-function formatAlertMessage(alerts) {
-  const head = '【Amazon緊急アラート】' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'M/d HH:mm') + '\n';
+function formatAlertMessage(alerts, title) {
+  const head = '【' + (title || 'Amazonアラート') + '】' +
+    Utilities.formatDate(new Date(), 'Asia/Tokyo', 'M/d HH:mm') + '\n';
   const grouped = {};
   for (const a of alerts) {
     if (!grouped[a.type]) grouped[a.type] = [];
