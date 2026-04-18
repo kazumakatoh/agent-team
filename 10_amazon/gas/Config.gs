@@ -186,6 +186,10 @@ function setupDailyTriggers() {
   ScriptApp.newTrigger('fetchInventoryAndAlert')
     .timeBased().everyDays(1).atHour(10).create();
 
+  // 毎日 10:30 - 発注管理表 / CF管理スプシへ在庫同期
+  ScriptApp.newTrigger('syncInventoryToExternalSheets')
+    .timeBased().everyDays(1).atHour(10).nearMinute(30).create();
+
   // 毎月1日 9:00 - 月次AI戦略レポート（Claude Opus → Gmail）
   ScriptApp.newTrigger('sendMonthlyAiReport')
     .timeBased().onMonthDay(1).atHour(9).create();
@@ -206,6 +210,7 @@ function setupDailyTriggers() {
   Logger.log('  毎日 9:15 - アカウント健全性');
   Logger.log('  毎日 9:30 - 競合価格');
   Logger.log('  毎日 10:00 - 在庫＋在庫切れアラート');
+  Logger.log('  毎日 10:30 - 発注管理表/CF管理スプシへ在庫同期');
   Logger.log('  毎週月 7:30 - セール準備チェック');
   Logger.log('  毎週月 8:00 - 週次AIレポート');
   Logger.log('  毎月1日 9:00 - 月次AI戦略レポート');
@@ -261,9 +266,11 @@ function addPhase5Triggers() {
   const existingFns = new Set(existing.map(t => t.getHandlerFunction()));
 
   const specs = [
-    { fn: 'fetchInventoryAndAlert', desc: '毎日 10:00 - 在庫取得＋在庫切れアラート',
+    { fn: 'fetchInventoryAndAlert',       desc: '毎日 10:00 - 在庫取得＋在庫切れアラート',
       create: () => ScriptApp.newTrigger('fetchInventoryAndAlert').timeBased().everyDays(1).atHour(10).create() },
-    { fn: 'sendMonthlyAiReport',    desc: '毎月1日 9:00 - 月次AI戦略レポート',
+    { fn: 'syncInventoryToExternalSheets', desc: '毎日 10:30 - 発注管理表/CF管理への在庫同期',
+      create: () => ScriptApp.newTrigger('syncInventoryToExternalSheets').timeBased().everyDays(1).atHour(10).nearMinute(30).create() },
+    { fn: 'sendMonthlyAiReport',           desc: '毎月1日 9:00 - 月次AI戦略レポート',
       create: () => ScriptApp.newTrigger('sendMonthlyAiReport').timeBased().onMonthDay(1).atHour(9).create() },
   ];
 

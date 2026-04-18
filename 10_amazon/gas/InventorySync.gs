@@ -1,0 +1,258 @@
+/**
+ * Amazon Dashboard - 外部スプシ（発注管理表 / CF管理）への在庫同期
+ *
+ * ## 処理フロー（毎日 10:30）
+ *
+ *   1. Amazon Inventory API で ASIN別の FBA在庫 (fulfillableQuantity) を取得
+ *   2. 発注管理表「発注タイミング」シートの F列「FBA在庫」に書き込み
+ *      （ASIN は C列でマッチング）
+ *   3. SpreadsheetApp.flush() で D列「在庫数」の数式を再計算
+ *   4. 発注管理表の D列「在庫数」を読み取り
+ *   5. CF管理「在庫残高」シートで当月の「在庫」行を特定
+ *   6. 該当 ASIN 列（E列以降）に D列値を書き込む
+ *
+ *   → 毎日上書きされるが、月末時点の値が「そのまま次月以降に残り続ける」ため
+ *     結果的に「月末最終在庫数」が保存される設計。
+ *
+ * ## 必要な ScriptProperties
+ *   - ORDER_SHEET_ID: 発注管理表スプレッドシートID
+ *   - CF_SHEET_ID:    CF管理スプレッドシートID（既存設定を再利用）
+ *
+ * ## トリガー: 毎日 AM10:30 (syncInventoryToExternalSheets)
+ */
+
+const ORDER_SHEET_NAME = '発注タイミング';
+const ORDER_SHEET_ASIN_COL = 3;      // C列
+const ORDER_SHEET_TOTAL_COL = 4;     // D列「在庫数」
+const ORDER_SHEET_FBA_COL = 6;       // F列「FBA在庫」
+const ORDER_SHEET_DATA_START_ROW = 2;
+
+const CF_STOCK_SHEET_NAME = '在庫残高';
+const CF_STOCK_ASIN_START_COL = 5;   // E列から ASIN別
+const CF_STOCK_MONTH_COL = 1;        // A列: 年月
+const CF_STOCK_KBN_COL = 3;          // C列: 区分（在庫/見込売上/...）
+const CF_STOCK_KBN_VALUE = '在庫';
+
+/**
+ * メイン: 在庫データを発注管理表 + CF管理スプシに同期
+ */
+function syncInventoryToExternalSheets() {
+  const t0 = Date.now();
+  Logger.log('===== 外部スプシ 在庫同期 開始 =====');
+
+  // 1. Amazon API から FBA 在庫取得
+  const inventory = fetchInventoryData();
+  const asinToFba = {};
+  for (const inv of inventory) {
+    if (inv.asin) asinToFba[inv.asin] = inv.qty;
+  }
+  Logger.log('Amazon 在庫取得: ' + Object.keys(asinToFba).length + ' ASIN');
+
+  // 2. 発注管理表 F列に書き込み
+  const orderSheet = openOrderSheet();
+  const updatedFba = writeFbaToOrderSheet(orderSheet, asinToFba);
+  Logger.log('発注管理表 F列 更新: ' + updatedFba + ' 行');
+
+  // 3. 式再計算を待つ
+  SpreadsheetApp.flush();
+  Utilities.sleep(1000);
+
+  // 4. D列「在庫数」を読み取り
+  const asinToTotalStock = readOrderSheetTotalStock(orderSheet);
+  Logger.log('発注管理表 D列「在庫数」読み取り: ' + Object.keys(asinToTotalStock).length + ' ASIN');
+
+  // 5. CF管理スプシに書き込み
+  const cfSheet = openCfStockSheet();
+  const yearMonth = formatCurrentYearMonth();
+  const written = writeCurrentMonthStockToCf(cfSheet, yearMonth, asinToTotalStock);
+  Logger.log('CF管理「在庫残高」更新: ' + yearMonth + ' の在庫行 ' + written + ' 列');
+
+  Logger.log('✅ 外部スプシ同期完了 (' + (Date.now() - t0) + 'ms)');
+}
+
+// ===== 発注管理表 =====
+
+function openOrderSheet() {
+  const id = PropertiesService.getScriptProperties().getProperty('ORDER_SHEET_ID');
+  if (!id) throw new Error('ORDER_SHEET_ID が未設定');
+  const ss = SpreadsheetApp.openById(id);
+  const sheet = ss.getSheetByName(ORDER_SHEET_NAME);
+  if (!sheet) throw new Error('発注管理表に「' + ORDER_SHEET_NAME + '」シートがない');
+  return sheet;
+}
+
+/**
+ * 発注管理表のC列からASIN → 行番号マップを作成
+ */
+function getOrderSheetAsinMap(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < ORDER_SHEET_DATA_START_ROW) return {};
+  const asinCol = sheet.getRange(ORDER_SHEET_DATA_START_ROW, ORDER_SHEET_ASIN_COL,
+                                  lastRow - ORDER_SHEET_DATA_START_ROW + 1, 1).getValues();
+  const map = {};
+  for (let i = 0; i < asinCol.length; i++) {
+    const asin = String(asinCol[i][0] || '').trim();
+    if (asin) map[asin] = ORDER_SHEET_DATA_START_ROW + i;
+  }
+  return map;
+}
+
+/**
+ * F列「FBA在庫」に ASIN別の最新値を書き込み
+ * @returns {number} 更新した行数
+ */
+function writeFbaToOrderSheet(sheet, asinToFba) {
+  const asinMap = getOrderSheetAsinMap(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < ORDER_SHEET_DATA_START_ROW) return 0;
+
+  // 現在のF列全値を取得してから、変更分だけ更新する（一括setValuesで高速化）
+  const range = sheet.getRange(ORDER_SHEET_DATA_START_ROW, ORDER_SHEET_FBA_COL,
+                               lastRow - ORDER_SHEET_DATA_START_ROW + 1, 1);
+  const current = range.getValues();
+  let updated = 0;
+  for (const [asin, qty] of Object.entries(asinToFba)) {
+    const row = asinMap[asin];
+    if (!row) continue;
+    const idx = row - ORDER_SHEET_DATA_START_ROW;
+    if (current[idx][0] !== qty) {
+      current[idx][0] = qty;
+      updated++;
+    }
+  }
+  if (updated > 0) range.setValues(current);
+  return updated;
+}
+
+/**
+ * D列「在庫数」を読み取って ASIN → 在庫数 のマップを返す
+ */
+function readOrderSheetTotalStock(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < ORDER_SHEET_DATA_START_ROW) return {};
+
+  // C列（ASIN）と D列（在庫数）を一括取得
+  const data = sheet.getRange(ORDER_SHEET_DATA_START_ROW, ORDER_SHEET_ASIN_COL,
+                              lastRow - ORDER_SHEET_DATA_START_ROW + 1, 2).getValues();
+  const map = {};
+  for (const row of data) {
+    const asin = String(row[0] || '').trim();
+    const qty = parseFloat(row[1]) || 0;
+    if (asin) map[asin] = qty;
+  }
+  return map;
+}
+
+// ===== CF管理「在庫残高」 =====
+
+function openCfStockSheet() {
+  const id = PropertiesService.getScriptProperties().getProperty('CF_SHEET_ID');
+  if (!id) throw new Error('CF_SHEET_ID が未設定');
+  const ss = SpreadsheetApp.openById(id);
+  const sheet = ss.getSheetByName(CF_STOCK_SHEET_NAME);
+  if (!sheet) throw new Error('CF管理に「' + CF_STOCK_SHEET_NAME + '」シートがない');
+  return sheet;
+}
+
+function formatCurrentYearMonth() {
+  const d = new Date();
+  return d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+/**
+ * CF管理シートの 1行目 ASIN ヘッダーから ASIN → 列番号 マップを作成
+ * ASIN は E列以降（CF_STOCK_ASIN_START_COL = 5）
+ */
+function getCfAsinColumnMap(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol < CF_STOCK_ASIN_START_COL) return {};
+  const headers = sheet.getRange(1, CF_STOCK_ASIN_START_COL, 1,
+                                 lastCol - CF_STOCK_ASIN_START_COL + 1).getValues()[0];
+  const map = {};
+  for (let i = 0; i < headers.length; i++) {
+    const asin = String(headers[i] || '').trim();
+    if (asin) map[asin] = CF_STOCK_ASIN_START_COL + i;
+  }
+  return map;
+}
+
+/**
+ * 指定年月の「在庫」行を特定（A列=年月 AND C列=在庫）
+ * @returns {number} 行番号（見つからなければ -1）
+ */
+function findCfMonthlyStockRow(sheet, yearMonth) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow === 0) return -1;
+
+  // A列（年月）と C列（区分）を一括取得
+  // A列の月は merged cell の場合もあるので、前方の値を保持しながら走査
+  const range = sheet.getRange(1, 1, lastRow, 3).getValues();
+  let currentYm = '';
+  for (let i = 0; i < range.length; i++) {
+    const a = String(range[i][0] || '').trim();
+    const c = String(range[i][2] || '').trim();
+    if (a) currentYm = a;
+    if (currentYm === yearMonth && c === CF_STOCK_KBN_VALUE) {
+      return i + 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * 当月の「在庫」行に ASIN別の在庫数を書き込む
+ * @returns {number} 書き込んだセル数
+ */
+function writeCurrentMonthStockToCf(sheet, yearMonth, asinToQty) {
+  const row = findCfMonthlyStockRow(sheet, yearMonth);
+  if (row < 0) {
+    Logger.log('⚠️ CF管理に ' + yearMonth + ' の在庫行が見つかりません');
+    return 0;
+  }
+  const asinCols = getCfAsinColumnMap(sheet);
+  if (Object.keys(asinCols).length === 0) {
+    Logger.log('⚠️ CF管理に ASIN ヘッダーが見つかりません');
+    return 0;
+  }
+
+  // 現在値を取得してから差分更新（全体一括 setValues のため）
+  const maxCol = Math.max.apply(null, Object.values(asinCols));
+  const range = sheet.getRange(row, CF_STOCK_ASIN_START_COL, 1,
+                               maxCol - CF_STOCK_ASIN_START_COL + 1);
+  const current = range.getValues()[0];
+  let updated = 0;
+  for (const [asin, qty] of Object.entries(asinToQty)) {
+    const col = asinCols[asin];
+    if (!col) continue;
+    const idx = col - CF_STOCK_ASIN_START_COL;
+    if (current[idx] !== qty) {
+      current[idx] = qty;
+      updated++;
+    }
+  }
+  if (updated > 0) range.setValues([current]);
+  return updated;
+}
+
+// ===== テスト =====
+
+/**
+ * テスト: 実行前に各シートの構造を確認（書き込みなし）
+ */
+function testInventoryExternalSheets() {
+  const orderSheet = openOrderSheet();
+  const asinMap = getOrderSheetAsinMap(orderSheet);
+  Logger.log('発注管理表 ASIN数: ' + Object.keys(asinMap).length);
+  Logger.log('先頭5件:');
+  Object.entries(asinMap).slice(0, 5).forEach(([a, r]) => Logger.log('  ' + a + ' → row ' + r));
+
+  const cfSheet = openCfStockSheet();
+  const cfAsinCols = getCfAsinColumnMap(cfSheet);
+  Logger.log('CF管理 ASIN数: ' + Object.keys(cfAsinCols).length);
+  Logger.log('先頭5件:');
+  Object.entries(cfAsinCols).slice(0, 5).forEach(([a, c]) => Logger.log('  ' + a + ' → col ' + c));
+
+  const ym = formatCurrentYearMonth();
+  const row = findCfMonthlyStockRow(cfSheet, ym);
+  Logger.log('CF管理 当月(' + ym + ')の「在庫」行: ' + (row > 0 ? 'row ' + row : '未発見'));
+}
