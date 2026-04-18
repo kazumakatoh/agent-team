@@ -316,6 +316,38 @@ function bulkFetchTraffic(days) {
   }
 }
 
+/**
+ * 指定「日前〜日前」の範囲のトラフィックをバックフィル
+ * 1日あたり約25秒かかるので、6分制限を考慮すると10日ずつが安全
+ *
+ * @param {number} fromDaysAgo  開始（何日前から）
+ * @param {number} toDaysAgo    終了（何日前まで）
+ */
+function backfillTrafficRange(fromDaysAgo, toDaysAgo) {
+  const today = new Date();
+  const fmt = d => Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  const t0 = Date.now();
+  for (let d = fromDaysAgo; d <= toDaysAgo; d++) {
+    const target = new Date(today);
+    target.setDate(target.getDate() - d);
+    const dateStr = fmt(target);
+    Logger.log('--- Traffic ' + dateStr + ' ---');
+    try {
+      fetchTrafficReport(dateStr, dateStr);
+    } catch (e) {
+      Logger.log('エラー: ' + e.message);
+    }
+  }
+  Logger.log('完了: ' + (toDaysAgo - fromDaysAgo + 1) + ' 日分 (' + Math.round((Date.now() - t0) / 1000) + '秒)');
+}
+
+// 10日刻みの事前定義ラッパー（ドロップダウンから直接実行できるよう用意）
+function backfillTraffic8to17()  { backfillTrafficRange(8, 17); }    // 4/1〜4/10 相当
+function backfillTraffic18to27() { backfillTrafficRange(18, 27); }   // 3/22〜3/31 相当
+function backfillTraffic28to37() { backfillTrafficRange(28, 37); }   // 3/12〜3/21 相当
+function backfillTraffic38to47() { backfillTrafficRange(38, 47); }   // 3/2〜3/11 相当
+function backfillTraffic48to57() { backfillTrafficRange(48, 57); }   // 2/20〜3/1 相当
+
 function dailyFetchTraffic() {
   const yesterday = getYesterday();
   fetchTrafficReport(yesterday, yesterday);
