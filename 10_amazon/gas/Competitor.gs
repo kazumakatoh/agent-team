@@ -109,7 +109,7 @@ function fetchCompetitivePriceBatch(asins) {
 }
 
 function setupCompetitorSheet() {
-  const sheet = getOrCreateSheet(D4_COMPETITOR);
+  const sheet = getOrCreateSheetCompact(D4_COMPETITOR, D4_COMPETITOR_HEADERS.length, 200);
   const existing = sheet.getRange(1, 1, 1, D4_COMPETITOR_HEADERS.length).getValues()[0];
   if (existing[0] !== D4_COMPETITOR_HEADERS[0]) {
     sheet.getRange(1, 1, 1, D4_COMPETITOR_HEADERS.length).setValues([D4_COMPETITOR_HEADERS]);

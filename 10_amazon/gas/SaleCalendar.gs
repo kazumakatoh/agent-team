@@ -23,7 +23,7 @@ const SALE_LEAD_WEEKS = [6, 4, 2];   // この週数以内に入ったら通知
  * M4 セットアップ: 当年と来年の主要セールを自動投入
  */
 function setupSaleCalendar() {
-  const sheet = getOrCreateSheet(M4_SALE_CALENDAR);
+  const sheet = getOrCreateSheetCompact(M4_SALE_CALENDAR, M4_SALE_HEADERS.length, 50);
   const existing = sheet.getRange(1, 1, 1, M4_SALE_HEADERS.length).getValues()[0];
   if (existing[0] !== M4_SALE_HEADERS[0]) {
     sheet.getRange(1, 1, 1, M4_SALE_HEADERS.length).setValues([M4_SALE_HEADERS])

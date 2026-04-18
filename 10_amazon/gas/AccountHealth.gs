@@ -105,7 +105,7 @@ function notifyHealthIssues(issues, score, returnInfo) {
 }
 
 function setupHealthSheet() {
-  const sheet = getOrCreateSheet(D5_HEALTH);
+  const sheet = getOrCreateSheetCompact(D5_HEALTH, D5_HEALTH_HEADERS.length, 400);
   const existing = sheet.getRange(1, 1, 1, D5_HEALTH_HEADERS.length).getValues()[0];
   if (existing[0] !== D5_HEALTH_HEADERS[0]) {
     sheet.getRange(1, 1, 1, D5_HEALTH_HEADERS.length).setValues([D5_HEALTH_HEADERS])

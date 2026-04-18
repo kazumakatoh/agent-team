@@ -109,6 +109,97 @@ function appendRows(sheetName, rows) {
 }
 
 /**
+ * 指定シートを「最小サイズ」で新規作成 or 既存を返す
+ * getOrCreateSheet は default 1000行×26列 のシートを作るが、
+ * セル数上限（1000万）に近い場合は最小サイズで作る必要がある。
+ */
+function getOrCreateSheetCompact(sheetName, cols, rows) {
+  cols = cols || 10;
+  rows = rows || 100;
+  const ss = getMainSpreadsheet();
+  let sheet = ss.getSheetByName(sheetName);
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(sheetName);
+  const maxCols = sheet.getMaxColumns();
+  if (maxCols > cols) sheet.deleteColumns(cols + 1, maxCols - cols);
+  const maxRows = sheet.getMaxRows();
+  if (maxRows > rows) sheet.deleteRows(rows + 1, maxRows - rows);
+  return sheet;
+}
+
+/**
+ * 全シートのサイズ（行×列）を一覧表示してセル総計を算出
+ * 容量警告が出たらこれで大きいシートを特定する
+ */
+function diagnoseSheetSizes() {
+  const ss = getMainSpreadsheet();
+  const sheets = ss.getSheets();
+  let total = 0;
+  const results = sheets.map(s => {
+    const rows = s.getMaxRows();
+    const cols = s.getMaxColumns();
+    const cells = rows * cols;
+    const lastRow = s.getLastRow();
+    const lastCol = s.getLastColumn();
+    total += cells;
+    return { name: s.getName(), rows, cols, cells, lastRow, lastCol };
+  }).sort((a, b) => b.cells - a.cells);
+
+  Logger.log('シート名 | max行 | max列 | セル数 | データ最終行 | データ最終列');
+  results.forEach(r => {
+    Logger.log(r.name + ' | ' + r.rows + ' | ' + r.cols + ' | ' +
+               r.cells.toLocaleString() + ' | ' + r.lastRow + ' | ' + r.lastCol);
+  });
+  Logger.log('合計: ' + total.toLocaleString() + ' / 10,000,000 (' +
+             (total / 10000000 * 100).toFixed(1) + '%)');
+  return { total, results };
+}
+
+/**
+ * 指定シートの「データがある範囲の外」を削除してサイズを圧縮
+ * 例: 1000行×26列のシートで実際データが 50行×10列なら、残りを削る
+ */
+function trimSheet(sheetName, keepExtraRows, keepExtraCols) {
+  keepExtraRows = keepExtraRows == null ? 50 : keepExtraRows;
+  keepExtraCols = keepExtraCols == null ? 5 : keepExtraCols;
+  const ss = getMainSpreadsheet();
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) { Logger.log('シートなし: ' + sheetName); return; }
+
+  const lastRow = Math.max(1, sheet.getLastRow());
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  const targetRows = lastRow + keepExtraRows;
+  const targetCols = lastCol + keepExtraCols;
+  const maxRows = sheet.getMaxRows();
+  const maxCols = sheet.getMaxColumns();
+
+  let deletedRows = 0, deletedCols = 0;
+  if (maxRows > targetRows) {
+    sheet.deleteRows(targetRows + 1, maxRows - targetRows);
+    deletedRows = maxRows - targetRows;
+  }
+  if (maxCols > targetCols) {
+    sheet.deleteColumns(targetCols + 1, maxCols - targetCols);
+    deletedCols = maxCols - targetCols;
+  }
+  Logger.log(sheetName + ': -' + deletedRows + ' 行 / -' + deletedCols + ' 列 削除');
+}
+
+/**
+ * 全シートを一括 trim（データ末尾 + 少し余白、だけ残す）
+ * 実行前に必ず diagnoseSheetSizes() で状況確認すること
+ */
+function trimAllSheets() {
+  const ss = getMainSpreadsheet();
+  ss.getSheets().forEach(s => {
+    trimSheet(s.getName(), 100, 5);
+  });
+  Logger.log('✅ 全シート trim 完了');
+  diagnoseSheetSizes();
+}
+
+/**
  * 商品マスターからASIN→商品名のマッピングを取得
  */
 function getProductMasterMap() {
