@@ -29,7 +29,7 @@ const ORDER_SHEET_DATA_START_ROW = 2;
 
 const CF_STOCK_SHEET_NAME = '在庫残高';
 const CF_STOCK_ASIN_START_COL = 5;   // E列から ASIN別
-const CF_STOCK_MONTH_COL = 1;        // A列: 年月
+const CF_STOCK_MONTH_COL = 2;        // B列: 年月（2026.04 等、number型のことが多い）
 const CF_STOCK_KBN_COL = 3;          // C列: 区分（在庫/見込売上/...）
 const CF_STOCK_KBN_VALUE = '在庫';
 
@@ -160,13 +160,29 @@ function formatCurrentYearMonth() {
 }
 
 /**
- * セル値（文字列 or Date）を "YYYY.MM" 形式に正規化
- * 受け入れフォーマット: "2026.04" / "2026.4" / "2026/4" / "2026-4" / Date / "2026年4月"
+ * セル値（文字列 / Date / 数値）を "YYYY.MM" 形式に正規化
+ * 受け入れフォーマット:
+ *   Date                    → "YYYY.MM"
+ *   2026.04 (number)        → "2026.04"
+ *   2026.1 (number)         → "2026.10" （10月は浮動小数点で .1 になる）
+ *   "2026.10" (string)      → "2026.10"
+ *   "2026.04" / "2026-04" / "2026/4" / "2026年4月" (string) → "YYYY.MM"
  */
 function normalizeYearMonthCell(value) {
   if (value === null || value === undefined || value === '') return '';
   if (value instanceof Date) {
     return value.getFullYear() + '.' + String(value.getMonth() + 1).padStart(2, '0');
+  }
+  if (typeof value === 'number') {
+    const year = Math.floor(value);
+    // 小数部分を 100 倍して月を復元。Math.round で浮動小数点誤差を吸収
+    const monthFraction = Math.round((value - year) * 100);
+    // 月が1桁の場合（例: 2026.1 → 月=10）は既に2桁の値として復元される
+    const month = monthFraction;
+    if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12) {
+      return year + '.' + String(month).padStart(2, '0');
+    }
+    return String(value);
   }
   const s = String(value).trim();
   // 4桁年 + 区切り + 1〜2桁月
@@ -200,14 +216,14 @@ function findCfMonthlyStockRow(sheet, yearMonth) {
   const lastRow = sheet.getLastRow();
   if (lastRow === 0) return -1;
 
-  // A列（年月）と C列（区分）を一括取得
-  // A列の月は merged cell の場合もあるので、前方の値を保持しながら走査
+  // B列（年月）と C列（区分）を一括取得
+  // B列の月はブロック先頭行にのみあり、以降の行は空のため前方の値を保持して走査
   const range = sheet.getRange(1, 1, lastRow, 3).getValues();
   let currentYm = '';
   for (let i = 0; i < range.length; i++) {
-    const a = normalizeYearMonthCell(range[i][0]);
-    const c = String(range[i][2] || '').trim();
-    if (a && /^\d{4}\.\d{2}$/.test(a)) currentYm = a;
+    const b = normalizeYearMonthCell(range[i][CF_STOCK_MONTH_COL - 1]);
+    const c = String(range[i][CF_STOCK_KBN_COL - 1] || '').trim();
+    if (b && /^\d{4}\.\d{2}$/.test(b)) currentYm = b;
     if (currentYm === yearMonth && c === CF_STOCK_KBN_VALUE) {
       return i + 1;
     }
