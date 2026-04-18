@@ -236,6 +236,44 @@ function testFetchInventoryOnly() {
 }
 
 /**
+ * デバッグ: 50件全ての SKU / ASIN / 商品名を一覧表示
+ * 現在の商品が含まれているか確認用
+ */
+function debugInventoryListAll() {
+  const inv = fetchInventoryData();
+  Logger.log('取得件数: ' + inv.length);
+  Logger.log('--- 全件リスト ---');
+  inv.forEach((i, idx) => {
+    Logger.log('[' + idx + '] ASIN=' + i.asin + ' / SKU=' + i.sku + ' / qty=' + i.qty +
+               ' / ' + (i.name || '').substring(0, 40));
+  });
+}
+
+/**
+ * デバッグ: 在庫ゼロ以外を再要求（startDateTimeで最近更新された分のみ）
+ */
+function debugInventoryRecent() {
+  const since = new Date();
+  since.setDate(since.getDate() - 90);  // 直近90日に更新された在庫
+  const params = {
+    granularityType: 'Marketplace',
+    granularityId: MARKETPLACE_ID_JP,
+    marketplaceIds: MARKETPLACE_ID_JP,
+    details: 'true',
+    startDateTime: since.toISOString(),
+  };
+  const res = callSpApi('GET', '/fba/inventory/v1/summaries', params);
+  const summaries = (res.payload && res.payload.inventorySummaries) || [];
+  Logger.log('90日以内更新あり: ' + summaries.length + ' 件');
+  summaries.slice(0, 10).forEach((s, i) => {
+    const d = s.inventoryDetails || {};
+    Logger.log('[' + i + '] ASIN=' + s.asin + ' / SKU=' + s.sellerSku +
+               ' / total=' + s.totalQuantity + ' / fulfillable=' + d.fulfillableQuantity +
+               ' / updated=' + s.lastUpdatedTime);
+  });
+}
+
+/**
  * デバッグ: SP-API の生レスポンスを確認
  * fulfillableQuantity が入っているか構造を調べる
  */
