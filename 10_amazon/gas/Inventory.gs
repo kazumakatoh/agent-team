@@ -1,15 +1,24 @@
 /**
  * Amazon Dashboard - 在庫管理 + 在庫切れアラート
  *
- * SP-API の GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA レポートを取得し、
- * D6 在庫シートに保存。直近N日の日販平均と照合して「残り何日分」を算出。
- * 残り日数 < STOCK_DAYS_THRESHOLD の商品は LINE 緊急アラートへ。
+ * SP-API の /fba/inventory/v1/summaries を取得し、D6 在庫シートに保存。
+ * 直近7日の日販平均と照合して「残り何日分」を算出。
+ * 残り20日を切ったら LINE 緊急アラートへ（マイルストーン方式）。
  *
  * ## D6 シート構造（9列）
  *   取得日時 | ASIN | SKU | 商品名 | 在庫数 | 7日平均日販 | 残り日数 | ステータス | 備考
  *
  * ## ステータス
- *   緊急（3日分未満）/ 警告（7日分未満）/ 注意（14日分未満）/ OK
+ *   在庫切れ / 緊急（<7日）/ 警告（<15日）/ 注意（<20日）/ OK
+ *
+ * ## 除外ルール
+ *   - 死にSKU（在庫0 かつ 日販0）
+ *   - 商品マスター(M1)のカテゴリが「カタログ削除」
+ *
+ * ## アラート設計（マイルストーン方式）
+ *   20日 / 15日 / 7日 / 0日 の境界を下回った時に1回だけ通知。
+ *   0日通知後は再通知しない（見切った商品を想定）。
+ *   在庫回復（>20日）で状態リセット → 再度在庫減少時に通知再開。
  *
  * ## トリガー: 毎日 AM10:00 (fetchInventoryAndAlert)
  */
@@ -17,13 +26,14 @@
 const D6_INVENTORY = '在庫';
 const D6_INVENTORY_HEADERS = ['取得日時', 'ASIN', 'SKU', '商品名', '在庫数', '7日平均日販', '残り日数', 'ステータス', '備考'];
 
-const STOCK_CRITICAL_DAYS = 3;   // 3日分未満 → 緊急
-const STOCK_WARNING_DAYS = 7;    // 7日分未満 → 警告
-const STOCK_CAUTION_DAYS = 14;   // 14日分未満 → 注意
-const SALES_LOOKBACK_DAYS = 7;   // 日販平均の参照期間
+const SALES_LOOKBACK_DAYS = 7;           // 日販平均の参照期間
+const STOCK_THRESHOLDS = [20, 15, 7, 0]; // アラート発火の境界日数（多い順）
+const STOCK_RESET_DAYS = 20;             // この日数を超えたら state リセット（= 再通知の準備完了）
+const STOCK_ALERT_STATE_KEY = 'STOCK_ALERT_STATE';
+const EXCLUDED_CATEGORY = 'カタログ削除';
 
 /**
- * メイン: 在庫取得 → D6 更新 → 低在庫アラート
+ * メイン: 在庫取得 → D6 更新 → マイルストーン通知
  */
 function fetchInventoryAndAlert() {
   const t0 = Date.now();
@@ -31,14 +41,12 @@ function fetchInventoryAndAlert() {
 
   setupInventorySheet();
 
-  // 在庫データ取得
   const inventory = fetchInventoryData();
   if (inventory.length === 0) { Logger.log('在庫データなし'); return; }
 
-  // 直近7日の日販平均を計算
   const salesAvg = getRecentDailySalesByAsin(SALES_LOOKBACK_DAYS);
 
-  // 既存 D6 を全削除して最新スナップショットに置換（履歴不要ならこれが一番シンプル）
+  // D6 を全削除して最新スナップショットで置換
   const sheet = getOrCreateSheetCompact(D6_INVENTORY, D6_INVENTORY_HEADERS.length, 500);
   if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, D6_INVENTORY_HEADERS.length).clearContent();
 
@@ -46,19 +54,28 @@ function fetchInventoryAndAlert() {
   const nowStr = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd HH:mm');
 
   const productMaster = getProductMasterMap();
+  const alertState = getStockAlertState();
   const rows = [];
   const alerts = [];
+  let skippedDeleted = 0;
+
   for (const inv of inventory) {
     const asin = inv.asin;
     if (!asin) continue;
+    const master = productMaster[asin] || {};
+    const category = master.category || '';
+
+    // カタログ削除カテゴリは管理対象外（シートにも出さずアラートも送らない）
+    if (category === EXCLUDED_CATEGORY) { skippedDeleted++; continue; }
+
     const avgDaily = salesAvg[asin] || 0;
 
-    // 死にSKU（在庫0 かつ 直近7日の日販も0）は除外
+    // 死にSKU（在庫0 かつ 日販0）除外
     if (inv.qty === 0 && avgDaily === 0) continue;
 
     const daysLeft = avgDaily > 0 ? (inv.qty / avgDaily) : (inv.qty > 0 ? 999 : 0);
     const status = statusFromDaysLeft(daysLeft, inv.qty);
-    const name = (productMaster[asin] || {}).name || inv.name || '';
+    const name = master.name || inv.name || '';
 
     rows.push([
       nowStr, asin, inv.sku, name,
@@ -66,39 +83,96 @@ function fetchInventoryAndAlert() {
       status, '',
     ]);
 
-    // アラート対象（緊急・警告 かつ 売れている商品のみ）
-    if ((status === '緊急' || status === '警告') && avgDaily > 0) {
-      alerts.push({
-        key: 'STOCK_' + asin + '_' + Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy-MM-dd'),
-        type: status === '緊急' ? '🚨在庫切れ間近' : '⚠️在庫警告',
-        line: asin + ' (' + (name || inv.sku).substring(0, 15) + '): 残り' +
-              inv.qty + '個 / 日販' + avgDaily.toFixed(1) + ' = 約' + daysLeft.toFixed(1) + '日分',
-      });
+    // マイルストーン判定（売れている商品のみ対象）
+    if (avgDaily > 0) {
+      const alert = evaluateStockMilestone(asin, daysLeft, alertState, now);
+      if (alert) {
+        alerts.push({
+          key: 'STOCK_' + asin + '_' + alert.threshold,
+          type: alert.threshold === 0 ? '🚨在庫切れ' :
+                alert.threshold === 7 ? '🔶在庫7日分' :
+                alert.threshold === 15 ? '⚠️在庫15日分' : '🟡在庫20日分',
+          line: asin + ' (' + (name || inv.sku).substring(0, 15) + '): 残り' +
+                inv.qty + '個 / 日販' + avgDaily.toFixed(1) +
+                ' = 約' + daysLeft.toFixed(1) + '日分（閾値 ' + alert.threshold + '日）',
+        });
+      }
     }
   }
 
-  // D6 書き込み
   if (rows.length > 0) {
     sheet.getRange(2, 1, rows.length, D6_INVENTORY_HEADERS.length).setValues(rows);
-    // 残り日数昇順で並べ替え（Googleシート側の並びが一目で分かりやすい）
     sheet.getRange(2, 1, rows.length, D6_INVENTORY_HEADERS.length).sort({ column: 7, ascending: true });
   }
 
-  Logger.log('✅ 在庫 ' + rows.length + ' 件 / アラート ' + alerts.length + ' 件 (' + (Date.now() - t0) + 'ms)');
+  saveStockAlertState(alertState);
 
-  // LINE 通知（LineAlert.gs のユーティリティを流用、重複抑止）
+  Logger.log('✅ 在庫 ' + rows.length + ' 件 / アラート ' + alerts.length + ' 件 / カタログ削除除外 ' +
+             skippedDeleted + ' 件 (' + (Date.now() - t0) + 'ms)');
+
   if (alerts.length > 0) notifyStockAlerts(alerts);
+}
+
+/**
+ * マイルストーン判定: 残り日数に応じた通知を発火すべきか判断
+ *  - 20, 15, 7, 0 の各境界を「初めて下回った」ときのみ発火
+ *  - daysLeft > STOCK_RESET_DAYS (20) に回復したら state をクリア（再通知準備）
+ *
+ * @returns {Object|null} { threshold: number } | null
+ */
+function evaluateStockMilestone(asin, daysLeft, state, now) {
+  // 回復判定: 20日超に戻ったら送信履歴をリセット
+  if (daysLeft > STOCK_RESET_DAYS) {
+    if (state[asin]) delete state[asin];
+    return null;
+  }
+
+  // 該当する最小の閾値を特定（小さいほど深刻）
+  let hit = null;
+  for (const t of STOCK_THRESHOLDS) {
+    if (daysLeft <= t) hit = t;  // 0, 7, 15, 20 の順で上書きされ最終的に最小値が残る
+  }
+  if (hit === null) return null;
+
+  // 既に同じ or より深刻な閾値を送信済みなら通知しない
+  const sent = new Set(state[asin] || []);
+  if (sent.has(hit)) return null;
+  // 急速な在庫減少で中間閾値をスキップした場合も、過去閾値は「送信済み」扱いで以降抑止
+  STOCK_THRESHOLDS.forEach(t => { if (t >= hit) sent.add(t); });
+  state[asin] = [...sent];
+  return { threshold: hit };
 }
 
 function statusFromDaysLeft(daysLeft, qty) {
   if (qty <= 0) return '在庫切れ';
-  if (daysLeft < STOCK_CRITICAL_DAYS) return '緊急';
-  if (daysLeft < STOCK_WARNING_DAYS) return '警告';
-  if (daysLeft < STOCK_CAUTION_DAYS) return '注意';
+  if (daysLeft < 7) return '緊急';
+  if (daysLeft < 15) return '警告';
+  if (daysLeft < 20) return '注意';
   return 'OK';
 }
 
+function getStockAlertState() {
+  const raw = PropertiesService.getScriptProperties().getProperty(STOCK_ALERT_STATE_KEY);
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch (e) { return {}; }
+}
+
+function saveStockAlertState(state) {
+  PropertiesService.getScriptProperties().setProperty(STOCK_ALERT_STATE_KEY, JSON.stringify(state));
+}
+
+/**
+ * テスト用: アラート送信状態を手動リセット
+ * 動作確認で通知を再発火させたいときに使う
+ */
+function resetStockAlertState() {
+  PropertiesService.getScriptProperties().deleteProperty(STOCK_ALERT_STATE_KEY);
+  Logger.log('✅ 在庫アラート状態をリセットしました');
+}
+
 function notifyStockAlerts(alerts) {
+  // マイルストーンで既に一意化されているので LineAlert の重複抑止は不要だが、
+  // 念のため同じキー（ASIN+threshold）の連続発火を防ぐ
   const sent = getSentAlertMap();
   const now = Date.now();
   const fresh = alerts.filter(a => {
