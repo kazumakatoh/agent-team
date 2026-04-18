@@ -108,9 +108,53 @@ function notifyStockAlerts(alerts) {
 }
 
 /**
- * SP-API から FBA 在庫レポートを取得して構造化
+ * FBA Inventory API (/fba/inventory/v1/summaries) 経由で在庫を取得
+ * レポート型（GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA）より
+ * タイムアウト耐性が高く、ページングもできる。
  */
 function fetchInventoryData() {
+  const all = [];
+  let nextToken = null;
+  let page = 0;
+  const maxPages = 20;  // 35商品想定なので1ページで済むはずだが安全マージン
+
+  do {
+    const params = {
+      granularityType: 'Marketplace',
+      granularityId: MARKETPLACE_ID_JP,
+      marketplaceIds: MARKETPLACE_ID_JP,
+      details: 'true',
+    };
+    if (nextToken) params.nextToken = nextToken;
+
+    const res = callSpApi('GET', '/fba/inventory/v1/summaries', params);
+    const payload = res.payload || {};
+    const summaries = payload.inventorySummaries || [];
+
+    for (const s of summaries) {
+      const detail = s.inventoryDetails || {};
+      all.push({
+        asin: s.asin || '',
+        sku: s.sellerSku || '',
+        qty: detail.fulfillableQuantity || s.totalQuantity || 0,
+        name: s.productName || '',
+      });
+    }
+
+    nextToken = payload.nextToken || null;
+    page++;
+    if (nextToken) Utilities.sleep(500);
+  } while (nextToken && page < maxPages);
+
+  Logger.log('在庫API取得: ' + all.length + ' 件（' + page + ' ページ）');
+  return all;
+}
+
+/**
+ * （旧実装）レポート経由の取得。FATAL エラーが多いため非推奨。
+ * APIが不安定な時用のフォールバック。
+ */
+function fetchInventoryDataByReport() {
   const reportContent = fetchReport('GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA');
   const rows = parseTsv(reportContent);
   if (rows.length <= 1) return [];
