@@ -87,14 +87,12 @@ function fetchInventoryAndAlert() {
     if (avgDaily > 0) {
       const alert = evaluateStockMilestone(asin, daysLeft, alertState, now);
       if (alert) {
+        const displayName = (name || inv.sku || '').substring(0, 30);
+        const daysText = daysLeft < 1 ? '在庫切れ' : 'あと' + Math.floor(daysLeft) + '日';
         alerts.push({
           key: 'STOCK_' + asin + '_' + alert.threshold,
-          type: alert.threshold === 0 ? '🚨在庫切れ' :
-                alert.threshold === 7 ? '🔶在庫7日分' :
-                alert.threshold === 15 ? '⚠️在庫15日分' : '🟡在庫20日分',
-          line: asin + ' (' + (name || inv.sku).substring(0, 15) + '): 残り' +
-                inv.qty + '個 / 日販' + avgDaily.toFixed(1) +
-                ' = 約' + daysLeft.toFixed(1) + '日分（閾値 ' + alert.threshold + '日）',
+          type: alert.threshold === 0 ? '🚨在庫切れ' : '📦在庫アラート',
+          line: displayName + '：残り' + inv.qty + '個／' + daysText,
         });
       }
     }
