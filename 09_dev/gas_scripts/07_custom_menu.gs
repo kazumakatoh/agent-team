@@ -21,22 +21,38 @@ function onOpen() {
 }
 
 /**
- * 月次更新：最新データ取得 → ダッシュボード＋スコアカード一括更新
+ * 月次更新：最新データ取得 → ダッシュボード＋スコアカード一括更新 → カスタマイズ再適用
+ *
+ * sheet.clear()でリセットされるトグル・説明文を必ず再適用する
  */
 function runMonthlyUpdate() {
   const ui = SpreadsheetApp.getUi();
   try {
+    // 1. データ取得（sheet.clear() でトグル等リセット）
     testWriteHoldingsToSheet();
     testWriteFXToSheet();
+
+    // 2. ダッシュボード・スコアカード更新
     populateIntegratedDashboard();
     buildProviderScorecard();
 
+    // 3. カスタマイズ再適用（リセット分の復元）
+    addSpotSnapshotToggle();
+    addFXSnapshotToggleAndExplanations();
+    applyScorecardFixesV2();
+    updateScorecardRRTarget();
+    updateFXSnapshotExplanations();
+
+    // 4. トリガー再確認
+    setupSnapshotTriggers();
+
     ui.alert('✅ 月次更新完了',
       '以下を更新しました：\n\n' +
-      '・現物スナップショット（MEXC）\n' +
-      '・FXスナップショット（MT4 HTML）\n' +
+      '・現物スナップショット＋USD/JPY切替\n' +
+      '・FXスナップショット＋説明文＋切替\n' +
       '・統合ダッシュボード\n' +
-      '・配信者スコアカード',
+      '・配信者スコアカード＋RR目標\n' +
+      '・編集トリガー再登録',
       ui.ButtonSet.OK);
   } catch (e) {
     ui.alert('❌ エラー', `更新中にエラーが発生しました：\n${e.message}`, ui.ButtonSet.OK);
