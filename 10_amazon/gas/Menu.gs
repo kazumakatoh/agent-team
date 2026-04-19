@@ -27,6 +27,36 @@ function onOpen() {
     .addToUi();
 }
 
+/**
+ * インストール型 onOpen トリガーを登録
+ *
+ * このGASはスタンドアロン（スプシにバインドされていない）ため、
+ * 単純トリガーの onOpen は動作しない。インストール型トリガーを
+ * 1回登録するとメニューが毎回表示される。
+ *
+ * GASエディタから1回だけ手動実行する。
+ */
+function setupOnOpenTrigger() {
+  // 既存の onOpen トリガーを全削除
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(t => {
+    if (t.getHandlerFunction() === 'onOpen' &&
+        t.getEventType() === ScriptApp.EventType.ON_OPEN) {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+
+  // メインスプシ宛に新規作成
+  const ss = SpreadsheetApp.openById(getMainSpreadsheetId());
+  ScriptApp.newTrigger('onOpen')
+    .forSpreadsheet(ss)
+    .onOpen()
+    .create();
+
+  Logger.log('✅ onOpen トリガー登録完了');
+  Logger.log('スプレッドシートを再読み込みすると「🚀 Amazon」メニューが表示されます');
+}
+
 // ===== ラッパー関数（進捗トーストを表示） =====
 
 function menuRefreshAllDashboards() {
