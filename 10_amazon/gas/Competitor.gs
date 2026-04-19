@@ -67,19 +67,7 @@ function fetchCompetitorPricing() {
   appendRows(D4_COMPETITOR, rows);
   Logger.log('✅ 競合価格 ' + rows.length + ' 行追加 (' + (Date.now() - t0) + 'ms)');
 
-  // BuyBox 喪失 / 自社が大幅に高い 場合は LINE アラートにも回す
-  const issues = rows
-    .filter(r => r[6] === '❌' || (typeof r[5] === 'number' && r[5] > 0 && r[3] && r[5] / r[3] > 0.05))
-    .slice(0, 10);
-  if (issues.length > 0) {
-    const alerts = issues.map(r => ({
-      key: 'COMP_' + r[1] + '_' + nowStr.substring(0, 10),
-      type: r[6] === '❌' ? '🛒BuyBox喪失' : '💰自社価格が高い',
-      line: r[1] + (r[2] ? ' (' + r[2].substring(0, 15) + ')' : '') +
-            ' / 自社 ' + r[3] + '円 vs 競合 ' + r[4] + '円',
-    }));
-    notifyCompetitorIssues(alerts);
-  }
+  // BuyBox喪失 LINE通知は無効化（ノイズが多く実用性低いため。D4シートには記録継続）
 }
 
 /**
