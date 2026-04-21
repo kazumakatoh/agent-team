@@ -1,13 +1,13 @@
 # 実装フェーズ・未解決事項
 
-*v2.6 - 月次AI戦略 / 在庫アラート / Account Health 強化を追加（2026-04-18）*
+*v2.7 - Phase 3（Amazon Ads API）実装完了（2026-04-21）*
 
 ## 実装フェーズ
 
 ### Phase 0: 事前準備（API稼働確認・環境構築）
 
-- [ ] Amazon Ads API の Refresh Token 再発行
-- [ ] `/v2/profiles` で Profile ID (数値) を取得・確認
+- [x] Amazon Ads API の Refresh Token 再発行（2026-04-21・+noads エイリアス経由で別アカウント衝突を回避）
+- [x] `/v2/profiles` で Profile ID (数値) を取得・確認（JP Seller: 3514200134733929 / トレジャーマーケット 本店）
 - [x] GitHubリポジトリ `kazumakatoh/agent-team` で管理（PR #4）
 - [x] clasp セットアップ（ローカル ↔ GAS 同期）
 - [x] Google スプレッドシート作成・GAS プロジェクト初期化
@@ -38,13 +38,20 @@
 
 ### Phase 3: 広告データ統合（Ads API稼働後）
 
-- [ ] Ads API 認証（Access Token / Profile ID）
-- [ ] キャンペーン実績の取得（ASIN別・M19連携）
-- [ ] キーワード別実績の取得
-- [ ] 検索用語レポートの取得
-- [ ] D3（広告詳細）の実装
-- [ ] D1 日次データへの広告指標統合（IMP・CT・広告売上等）
-- [ ] L3 商品分析の広告セクション有効化
+- [x] Ads API 認証（Access Token / Profile ID）← `AdsAuth.gs` / `AdsApi.gs`
+- [x] ASIN別広告実績の取得（spAdvertisedProduct）← `AdsReport.gs`
+- [x] キーワード/ターゲティング別実績の取得（spTargeting）← `AdsReport.gs`
+- [x] 検索用語レポートの取得（spSearchTerm）← `AdsReport.gs`
+- [x] D3（広告詳細）の実装 - 3シート構成（キャンペーン別 / 検索用語 / ターゲティング）
+- [x] D1 日次データへの広告指標統合（広告費 / 広告売上 / IMP / CT）← `updateDailyAdsFromAdvertisedProduct`
+- [x] L3 商品分析の広告セクション有効化（既存の広告4指標が自動で埋まるようになる）
+
+**運用開始前チェック**（社長作業）:
+1. GASエディタで `addPhase3Triggers()` を▶実行（毎日 11:00 のトリガー追加）
+2. `menuFetchAdsReports()` または `testAdsEndToEnd()` を手動実行してログを確認
+3. スプシ上の D3_ADS_CAMPAIGN / D3_ADS_SEARCHTERM / D3_ADS_TARGET に行が書き込まれるか確認
+4. D1 の広告費 / 広告売上 / IMP / CT 列が更新されるか確認
+5. 必要なら `backfillAdsReportsRange(1, 7)` 等で過去日バックフィル
 
 ### Phase 4: 改善提案・通知（5カテゴリ + 戦略）
 
@@ -82,7 +89,7 @@
 
 | # | 事項 | 状態 | 必要なアクション |
 |---|---|---|---|
-| 1 | Ads API Profiles: 0 問題 | Refresh Token再発行で解決予定 | advertising.amazon.comでJPプロファイル確認 → Token再発行 |
+| 1 | ~~Ads API Profiles: 0 問題~~ | ✅ 解決（2026-04-21） | - |
 | 2 | 既存Excelの共有 | インポート枠組み完成 / データ共有待ち | `setupHistoricalImportSheet()` 実行後、Excelデータをコピペ → `importHistoricalData()` |
 
 ### 実装時に検証が必要

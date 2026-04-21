@@ -38,6 +38,9 @@ const SHEET_NAMES = {
   D2S_SETTLEMENT_SUMMARY: '経費月次集計',  // ASIN×月の事前集計（高速化用）
   D2F_FINANCE_EVENTS: '日次フィー（Finance）',  // Finance APIから日次でフィー取得
   D3_ADS_DETAIL: '広告詳細',
+  D3_ADS_ASIN: '広告_商品別',                 // spAdvertisedProduct（ASIN×日次）
+  D3_ADS_SEARCHTERM: '広告_検索用語',         // spSearchTerm
+  D3_ADS_TARGET: '広告_ターゲティング',       // spTargeting
   // マスターシート
   M1_PRODUCT_MASTER: '商品マスター',
   M2_PURCHASE_PRICE: '月次仕入単価',
@@ -174,6 +177,10 @@ function setupDailyTriggers() {
   ScriptApp.newTrigger('fetchCompetitorPricing')
     .timeBased().everyDays(1).atHour(9).nearMinute(30).create();
 
+  // 毎日 11:00 - Amazon Ads レポート取得（前日分 × 3種）
+  ScriptApp.newTrigger('dailyFetchAdsReports')
+    .timeBased().everyDays(1).atHour(11).create();
+
   // 毎週月曜 7:30 - セールカレンダー点検
   ScriptApp.newTrigger('checkUpcomingSales')
     .timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).nearMinute(30).create();
@@ -209,6 +216,7 @@ function setupDailyTriggers() {
   Logger.log('  毎日 9:00 - LINE 緊急アラート');
   Logger.log('  毎日 9:15 - アカウント健全性');
   Logger.log('  毎日 9:30 - 競合価格');
+  Logger.log('  毎日 11:00 - Amazon Ads レポート');
   Logger.log('  毎日 10:00 - 在庫＋在庫切れアラート');
   Logger.log('  毎日 10:30 - 発注管理表/CF管理スプシへ在庫同期');
   Logger.log('  毎週月 7:30 - セール準備チェック');
@@ -272,6 +280,34 @@ function addPhase5Triggers() {
       create: () => ScriptApp.newTrigger('syncInventoryToExternalSheets').timeBased().everyDays(1).atHour(10).nearMinute(30).create() },
     { fn: 'sendMonthlyAiReport',           desc: '毎月1日 9:00 - 月次AI戦略レポート',
       create: () => ScriptApp.newTrigger('sendMonthlyAiReport').timeBased().onMonthDay(1).atHour(9).create() },
+  ];
+
+  let added = 0;
+  for (const s of specs) {
+    if (existingFns.has(s.fn)) {
+      Logger.log('⏭  既に登録済みスキップ: ' + s.fn);
+      continue;
+    }
+    s.create();
+    Logger.log('✅ 追加: ' + s.desc);
+    added++;
+  }
+  Logger.log('完了: ' + added + '本追加（既存は保持）');
+}
+
+/**
+ * Phase 3 （Amazon Ads）のトリガーを既存を保持したまま追加する
+ * - dailyFetchAdsReports   毎日 11:00
+ *
+ * 実行前に testAdsProfiles() で ADS_PROFILE_ID が保存済みか確認してください。
+ */
+function addPhase3Triggers() {
+  const existing = ScriptApp.getProjectTriggers();
+  const existingFns = new Set(existing.map(t => t.getHandlerFunction()));
+
+  const specs = [
+    { fn: 'dailyFetchAdsReports', desc: '毎日 11:00 - Amazon Adsレポート（前日分）',
+      create: () => ScriptApp.newTrigger('dailyFetchAdsReports').timeBased().everyDays(1).atHour(11).create() },
   ];
 
   let added = 0;

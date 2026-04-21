@@ -15,6 +15,7 @@ function onOpen() {
     .addSeparator()
     .addItem('📦 在庫取得 + アラート', 'menuFetchInventory')
     .addItem('🔄 外部スプシ 在庫同期', 'menuSyncExternalSheets')
+    .addItem('🎯 Amazon Ads レポート取得（昨日）', 'menuFetchAdsReports')
     .addSeparator()
     .addItem('📈 週次AIレポートを今すぐ送信', 'menuSendWeeklyReport')
     .addItem('📑 月次AI戦略レポートを今すぐ送信', 'menuSendMonthlyReport')
@@ -101,6 +102,17 @@ function menuSyncExternalSheets() {
   try {
     syncInventoryToExternalSheets();
     ss.toast('✅ 外部スプシ同期完了', '🚀 Amazon', 5);
+  } catch (e) {
+    SpreadsheetApp.getUi().alert('エラー', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+function menuFetchAdsReports() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.toast('Amazon Ads レポート取得中（2〜3分）...', '🚀 Amazon', 240);
+  try {
+    dailyFetchAdsReports();
+    ss.toast('✅ Ads レポート取得完了', '🚀 Amazon', 5);
   } catch (e) {
     SpreadsheetApp.getUi().alert('エラー', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
