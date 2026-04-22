@@ -10,6 +10,8 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🚀 Amazon')
+    .addItem('⚡ 全部最新化（広告+在庫+ダッシュボード / 約5分）', 'menuRefreshAll')
+    .addSeparator()
     .addItem('📊 ダッシュボード更新（L1 + L2 + L3）', 'menuRefreshAllDashboards')
     .addItem('📅 日次販売実績シート更新', 'menuRebuildDailySales')
     .addSeparator()
@@ -59,6 +61,89 @@ function setupOnOpenTrigger() {
 }
 
 // ===== ラッパー関数（進捗トーストを表示） =====
+
+/**
+ * 🔥 全部最新化
+ *
+ * 俯瞰確認用の統合ボタン。以下を順に実行する：
+ *
+ *   [1] 前日分の広告レポート取得（spAdvertisedProduct/SearchTerm/Targeting）
+ *       → D3 の3シート書き込み + D1 の広告4指標更新（最長 2〜3分）
+ *   [2] FBA在庫取得 + 在庫シート更新 + LINE 在庫切れアラート判定
+ *   [3] 発注管理表「発注タイミング」F列 + CF管理「在庫残高」へ在庫同期
+ *   [4] 日次販売実績シート（D1S）再構築
+ *   [5] L1 / L2 / L3 ダッシュボード更新
+ *
+ * 各ステップは try/catch で独立させ、1つ失敗しても残りは続行する。
+ * 合計所要時間は概ね4〜6分（Ads API の混雑状況で変動）。
+ */
+function menuRefreshAll() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const t0 = Date.now();
+  const errors = [];
+
+  ss.toast('全部最新化を開始します（4〜6分）...', '🚀 Amazon', 360);
+
+  // [1/5] 広告レポート（最長・昨日分）
+  try {
+    ss.toast('[1/5] 広告レポート取得中（2〜3分）...', '🚀 Amazon', 300);
+    dailyFetchAdsReports();
+  } catch (e) {
+    errors.push('広告: ' + e.message);
+    Logger.log('❌ 広告レポート失敗: ' + e.message);
+  }
+
+  // [2/5] 在庫取得 + アラート
+  try {
+    ss.toast('[2/5] 在庫取得中...', '🚀 Amazon', 120);
+    fetchInventoryAndAlert();
+  } catch (e) {
+    errors.push('在庫: ' + e.message);
+    Logger.log('❌ 在庫取得失敗: ' + e.message);
+  }
+
+  // [3/5] 外部スプシ同期（発注管理表 + CF管理）
+  try {
+    ss.toast('[3/5] 発注管理表/CF管理へ同期中...', '🚀 Amazon', 120);
+    syncInventoryToExternalSheets();
+  } catch (e) {
+    errors.push('外部スプシ: ' + e.message);
+    Logger.log('❌ 外部スプシ同期失敗: ' + e.message);
+  }
+
+  // [4/5] 日次販売実績 再構築
+  try {
+    ss.toast('[4/5] 日次販売実績 再構築中...', '🚀 Amazon', 120);
+    buildDailySalesSheet();
+  } catch (e) {
+    errors.push('日次販売実績: ' + e.message);
+    Logger.log('❌ 日次販売実績失敗: ' + e.message);
+  }
+
+  // [5/5] ダッシュボード更新（L1 + L2 + L3）
+  try {
+    ss.toast('[5/5] ダッシュボード更新中（L1 + L2 + L3）...', '🚀 Amazon', 120);
+    updateDashboardL1();
+    updateDashboardL2();
+    updateDashboardL3();
+  } catch (e) {
+    errors.push('ダッシュボード: ' + e.message);
+    Logger.log('❌ ダッシュボード失敗: ' + e.message);
+  }
+
+  const elapsed = Math.round((Date.now() - t0) / 1000);
+  if (errors.length === 0) {
+    ss.toast('✅ 全部最新化 完了（' + elapsed + '秒）', '🚀 Amazon', 10);
+  } else {
+    ss.toast('⚠️ ' + errors.length + '件失敗（' + elapsed + '秒） - 詳細は実行ログ', '🚀 Amazon', 15);
+    ui.alert(
+      '⚠️ 一部の更新が失敗しました',
+      '失敗ステップ:\n' + errors.map(e => '・' + e).join('\n') +
+      '\n\n成功したステップは反映済みです。失敗したものだけ個別メニューから再実行してください。',
+      ui.ButtonSet.OK);
+  }
+}
 
 function menuRefreshAllDashboards() {
   const ui = SpreadsheetApp.getUi();
