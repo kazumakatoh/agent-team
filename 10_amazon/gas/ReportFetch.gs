@@ -341,6 +341,34 @@ function backfillTrafficRange(fromDaysAgo, toDaysAgo) {
   Logger.log('完了: ' + (toDaysAgo - fromDaysAgo + 1) + ' 日分 (' + Math.round((Date.now() - t0) / 1000) + '秒)');
 }
 
+/**
+ * 日付指定でトラフィックをバックフィル（daysAgo計算が面倒なとき用）
+ * GAS6分制限に注意：1日≒25秒なので10日前後が上限の目安
+ *
+ * @param {string} startDate 'YYYY-MM-DD'
+ * @param {string} endDate   'YYYY-MM-DD'（inclusive）
+ */
+function backfillTrafficByDateRange(startDate, endDate) {
+  Logger.log('===== Traffic バックフィル: ' + startDate + ' 〜 ' + endDate + ' =====');
+  const fmt = d => Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  const end = new Date(endDate);
+  const cur = new Date(startDate);
+  const t0 = Date.now();
+  let count = 0;
+  while (cur <= end) {
+    const dateStr = fmt(cur);
+    Logger.log('--- Traffic ' + dateStr + ' ---');
+    try {
+      fetchTrafficReport(dateStr, dateStr);
+      count++;
+    } catch (e) {
+      Logger.log('エラー(' + dateStr + '): ' + e.message);
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  Logger.log('完了: ' + count + ' 日分 (' + Math.round((Date.now() - t0) / 1000) + '秒)');
+}
+
 // 10日刻みの事前定義ラッパー（ドロップダウンから直接実行できるよう用意）
 function backfillTraffic8to17()  { backfillTrafficRange(8, 17); }    // 4/1〜4/10 相当
 function backfillTraffic18to27() { backfillTrafficRange(18, 27); }   // 3/22〜3/31 相当
