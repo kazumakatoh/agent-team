@@ -900,13 +900,35 @@ function updateInventoryFromOrderMgmt() {
     // 5行構成: 在庫, 見込売上, 棚卸原価, 仕入原価, 販売単価
     // yearMonthの在庫行を見つける
     stockRow = 0;
+    const targetYm = Number(yearMonth); // 2026.04 as number
     for (let i = 0; i < invLastRow; i++) {
-      const ym = String(colA[i][0]).trim();
+      const rawYm = colA[i][0];
       const item = String(colB[i][0]).trim();
-      if (ym === yearMonth && item === '在庫') {
+
+      // 年月マッチ（テキスト/数値どちらでも対応）
+      const ymStr = String(rawYm).trim();
+      const ymNum = Number(rawYm);
+      const ymMatch = ymStr === yearMonth || ymNum === targetYm ||
+                       ymStr === yearMonth.replace('.0', '.'); // 2026.04 vs 2026.4対応
+
+      if (ymMatch && item === '在庫') {
         stockRow = i + 1;
         break;
       }
+    }
+
+    // デバッグ: 見つからない場合、A列の値をログ出力
+    if (stockRow === 0) {
+      const sampleValues = [];
+      for (let i = 0; i < Math.min(invLastRow, 300); i++) {
+        const v = colA[i][0];
+        const b = colB[i][0];
+        if (v && String(b).trim() === '在庫') {
+          sampleValues.push(`row${i+1}: A="${v}" (type=${typeof v})`);
+        }
+      }
+      Logger.log(`年月マッチ失敗。検索値: "${yearMonth}" (num: ${targetYm})`);
+      Logger.log(`在庫行のサンプル: ${sampleValues.slice(0, 10).join(', ')}`);
     }
 
     if (stockRow === 0) throw new Error(`${yearMonth}の在庫行が見つかりません。`);
