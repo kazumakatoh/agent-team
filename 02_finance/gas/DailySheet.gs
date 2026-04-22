@@ -880,9 +880,10 @@ function updateInventoryFromOrderMgmt() {
     // 3. 当月の「在庫」行を特定
     const today = new Date();
     const yearMonth = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}`;
+    // 在庫残高シートの列構造: A=空, B=年月, C=項目(在庫/見込売上/...)
     const invLastRow = invSheet.getLastRow();
-    const colA = invSheet.getRange(1, 1, invLastRow, 1).getValues();
-    const colB = invSheet.getRange(1, 2, invLastRow, 1).getValues();
+    const colYm = invSheet.getRange(1, 2, invLastRow, 1).getValues();   // B列: 年月
+    const colItem = invSheet.getRange(1, 3, invLastRow, 1).getValues(); // C列: 項目
 
     let stockRow = 0;
     let salesRow = 0;
@@ -902,33 +903,18 @@ function updateInventoryFromOrderMgmt() {
     stockRow = 0;
     const targetYm = Number(yearMonth); // 2026.04 as number
     for (let i = 0; i < invLastRow; i++) {
-      const rawYm = colA[i][0];
-      const item = String(colB[i][0]).trim();
+      const rawYm = colYm[i][0];
+      const item = String(colItem[i][0]).trim();
 
       // 年月マッチ（テキスト/数値どちらでも対応）
       const ymStr = String(rawYm).trim();
       const ymNum = Number(rawYm);
-      const ymMatch = ymStr === yearMonth || ymNum === targetYm ||
-                       ymStr === yearMonth.replace('.0', '.'); // 2026.04 vs 2026.4対応
+      const ymMatch = ymStr === yearMonth || ymNum === targetYm;
 
       if (ymMatch && item === '在庫') {
         stockRow = i + 1;
         break;
       }
-    }
-
-    // デバッグ: 見つからない場合、A列の値をログ出力
-    if (stockRow === 0) {
-      const sampleValues = [];
-      for (let i = 0; i < Math.min(invLastRow, 300); i++) {
-        const v = colA[i][0];
-        const b = colB[i][0];
-        if (v && String(b).trim() === '在庫') {
-          sampleValues.push(`row${i+1}: A="${v}" (type=${typeof v})`);
-        }
-      }
-      Logger.log(`年月マッチ失敗。検索値: "${yearMonth}" (num: ${targetYm})`);
-      Logger.log(`在庫行のサンプル: ${sampleValues.slice(0, 10).join(', ')}`);
     }
 
     if (stockRow === 0) throw new Error(`${yearMonth}の在庫行が見つかりません。`);
