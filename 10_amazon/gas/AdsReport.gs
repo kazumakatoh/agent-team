@@ -393,7 +393,35 @@ function deleteAdsRowsForDates(sheet, datesSet, dateCol) {
 function appendAdsRows(sheet, rows) {
   if (!rows.length) return;
   const startRow = sheet.getLastRow() + 1;
-  sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
+  const needed = startRow + rows.length - 1;
+  const maxRows = sheet.getMaxRows();
+  if (needed > maxRows) {
+    // 不足分 + 余裕100行を確保（デフォルト1000行超の書き込み対応）
+    sheet.insertRowsAfter(maxRows, needed - maxRows + 100);
+  }
+  retryOnTransient(() =>
+    sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows));
+}
+
+/**
+ * Spreadsheets API の一時的な失敗（INTERNAL / Service Spreadsheets failed 等）を
+ * 指数バックオフで最大3回リトライする汎用ラッパー。
+ */
+function retryOnTransient(fn, maxAttempts) {
+  const n = maxAttempts || 3;
+  let lastErr;
+  for (let i = 0; i < n; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      const msg = String(e && e.message || e);
+      const retryable = /Service Spreadsheets failed|INTERNAL|Service error|timed out|timeout/i.test(msg);
+      if (!retryable || i === n - 1) throw e;
+      Utilities.sleep(2000 * Math.pow(2, i));  // 2s, 4s, 8s
+      lastErr = e;
+    }
+  }
+  throw lastErr;
 }
 
 // ==========================================================
@@ -457,10 +485,78 @@ function updateDailyAdsFromAdvertisedProduct(rows) {
   // 広告列（P〜S）だけ書き戻し
   if (updated > 0) {
     const adCols = data.map(row => [row[15], row[16], row[17], row[18]]);
-    sheet.getRange(2, 16, adCols.length, 4).setValues(adCols);
+    retryOnTransient(() => sheet.getRange(2, 16, adCols.length, 4).setValues(adCols));
     Logger.log('  D1 更新: ' + updated + ' 行の広告4指標');
   } else {
     Logger.log('  ⚠️ D1 に一致する行なし（売上取得が先行しているか確認）');
+  }
+}
+
+// ==========================================================
+//  リセット・クリア
+// ==========================================================
+
+/**
+ * D3 の3シート（広告_商品別 / 検索用語 / ターゲティング）の
+ * ヘッダー以外を全削除してクリーンな状態にする。
+ *
+ * D1 の広告列（P〜S）はそのまま（既存の売上データに混ざっているため
+ * 直接クリアするとバックフィルで再計算されない日が空欄として残る）。
+ *
+ * 用途:
+ *   - 重複や部分失敗で D3 が汚れた時
+ *   - バックフィルをゼロから再実行したい時
+ */
+function clearAdsDetailSheets() {
+  const targets = [
+    SHEET_NAMES.D3_ADS_ASIN,
+    SHEET_NAMES.D3_ADS_SEARCHTERM,
+    SHEET_NAMES.D3_ADS_TARGET,
+  ];
+  for (const name of targets) {
+    const sheet = getOrCreateSheet(name);
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      sheet.deleteRows(2, lastRow - 1);
+      Logger.log('🧹 ' + name + ': ' + (lastRow - 1) + ' 行削除');
+    } else {
+      Logger.log('🧹 ' + name + ': 既に空');
+    }
+  }
+  Logger.log('✅ D3 広告3シートのクリア完了（ヘッダー保持）');
+}
+
+/**
+ * D1 日次データの広告4列（P〜S）を指定日範囲でクリア
+ * バックフィル失敗で中途半端な広告費が残った場合の掃除用。
+ *
+ * @param {string} startDate YYYY-MM-DD
+ * @param {string} endDate   YYYY-MM-DD（inclusive）
+ */
+function clearDailyAdsColumns(startDate, endDate) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  const dateRange = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const adRange = sheet.getRange(2, 16, lastRow - 1, 4);
+  const adVals = adRange.getValues();
+  let cleared = 0;
+
+  for (let i = 0; i < dateRange.length; i++) {
+    const v = dateRange[i][0];
+    const dateStr = (v instanceof Date)
+      ? Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd')
+      : String(v).substring(0, 10);
+    if (dateStr >= startDate && dateStr <= endDate) {
+      adVals[i] = ['', '', '', ''];
+      cleared++;
+    }
+  }
+
+  if (cleared > 0) {
+    retryOnTransient(() => adRange.setValues(adVals));
+    Logger.log('🧹 D1 広告列クリア: ' + cleared + ' 行 (' + startDate + ' 〜 ' + endDate + ')');
   }
 }
 
@@ -499,4 +595,113 @@ function testAdsEndToEnd() {
   const yesterday = getYesterday();
   Logger.log('===== testAdsEndToEnd ' + yesterday + ' =====');
   fetchAdsReportsForRange(yesterday, yesterday);
+}
+
+// ==========================================================
+//  30日分 自動リトライ付きバックフィル（トリガー駆動）
+// ==========================================================
+
+/**
+ * 過去30日分のバックフィルを開始する
+ * - 状態を PropertiesService に保存し、トリガーで10分毎に続きを自動実行
+ * - 1回の実行で5分以内に収まるよう 1〜2日ずつ処理
+ * - 全日完了すると自動でトリガーが削除される
+ */
+function startAds30DayBackfill() {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('ADS_BACKFILL_NEXT_DAY', '1');
+  props.setProperty('ADS_BACKFILL_TARGET_DAYS', '30');
+
+  // 既存の adsBackfillStep トリガーを除去
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(t => {
+    if (t.getHandlerFunction() === 'adsBackfillStep') ScriptApp.deleteTrigger(t);
+  });
+
+  // 10分ごとに自動実行するトリガーを登録
+  ScriptApp.newTrigger('adsBackfillStep')
+    .timeBased().everyMinutes(10).create();
+
+  Logger.log('🚀 30日バックフィル開始。10分毎に自動で続きを処理します');
+  Logger.log('  完了見込み: 約 2〜4 時間後（バックグラウンド進行）');
+
+  // すぐに1回目を実行
+  adsBackfillStep();
+}
+
+/**
+ * バックフィルの1ステップ（トリガーから自動呼び出し）
+ * 5分の時間予算内に処理できるだけ処理して状態を保存
+ */
+function adsBackfillStep() {
+  const props = PropertiesService.getScriptProperties();
+  const target = parseInt(props.getProperty('ADS_BACKFILL_TARGET_DAYS') || '30');
+  let day = parseInt(props.getProperty('ADS_BACKFILL_NEXT_DAY') || '1');
+
+  if (day > target) {
+    // 完了：トリガーを削除
+    const triggers = ScriptApp.getProjectTriggers();
+    triggers.forEach(t => {
+      if (t.getHandlerFunction() === 'adsBackfillStep') ScriptApp.deleteTrigger(t);
+    });
+    props.deleteProperty('ADS_BACKFILL_NEXT_DAY');
+    props.deleteProperty('ADS_BACKFILL_TARGET_DAYS');
+    Logger.log('✅ 過去' + target + '日バックフィル完全完了');
+    return;
+  }
+
+  const startTime = Date.now();
+  const BUDGET_MS = 5 * 60 * 1000; // 5分予算（6分制限の余裕）
+  const today = new Date();
+  const fmt = d => Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+
+  while (day <= target && Date.now() - startTime < BUDGET_MS) {
+    const t = new Date(today);
+    t.setDate(t.getDate() - day);
+    const dateStr = fmt(t);
+    Logger.log('--- Ads day=' + day + ' (' + dateStr + ') [' + day + '/' + target + '] ---');
+    try {
+      fetchAdsReportsForRange(dateStr, dateStr);
+      day++;
+    } catch (e) {
+      Logger.log('エラー(day=' + day + '): ' + e.message + ' → 次回も day=' + day + ' から再試行');
+      break;
+    }
+  }
+
+  props.setProperty('ADS_BACKFILL_NEXT_DAY', String(day));
+  Logger.log('▶ 次回は day=' + day + '/' + target + ' から継続');
+}
+
+/**
+ * バックフィルを途中キャンセル（トリガー削除 + 状態クリア）
+ */
+function cancelAdsBackfill() {
+  const triggers = ScriptApp.getProjectTriggers();
+  let removed = 0;
+  triggers.forEach(t => {
+    if (t.getHandlerFunction() === 'adsBackfillStep') {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    }
+  });
+  const props = PropertiesService.getScriptProperties();
+  const lastDay = props.getProperty('ADS_BACKFILL_NEXT_DAY');
+  props.deleteProperty('ADS_BACKFILL_NEXT_DAY');
+  props.deleteProperty('ADS_BACKFILL_TARGET_DAYS');
+  Logger.log('⏹ バックフィルキャンセル。削除トリガー=' + removed + ', 最後の day=' + lastDay);
+}
+
+/**
+ * バックフィル進捗の可視化
+ */
+function checkBackfillProgress() {
+  const props = PropertiesService.getScriptProperties();
+  const day = props.getProperty('ADS_BACKFILL_NEXT_DAY');
+  const target = props.getProperty('ADS_BACKFILL_TARGET_DAYS');
+  if (!day) {
+    Logger.log('📭 バックフィル未実行 or 既に完了');
+    return;
+  }
+  Logger.log('📊 進捗: day=' + day + ' / ' + target + ' (残り ' + (parseInt(target) - parseInt(day) + 1) + '日分)');
 }
