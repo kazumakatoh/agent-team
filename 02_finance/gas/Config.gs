@@ -16,6 +16,7 @@ const CF_CONFIG = {
   SHEETS: {
     MONTHLY:     '月別',        // 月次集計（3口座集約）
     DAILY_SUMMARY: '日別サマリー', // 日別の3口座合計
+    INVENTORY:   '在庫残高',     // 在庫残高シート
     SETTINGS:    '設定',        // カテゴリマスタ・設定
     CURRENT_BAL: '現残高'       // 各口座の現在残高
   },
@@ -68,6 +69,20 @@ const CF_CONFIG = {
 
   // Dailyシートのヘッダー行数
   DAILY_HEADER_ROWS: 1,
+
+  // ==============================
+  // 発注管理表（別スプレッドシート）
+  // ==============================
+  ORDER_MGMT: {
+    SPREADSHEET_ID: '1S7LjgclM7teGzKay0usBDonH93NjszSsKtBONBBNzas',
+    SHEET_NAME: '在庫一覧',
+    COLS: {
+      PRODUCT:   2,  // B: 商品名
+      ASIN:      3,  // C: ASIN
+      STOCK:     4,  // D: 在庫数（手入力）
+      FBA_STOCK: 6   // F: FBA在庫（在庫残高に反映する列）
+    }
+  },
 
   // ==============================
   // データソースラベル

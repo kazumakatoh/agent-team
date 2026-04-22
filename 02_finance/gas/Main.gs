@@ -23,7 +23,8 @@ function onOpen() {
     .addItem('📝 単発予定を登録', 'addPlannedTransaction')
     .addItem('🗓️ 予定マスタから一括展開', 'expandPlannedTransactions')
     .addSeparator()
-    // 過去データ取込
+    // データ更新
+    .addItem('📦 在庫数を最新化', 'updateInventoryFromOrderMgmt')
     .addItem('📅 過去データを取込（期間指定）', 'syncWithDateRange')
     .addItem('💼 実口座残高を個別更新', 'updateRealBalance')
     .addSeparator()

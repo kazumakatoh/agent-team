@@ -825,6 +825,168 @@ function getLatestBalance_(accountKey) {
  * 日別サマリーシートを更新する
  *
  * 3口座のDailyシートから全日付を収集し、日付ごとに
+// ==============================
+// 在庫数の最新化
+// ==============================
+
+/**
+ * 発注管理表の在庫数を在庫残高シートの当月「在庫」行に反映する
+ *
+ * 処理:
+ *  1. 発注管理表（別スプシ）の「在庫一覧」シートからASIN→在庫数マップを作成
+ *  2. 在庫残高シートの1行目（ASIN行）と照合
+ *  3. 当月の「在庫」行に在庫数を書き込む
+ *  4. 見込売上 = 在庫数 × 販売単価 を自動再計算
+ *  5. 棚卸原価 = 在庫数 × 仕入原価 を自動再計算
+ */
+function updateInventoryFromOrderMgmt() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    // 1. 発注管理表を開く
+    const orderSs = SpreadsheetApp.openById(CF_CONFIG.ORDER_MGMT.SPREADSHEET_ID);
+    const orderSheet = orderSs.getSheetByName(CF_CONFIG.ORDER_MGMT.SHEET_NAME);
+    if (!orderSheet) throw new Error(`発注管理表の「${CF_CONFIG.ORDER_MGMT.SHEET_NAME}」シートが見つかりません。`);
+
+    const orderCols = CF_CONFIG.ORDER_MGMT.COLS;
+    const lastRow = orderSheet.getLastRow();
+    if (lastRow < 2) throw new Error('発注管理表にデータがありません。');
+
+    // ASIN → FBA在庫数マップを作成（F列: FBA在庫を使用）
+    const asinData = orderSheet.getRange(2, orderCols.ASIN, lastRow - 1, 1).getValues();
+    const stockData = orderSheet.getRange(2, orderCols.FBA_STOCK, lastRow - 1, 1).getValues();
+
+    const stockMap = {};
+    for (let i = 0; i < asinData.length; i++) {
+      const asin = String(asinData[i][0]).trim();
+      if (asin) {
+        stockMap[asin] = (stockMap[asin] || 0) + (Number(stockData[i][0]) || 0);
+      }
+    }
+
+    Logger.log(`発注管理表: ${Object.keys(stockMap).length}件のASINを取得`);
+
+    // 2. 在庫残高シートを開く
+    const ss = getCfSpreadsheet();
+    const invSheet = ss.getSheetByName(CF_CONFIG.SHEETS.INVENTORY);
+    if (!invSheet) throw new Error('在庫残高シートが見つかりません。');
+
+    // 1行目のASINを読み込み（E列=5列目以降）
+    const lastCol = invSheet.getLastColumn();
+    if (lastCol < 5) throw new Error('在庫残高シートに商品列がありません。');
+
+    const asinRow = invSheet.getRange(1, 5, 1, lastCol - 4).getValues()[0];
+
+    // 3. 当月の「在庫」行を特定
+    const today = new Date();
+    const yearMonth = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const invLastRow = invSheet.getLastRow();
+    const colA = invSheet.getRange(1, 1, invLastRow, 1).getValues();
+    const colB = invSheet.getRange(1, 2, invLastRow, 1).getValues();
+
+    let stockRow = 0;
+    let salesRow = 0;
+    let costRow = 0;
+
+    for (let i = 0; i < invLastRow; i++) {
+      if (String(colA[i][0]) === yearMonth && String(colB[i][0]) === '在庫') {
+        stockRow = i + 1;
+      }
+      if (String(colA[i][0]) === yearMonth || (stockRow > 0 && stockRow === i)) {
+        // 在庫行の次の行が見込売上、その次が棚卸原価
+      }
+    }
+
+    // 5行構成: 在庫, 見込売上, 棚卸原価, 仕入原価, 販売単価
+    // yearMonthの在庫行を見つける
+    stockRow = 0;
+    for (let i = 0; i < invLastRow; i++) {
+      const ym = String(colA[i][0]).trim();
+      const item = String(colB[i][0]).trim();
+      if (ym === yearMonth && item === '在庫') {
+        stockRow = i + 1;
+        break;
+      }
+    }
+
+    if (stockRow === 0) throw new Error(`${yearMonth}の在庫行が見つかりません。`);
+
+    salesRow = stockRow + 1;  // 見込売上
+    costRow = stockRow + 2;   // 棚卸原価
+    const unitCostRow = stockRow + 3; // 仕入原価
+    const unitPriceRow = stockRow + 4; // 販売単価
+
+    // 4. ASINでマッチして在庫数を書き込み
+    let matched = 0;
+    let unmatched = 0;
+
+    for (let col = 0; col < asinRow.length; col++) {
+      const asin = String(asinRow[col]).trim();
+      if (!asin) continue;
+
+      const colIdx = col + 5; // E列=5から
+
+      if (stockMap[asin] !== undefined) {
+        const qty = stockMap[asin];
+        invSheet.getRange(stockRow, colIdx).setValue(qty);
+
+        // 見込売上 = 在庫数 × 販売単価
+        invSheet.getRange(salesRow, colIdx)
+          .setFormula(`=${invSheet.getRange(stockRow, colIdx).getA1Notation()}*${invSheet.getRange(unitPriceRow, colIdx).getA1Notation()}`);
+
+        // 棚卸原価 = 在庫数 × 仕入原価
+        invSheet.getRange(costRow, colIdx)
+          .setFormula(`=${invSheet.getRange(stockRow, colIdx).getA1Notation()}*${invSheet.getRange(unitCostRow, colIdx).getA1Notation()}`);
+
+        matched++;
+      } else {
+        unmatched++;
+      }
+    }
+
+    // D列の合計（見込売上合計、棚卸原価合計）を更新
+    const startCol = columnToLetter_(5);
+    const endCol = columnToLetter_(lastCol);
+    invSheet.getRange(salesRow, 4)
+      .setFormula(`=SUM(${startCol}${salesRow}:${endCol}${salesRow})`);
+    invSheet.getRange(costRow, 4)
+      .setFormula(`=SUM(${startCol}${costRow}:${endCol}${costRow})`);
+
+    ui.alert(
+      `✅ 在庫数を最新化しました\n\n` +
+      `・対象月: ${yearMonth}\n` +
+      `・マッチ: ${matched}商品\n` +
+      `・未マッチ: ${unmatched}商品\n\n` +
+      `見込売上・棚卸原価も自動更新されました。`
+    );
+
+  } catch (e) {
+    ui.alert(`❌ エラー\n\n${e.message}`);
+    Logger.log(`在庫更新エラー: ${e.message}\n${e.stack}`);
+  }
+}
+
+/**
+ * 列番号をA1表記のアルファベットに変換
+ */
+function columnToLetter_(col) {
+  let letter = '';
+  while (col > 0) {
+    const mod = (col - 1) % 26;
+    letter = String.fromCharCode(65 + mod) + letter;
+    col = Math.floor((col - 1) / 26);
+  }
+  return letter;
+}
+
+// ==============================
+// 日別サマリーシート
+// ==============================
+
+/**
+ * 日別サマリーシートを更新する
+ *
+ * 3口座のDailyシートから全日付を収集し、日付ごとに
  * 入金合計・出金合計・各口座残高・全体残高を表示する。
  *
  * 列: A:日付 / B:入金合計 / C:出金合計 / D:全体残高 / E:PayPay005残高 / F:PayPay003残高 / G:西武信金残高
