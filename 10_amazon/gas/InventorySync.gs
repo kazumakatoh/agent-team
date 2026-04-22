@@ -24,7 +24,8 @@
 const ORDER_SHEET_NAME = '発注タイミング';
 const ORDER_SHEET_ASIN_COL = 3;      // C列
 const ORDER_SHEET_TOTAL_COL = 4;     // D列「在庫数」
-const ORDER_SHEET_FBA_COL = 6;       // F列「FBA在庫」
+const ORDER_SHEET_FBA_COL = 6;       // F列「FBA在庫」（在庫あり + FC転送）
+const ORDER_SHEET_INBOUND_COL = 7;   // G列「FBA納品中」（inbound working+shipped+receiving）
 const ORDER_SHEET_DATA_START_ROW = 2;
 
 const CF_STOCK_SHEET_NAME = '在庫残高';
@@ -40,18 +41,24 @@ function syncInventoryToExternalSheets() {
   const t0 = Date.now();
   Logger.log('===== 外部スプシ 在庫同期 開始 =====');
 
-  // 1. Amazon API から FBA 在庫取得
+  // 1. Amazon API から FBA 在庫取得（qty=在庫あり+FC転送 / inbound=納品中）
   const inventory = fetchInventoryData();
   const asinToFba = {};
+  const asinToInbound = {};
   for (const inv of inventory) {
-    if (inv.asin) asinToFba[inv.asin] = inv.qty;
+    if (!inv.asin) continue;
+    // 同一ASINに複数SKUがある場合は合算
+    asinToFba[inv.asin] = (asinToFba[inv.asin] || 0) + (inv.qty || 0);
+    asinToInbound[inv.asin] = (asinToInbound[inv.asin] || 0) + (inv.inbound || 0);
   }
   Logger.log('Amazon 在庫取得: ' + Object.keys(asinToFba).length + ' ASIN');
 
-  // 2. 発注管理表 F列に書き込み
+  // 2. 発注管理表 F列「FBA在庫」+ G列「FBA納品中」に書き込み
   const orderSheet = openOrderSheet();
   const updatedFba = writeFbaToOrderSheet(orderSheet, asinToFba);
-  Logger.log('発注管理表 F列 更新: ' + updatedFba + ' 行');
+  Logger.log('発注管理表 F列「FBA在庫」更新: ' + updatedFba + ' 行');
+  const updatedInbound = writeInboundToOrderSheet(orderSheet, asinToInbound);
+  Logger.log('発注管理表 G列「FBA納品中」更新: ' + updatedInbound + ' 行');
 
   // 3. 式再計算を待つ
   SpreadsheetApp.flush();
@@ -102,16 +109,31 @@ function getOrderSheetAsinMap(sheet) {
  * @returns {number} 更新した行数
  */
 function writeFbaToOrderSheet(sheet, asinToFba) {
+  return writeColumnToOrderSheet(sheet, asinToFba, ORDER_SHEET_FBA_COL);
+}
+
+/**
+ * G列「FBA納品中」に ASIN別の納品中数量を書き込み
+ * @returns {number} 更新した行数
+ */
+function writeInboundToOrderSheet(sheet, asinToInbound) {
+  return writeColumnToOrderSheet(sheet, asinToInbound, ORDER_SHEET_INBOUND_COL);
+}
+
+/**
+ * 指定列に ASIN→値マップを書き込む共通ロジック
+ * 現在値との差分だけ更新することで再計算コストを抑える。
+ */
+function writeColumnToOrderSheet(sheet, asinToValue, colIndex) {
   const asinMap = getOrderSheetAsinMap(sheet);
   const lastRow = sheet.getLastRow();
   if (lastRow < ORDER_SHEET_DATA_START_ROW) return 0;
 
-  // 現在のF列全値を取得してから、変更分だけ更新する（一括setValuesで高速化）
-  const range = sheet.getRange(ORDER_SHEET_DATA_START_ROW, ORDER_SHEET_FBA_COL,
+  const range = sheet.getRange(ORDER_SHEET_DATA_START_ROW, colIndex,
                                lastRow - ORDER_SHEET_DATA_START_ROW + 1, 1);
   const current = range.getValues();
   let updated = 0;
-  for (const [asin, qty] of Object.entries(asinToFba)) {
+  for (const [asin, qty] of Object.entries(asinToValue)) {
     const row = asinMap[asin];
     if (!row) continue;
     const idx = row - ORDER_SHEET_DATA_START_ROW;

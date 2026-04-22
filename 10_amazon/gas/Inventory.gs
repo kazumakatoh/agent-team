@@ -187,6 +187,14 @@ function notifyStockAlerts(alerts) {
  * FBA Inventory API (/fba/inventory/v1/summaries) 経由で在庫を取得
  * レポート型（GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA）より
  * タイムアウト耐性が高く、ページングもできる。
+ *
+ * ## 返却値の数量ロジック（Seller Central UI 準拠）
+ *   qty     : 在庫あり + 予約済み内のFC転送（= 事実上出荷待機中の在庫）
+ *            = fulfillableQuantity + reservedQuantity.pendingTransshipmentQuantity
+ *   inbound : 納品（working + shipped + receiving の合計）
+ *            = inboundWorkingQuantity + inboundShippedQuantity + inboundReceivingQuantity
+ *
+ * 「FC処理中」「お客様の注文」「販売不可」「調査中」は qty に含めない。
  */
 function fetchInventoryData() {
   const all = [];
@@ -209,10 +217,20 @@ function fetchInventoryData() {
 
     for (const s of summaries) {
       const detail = s.inventoryDetails || {};
+      const reserved = detail.reservedQuantity || {};
+      const fulfillable = detail.fulfillableQuantity || 0;
+      const transshipment = reserved.pendingTransshipmentQuantity || 0;
+      const inboundWorking = detail.inboundWorkingQuantity || 0;
+      const inboundShipped = detail.inboundShippedQuantity || 0;
+      const inboundReceiving = detail.inboundReceivingQuantity || 0;
+
       all.push({
         asin: s.asin || '',
         sku: s.sellerSku || '',
-        qty: detail.fulfillableQuantity || s.totalQuantity || 0,
+        // 在庫数（FBA在庫）= 在庫あり + FC転送
+        qty: fulfillable + transshipment,
+        // 納品中 = 納品 working+shipped+receiving
+        inbound: inboundWorking + inboundShipped + inboundReceiving,
         name: s.productName || '',
       });
     }
