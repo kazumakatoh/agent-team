@@ -885,22 +885,9 @@ function updateInventoryFromOrderMgmt() {
     const colYm = invSheet.getRange(1, 2, invLastRow, 1).getValues();   // B列: 年月
     const colItem = invSheet.getRange(1, 3, invLastRow, 1).getValues(); // C列: 項目
 
-    let stockRow = 0;
-    let salesRow = 0;
-    let costRow = 0;
-
-    for (let i = 0; i < invLastRow; i++) {
-      if (String(colA[i][0]) === yearMonth && String(colB[i][0]) === '在庫') {
-        stockRow = i + 1;
-      }
-      if (String(colA[i][0]) === yearMonth || (stockRow > 0 && stockRow === i)) {
-        // 在庫行の次の行が見込売上、その次が棚卸原価
-      }
-    }
-
     // 5行構成: 在庫, 見込売上, 棚卸原価, 仕入原価, 販売単価
     // yearMonthの在庫行を見つける
-    stockRow = 0;
+    let stockRow = 0;
     const targetYm = Number(yearMonth); // 2026.04 as number
     for (let i = 0; i < invLastRow; i++) {
       const rawYm = colYm[i][0];
