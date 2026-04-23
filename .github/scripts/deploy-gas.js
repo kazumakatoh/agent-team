@@ -51,10 +51,25 @@ async function getImpersonatedToken(saEmail, impersonateUser, scopes) {
     exp: now + 3600,
   };
 
+  console.log('  DEBUG jwtPayload =', JSON.stringify(jwtPayload));
+
   const signRes = await iamCredentials.projects.serviceAccounts.signJwt({
     name: `projects/-/serviceAccounts/${saEmail}`,
     requestBody: { payload: JSON.stringify(jwtPayload) },
   });
+
+  // 署名された JWT の payload をデコードして確認
+  const parts = signRes.data.signedJwt.split('.');
+  if (parts.length === 3) {
+    try {
+      const decodedPayload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+      console.log('  DEBUG signedJwt payload =', JSON.stringify(decodedPayload));
+      const decodedHeader = JSON.parse(Buffer.from(parts[0], 'base64').toString('utf8'));
+      console.log('  DEBUG signedJwt header =', JSON.stringify(decodedHeader));
+    } catch (e) {
+      console.log('  DEBUG decode error:', e.message);
+    }
+  }
 
   // JWT を access_token に交換
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
