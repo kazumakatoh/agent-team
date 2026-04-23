@@ -32,6 +32,7 @@ function onOpen() {
     .addSubMenu(SpreadsheetApp.getUi().createMenu('🔗 MF連携')
       .addItem('MF連携開始', 'startMfAuth')
       .addItem('MF連携状態を確認', 'showMfStatus')
+      .addItem('🔍 口座マッピング診断', 'showWalletMapping')
       .addItem('MF連携解除', 'disconnectMf')
       .addItem('リダイレクトURIを表示', 'showRedirectUri')
     )

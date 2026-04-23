@@ -329,6 +329,80 @@ function getWalletMap_() {
 }
 
 /**
+ * 口座マッピングの状態を表示する（診断用）
+ * 各口座がMFのどの補助科目にマッピングされているかを確認できる
+ */
+function showWalletMapping() {
+  const ui = SpreadsheetApp.getUi();
+
+  if (!isMfConnected()) {
+    ui.alert('❌ MF未連携です。先に「MF連携開始」を実行してください。');
+    return;
+  }
+
+  // 現在のマッピング
+  let walletMap = {};
+  try {
+    walletMap = getWalletMap_();
+  } catch (e) {
+    // マッピング未保存
+  }
+
+  // MFから現在の銀行口座一覧を取得
+  let bankAccounts = [];
+  try {
+    const data = mfApiRequest_('/accounts');
+    const accounts = data.accounts || [];
+    accounts.forEach(acct => {
+      if (acct.category !== 'CASH_AND_DEPOSITS') return;
+      const subs = acct.sub_accounts || [];
+      subs.forEach(sub => {
+        bankAccounts.push({
+          accountName: acct.name,
+          subAccountName: sub.name,
+          subAccountId: sub.id
+        });
+      });
+      if (subs.length === 0) {
+        bankAccounts.push({
+          accountName: acct.name,
+          subAccountName: '(補助科目なし)',
+          subAccountId: ''
+        });
+      }
+    });
+  } catch (e) {
+    ui.alert('❌ MF口座取得エラー\n\n' + e.message);
+    return;
+  }
+
+  // メッセージ構築
+  let msg = '【CF管理の口座 → MFマッピング状況】\n\n';
+  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
+    const mapped = walletMap[key];
+    if (mapped) {
+      msg += `✅ ${key} (${account.shortName})\n   → ${mapped.name}\n`;
+    } else {
+      msg += `❌ ${key} (${account.shortName})\n   → マッピング失敗（${account.name}が見つからない）\n`;
+    }
+  });
+
+  msg += '\n【MFに登録されている全銀行口座】\n';
+  if (bankAccounts.length === 0) {
+    msg += '(0件)';
+  } else {
+    bankAccounts.forEach(b => {
+      msg += `・${b.subAccountName}  [${b.accountName}]\n`;
+    });
+  }
+
+  msg += '\n\n※ ❌のある口座はMFに登録されていないか、' +
+         '\nパターンマッチ（MfAuth.gsのmatchPatterns）に引っかからない可能性があります。';
+
+  ui.alert('口座マッピング診断', msg, ui.ButtonSet.OK);
+}
+
+/**
  * リダイレクトURIを表示する（MFアプリポータル設定用）
  */
 function showRedirectUri() {
