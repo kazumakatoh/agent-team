@@ -39,4 +39,6 @@ jobs:
       - name: Deploy to GAS
         env:
           SOURCE_DIR: 10_amazon/gas
+          SA_EMAIL: 'gas-deployer@level1-gas-deploy.iam.gserviceaccount.com'
+          IMPERSONATE_USER: '[email protected]'
         run: node .github/scripts/deploy-gas.js
