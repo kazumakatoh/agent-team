@@ -26,6 +26,7 @@ function onOpen() {
     // データ更新
     .addItem('📦 在庫数を最新化', 'updateInventoryFromOrderMgmt')
     .addItem('📅 過去データを取込（期間指定）', 'syncWithDateRange')
+    .addItem('📊 月別シートを再生成（期間/ALL）', 'updateAllMonthlySheets')
     .addItem('💼 実口座残高を個別更新', 'updateRealBalance')
     .addSeparator()
     // MF連携
