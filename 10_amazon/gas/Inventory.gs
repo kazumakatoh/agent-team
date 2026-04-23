@@ -304,6 +304,37 @@ function getRecentDailySalesByAsin(days) {
   return avg;
 }
 
+/**
+ * D1 から直近N日の ASIN別 日販平均を算出（発注計画向け・0日込み）
+ *
+ * getRecentDailySalesByAsin() との違い:
+ *   - 分母が「全N日」（売れなかった日も0として算入）
+ *   - 発注量を決める際は需要が0の日も平均に含めた値が使いやすい
+ *   - 例: 過去7日で14個売れた → 14/7 = 2.0/日
+ *
+ * @returns {Object} ASIN → avg/day
+ */
+function getSalesAvgByAsin(days) {
+  const dailyData = getDailyDataAll();
+  const today = new Date();
+  const fmt = d => Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  const start = fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() - days));
+  const end = fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1));
+
+  const totals = {};
+  for (const d of dailyData) {
+    if (d.date < start || d.date > end) continue;
+    if (!d.asin) continue;
+    totals[d.asin] = (totals[d.asin] || 0) + d.units;
+  }
+
+  const avg = {};
+  for (const asin of Object.keys(totals)) {
+    avg[asin] = totals[asin] / days;
+  }
+  return avg;
+}
+
 function setupInventorySheet() {
   const sheet = getOrCreateSheetCompact(D6_INVENTORY, D6_INVENTORY_HEADERS.length, 500);
   const existing = sheet.getRange(1, 1, 1, D6_INVENTORY_HEADERS.length).getValues()[0];

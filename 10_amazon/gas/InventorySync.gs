@@ -24,9 +24,11 @@
 const ORDER_SHEET_NAME = '発注タイミング';
 const ORDER_SHEET_ASIN_COL = 3;      // C列
 const ORDER_SHEET_TOTAL_COL = 4;     // D列「在庫数」
+const ORDER_SHEET_SALES_COL = 5;     // E列「販売set（1日）」= 過去7日平均販売数
 const ORDER_SHEET_FBA_COL = 6;       // F列「FBA在庫」（在庫あり + FC転送）
 const ORDER_SHEET_INBOUND_COL = 7;   // G列「FBA納品中」（inbound working+shipped+receiving）
 const ORDER_SHEET_DATA_START_ROW = 2;
+const ORDER_SALES_AVG_DAYS = 7;      // 平均販売数の算出期間
 
 const CF_STOCK_SHEET_NAME = '在庫残高';
 const CF_STOCK_ASIN_START_COL = 5;   // E列から ASIN別
@@ -53,12 +55,23 @@ function syncInventoryToExternalSheets() {
   }
   Logger.log('Amazon 在庫取得: ' + Object.keys(asinToFba).length + ' ASIN');
 
-  // 2. 発注管理表 F列「FBA在庫」+ G列「FBA納品中」に書き込み
+  // 2. 発注管理表 F列「FBA在庫」+ G列「FBA納品中」+ E列「販売set(1日)」に書き込み
   const orderSheet = openOrderSheet();
   const updatedFba = writeFbaToOrderSheet(orderSheet, asinToFba);
   Logger.log('発注管理表 F列「FBA在庫」更新: ' + updatedFba + ' 行');
   const updatedInbound = writeInboundToOrderSheet(orderSheet, asinToInbound);
   Logger.log('発注管理表 G列「FBA納品中」更新: ' + updatedInbound + ' 行');
+
+  // E列「販売set(1日)」= 過去7日平均販売数（売れなかった日も0として算入）
+  // 発注管理表に記載のある全ASINに対して値を用意（売上なしは0）
+  const salesAvgRaw = getSalesAvgByAsin(ORDER_SALES_AVG_DAYS);
+  const asinMapForSales = getOrderSheetAsinMap(orderSheet);
+  const asinToSalesAvg = {};
+  for (const asin of Object.keys(asinMapForSales)) {
+    asinToSalesAvg[asin] = salesAvgRaw[asin] || 0;
+  }
+  const updatedSales = writeSalesAvgToOrderSheet(orderSheet, asinToSalesAvg);
+  Logger.log('発注管理表 E列「販売set(1日)」更新: ' + updatedSales + ' 行（' + ORDER_SALES_AVG_DAYS + '日平均）');
 
   // 3. 式再計算を待つ
   SpreadsheetApp.flush();
@@ -118,6 +131,14 @@ function writeFbaToOrderSheet(sheet, asinToFba) {
  */
 function writeInboundToOrderSheet(sheet, asinToInbound) {
   return writeColumnToOrderSheet(sheet, asinToInbound, ORDER_SHEET_INBOUND_COL);
+}
+
+/**
+ * E列「販売set（1日）」に 過去7日平均販売数を書き込み
+ * @returns {number} 更新した行数
+ */
+function writeSalesAvgToOrderSheet(sheet, asinToAvg) {
+  return writeColumnToOrderSheet(sheet, asinToAvg, ORDER_SHEET_SALES_COL);
 }
 
 /**
