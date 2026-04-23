@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+      id-token: write  # Workload Identity Federation に必須
 
     steps:
       - name: Checkout
@@ -26,10 +26,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Auth to Google Cloud (Service Account)
+      - name: Auth to Google Cloud (Workload Identity Federation)
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: 'projects/651587874344/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'gas-deployer@level1-gas-deploy.iam.gserviceaccount.com'
 
       - name: Install googleapis
         working-directory: .github/scripts
