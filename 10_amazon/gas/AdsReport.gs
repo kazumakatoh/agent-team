@@ -705,3 +705,110 @@ function checkBackfillProgress() {
   }
   Logger.log('📊 進捗: day=' + day + ' / ' + target + ' (残り ' + (parseInt(target) - parseInt(day) + 1) + '日分)');
 }
+
+// ==========================================================
+//  フルバックフィル（任意期間・トリガー駆動・自動継続）
+// ==========================================================
+
+/**
+ * 指定日〜前日までの Ads レポートをバックフィル
+ *
+ * ⚠️ Amazon Ads API のデータ保持期間は約 60〜95 日。
+ *    これより古い日付は取得できずエラー or 空レスポンスになるが、
+ *    エラーは握り潰して次の日へ進むので安全。
+ *
+ * 目安: 1日 ≒ 2〜3分 / 5分窓で約2日処理 / 10分毎トリガー
+ *      95日 ≒ 8時間で完走
+ *
+ * @param {string} startDate 'YYYY-MM-DD' 開始日
+ */
+function startAdsFullBackfill(startDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+    throw new Error('startDate は YYYY-MM-DD 形式で指定してください');
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('ADS_FULL_BF_START', startDate);
+  props.setProperty('ADS_FULL_BF_NEXT', startDate);
+
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'adsFullBackfillStep') ScriptApp.deleteTrigger(t);
+  });
+
+  ScriptApp.newTrigger('adsFullBackfillStep')
+    .timeBased().everyMinutes(10).create();
+
+  Logger.log('🚀 Ads フルバックフィル開始: ' + startDate + ' 〜 前日');
+  Logger.log('  ⚠️ Amazon 側のデータ保持期間（約60〜95日）より古い日はスキップ');
+
+  adsFullBackfillStep();
+}
+
+function adsFullBackfillStep() {
+  const props = PropertiesService.getScriptProperties();
+  let nextDate = props.getProperty('ADS_FULL_BF_NEXT');
+  if (!nextDate) {
+    Logger.log('📭 state 未セット。startAdsFullBackfill() から実行してください');
+    return;
+  }
+
+  const today = new Date();
+  const fmt = d => Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  const endDate = fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1));
+
+  if (nextDate > endDate) {
+    ScriptApp.getProjectTriggers().forEach(t => {
+      if (t.getHandlerFunction() === 'adsFullBackfillStep') ScriptApp.deleteTrigger(t);
+    });
+    props.deleteProperty('ADS_FULL_BF_NEXT');
+    props.deleteProperty('ADS_FULL_BF_START');
+    Logger.log('✅ Ads フルバックフィル完了');
+    return;
+  }
+
+  const startTime = Date.now();
+  const BUDGET_MS = 5 * 60 * 1000;
+  let count = 0;
+
+  while (nextDate <= endDate && Date.now() - startTime < BUDGET_MS) {
+    Logger.log('--- Ads ' + nextDate + ' ---');
+    try {
+      fetchAdsReportsForRange(nextDate, nextDate);
+      count++;
+    } catch (e) {
+      Logger.log('エラー(' + nextDate + '): ' + e.message + ' （スキップして次へ）');
+    }
+    const d = new Date(nextDate);
+    d.setDate(d.getDate() + 1);
+    nextDate = fmt(d);
+  }
+
+  props.setProperty('ADS_FULL_BF_NEXT', nextDate);
+  Logger.log('▶ 次回 ' + nextDate + ' から継続（今回 ' + count + ' 日処理）');
+}
+
+function cancelAdsFullBackfill() {
+  let removed = 0;
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'adsFullBackfillStep') {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    }
+  });
+  const props = PropertiesService.getScriptProperties();
+  const last = props.getProperty('ADS_FULL_BF_NEXT');
+  props.deleteProperty('ADS_FULL_BF_NEXT');
+  props.deleteProperty('ADS_FULL_BF_START');
+  Logger.log('⏹ Ads フルバックフィルをキャンセル。削除トリガー=' + removed + ', 最後=' + last);
+}
+
+function checkAdsFullBackfillProgress() {
+  const props = PropertiesService.getScriptProperties();
+  const next = props.getProperty('ADS_FULL_BF_NEXT');
+  const start = props.getProperty('ADS_FULL_BF_START');
+  if (!next) {
+    Logger.log('📭 Ads フルバックフィル未実行 or 完了済み');
+    return;
+  }
+  Logger.log('📊 Ads 進捗: 開始=' + start + ' / 次処理予定=' + next);
+}

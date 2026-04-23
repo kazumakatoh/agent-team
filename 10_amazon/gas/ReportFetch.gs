@@ -381,6 +381,125 @@ function dailyFetchTraffic() {
   fetchTrafficReport(yesterday, yesterday);
 }
 
+// ==========================================================
+//  フルバックフィル（トリガー駆動・自動継続）
+//
+//  長期間（例：2025-04-01 〜 前日）を GAS の実行時間制限内に収めるため、
+//  10分毎に自動再起動しながら状態を PropertiesService に保存して継続する。
+//  完了するとトリガーを自動削除。
+// ==========================================================
+
+/**
+ * Traffic の全期間バックフィルを開始
+ *
+ * @param {string} startDate 'YYYY-MM-DD' 開始日（以降〜前日までを処理）
+ *
+ * 目安: 1日 ≒ 25〜30秒 / 5分窓で約10日処理 / 10分毎トリガー
+ *      388日（1年強）≒ 6〜7時間で完走
+ */
+function startTrafficFullBackfill(startDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+    throw new Error('startDate は YYYY-MM-DD 形式で指定してください');
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('TRAFFIC_BF_START', startDate);
+  props.setProperty('TRAFFIC_BF_NEXT', startDate);
+
+  // 既存のトリガー除去
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'trafficBackfillStep') ScriptApp.deleteTrigger(t);
+  });
+
+  // 10分ごとのトリガー登録
+  ScriptApp.newTrigger('trafficBackfillStep')
+    .timeBased().everyMinutes(10).create();
+
+  Logger.log('🚀 Traffic フルバックフィル開始: ' + startDate + ' 〜 前日');
+  Logger.log('  10分毎にトリガーが自動起動して続きを処理します');
+
+  trafficBackfillStep();
+}
+
+/**
+ * Traffic バックフィルの1ステップ（トリガー駆動）
+ */
+function trafficBackfillStep() {
+  const props = PropertiesService.getScriptProperties();
+  let nextDate = props.getProperty('TRAFFIC_BF_NEXT');
+  if (!nextDate) {
+    Logger.log('📭 state 未セット。startTrafficFullBackfill() から実行してください');
+    return;
+  }
+
+  const today = new Date();
+  const fmt = d => Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy-MM-dd');
+  const endDate = fmt(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1));
+
+  if (nextDate > endDate) {
+    // 完了
+    ScriptApp.getProjectTriggers().forEach(t => {
+      if (t.getHandlerFunction() === 'trafficBackfillStep') ScriptApp.deleteTrigger(t);
+    });
+    props.deleteProperty('TRAFFIC_BF_NEXT');
+    props.deleteProperty('TRAFFIC_BF_START');
+    Logger.log('✅ Traffic フルバックフィル完了');
+    return;
+  }
+
+  const startTime = Date.now();
+  const BUDGET_MS = 5 * 60 * 1000;
+  let count = 0;
+
+  while (nextDate <= endDate && Date.now() - startTime < BUDGET_MS) {
+    Logger.log('--- Traffic ' + nextDate + ' ---');
+    try {
+      fetchTrafficReport(nextDate, nextDate);
+      count++;
+    } catch (e) {
+      Logger.log('エラー(' + nextDate + '): ' + e.message);
+    }
+    const d = new Date(nextDate);
+    d.setDate(d.getDate() + 1);
+    nextDate = fmt(d);
+  }
+
+  props.setProperty('TRAFFIC_BF_NEXT', nextDate);
+  Logger.log('▶ 次回 ' + nextDate + ' から継続（今回 ' + count + ' 日処理）');
+}
+
+/**
+ * Traffic バックフィルをキャンセル
+ */
+function cancelTrafficBackfill() {
+  let removed = 0;
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'trafficBackfillStep') {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    }
+  });
+  const props = PropertiesService.getScriptProperties();
+  const last = props.getProperty('TRAFFIC_BF_NEXT');
+  props.deleteProperty('TRAFFIC_BF_NEXT');
+  props.deleteProperty('TRAFFIC_BF_START');
+  Logger.log('⏹ Traffic バックフィルをキャンセル。削除トリガー=' + removed + ', 最後=' + last);
+}
+
+/**
+ * Traffic バックフィル進捗
+ */
+function checkTrafficBackfillProgress() {
+  const props = PropertiesService.getScriptProperties();
+  const next = props.getProperty('TRAFFIC_BF_NEXT');
+  const start = props.getProperty('TRAFFIC_BF_START');
+  if (!next) {
+    Logger.log('📭 Traffic バックフィル未実行 or 完了済み');
+    return;
+  }
+  Logger.log('📊 Traffic 進捗: 開始=' + start + ' / 次処理予定=' + next);
+}
+
 
 function updateDailyWithTrafficJson(asinData) {
   Logger.log('ASIN別データ: ' + asinData.length + ' 件');
