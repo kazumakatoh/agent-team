@@ -63,15 +63,16 @@ function syncInventoryToExternalSheets() {
   Logger.log('発注管理表 G列「FBA納品中」更新: ' + updatedInbound + ' 行');
 
   // E列「販売set(1日)」= 過去7日平均販売数（売れなかった日も0として算入）
-  // 発注管理表に記載のある全ASINに対して値を用意（売上なしは0）
+  // 発注管理表に記載のある全ASINに対して値を用意
+  // → 平均0は I列「販売可能日数」のゼロ除算を避けるため最小値1で代替
   const salesAvgRaw = getSalesAvgByAsin(ORDER_SALES_AVG_DAYS);
   const asinMapForSales = getOrderSheetAsinMap(orderSheet);
   const asinToSalesAvg = {};
   for (const asin of Object.keys(asinMapForSales)) {
-    asinToSalesAvg[asin] = salesAvgRaw[asin] || 0;
+    asinToSalesAvg[asin] = salesAvgRaw[asin] || 1;
   }
   const updatedSales = writeSalesAvgToOrderSheet(orderSheet, asinToSalesAvg);
-  Logger.log('発注管理表 E列「販売set(1日)」更新: ' + updatedSales + ' 行（' + ORDER_SALES_AVG_DAYS + '日平均）');
+  Logger.log('発注管理表 E列「販売set(1日)」更新: ' + updatedSales + ' 行（' + ORDER_SALES_AVG_DAYS + '日平均、最小1）');
 
   // 3. 式再計算を待つ
   SpreadsheetApp.flush();
