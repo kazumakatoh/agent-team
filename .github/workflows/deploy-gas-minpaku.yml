@@ -7,13 +7,15 @@ on:
       - 'claude/**'
     paths:
       - '11_minpaku/gas/**'
+      - '.github/scripts/**'
+      - '.github/workflows/deploy-gas-minpaku.yml'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      # Node.js 20 廃止対応（2026-06-02以降は強制Node.js 24化）
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -24,12 +26,16 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install clasp
-        run: npm install -g @google/clasp
+      - name: Auth to Google Cloud (Service Account)
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Write clasp credentials
-        run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+      - name: Install googleapis
+        working-directory: .github/scripts
+        run: npm install
 
-      - name: Push to GAS
-        working-directory: 11_minpaku/gas
-        run: clasp push --force
+      - name: Deploy to GAS
+        env:
+          SOURCE_DIR: 11_minpaku/gas
+        run: node .github/scripts/deploy-gas.js
