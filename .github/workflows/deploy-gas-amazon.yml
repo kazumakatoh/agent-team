@@ -7,15 +7,14 @@ on:
       - 'claude/**'
     paths:
       - '10_amazon/gas/**'
-      - '.github/scripts/**'
       - '.github/workflows/deploy-gas-amazon.yml'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write  # Workload Identity Federation に必須
+    env:
+      # Node.js 20 廃止対応（2026-06-02以降は強制Node.js 24化）
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout
@@ -26,19 +25,12 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Auth to Google Cloud (Workload Identity Federation)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: 'projects/651587874344/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-          service_account: 'gas-deployer@level1-gas-deploy.iam.gserviceaccount.com'
+      - name: Install clasp
+        run: npm install -g @google/clasp
 
-      - name: Install googleapis
-        working-directory: .github/scripts
-        run: npm install
+      - name: Write clasp credentials
+        run: echo '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
 
-      - name: Deploy to GAS
-        env:
-          SOURCE_DIR: 10_amazon/gas
-          SA_EMAIL: 'gas-deployer@level1-gas-deploy.iam.gserviceaccount.com'
-          IMPERSONATE_USER: '[email protected]'
-        run: node .github/scripts/deploy-gas.js
+      - name: Push to GAS
+        working-directory: 10_amazon/gas
+        run: clasp push --force
