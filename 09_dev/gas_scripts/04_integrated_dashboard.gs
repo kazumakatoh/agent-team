@@ -1,7 +1,9 @@
 /**
- * 統合ダッシュボード構築
+ * 統合ダッシュボード構築 V3
  * 2026/4 〜 2030/12（57ヶ月分）
- * 円/ドル切替対応
+ * - 円/ドル切替
+ * - 初期費用・累計利益・ROI追加
+ * - 純利益はグロス表示、経費は月額+現物手数料
  */
 
 const DASH_CONFIG = {
@@ -17,20 +19,23 @@ const DASH_CONFIG = {
 
 const KPI_ROWS = [
   { type: 'header', label: '💰 統合（合計）' },
-  { type: 'data', label: '元本（$）', fmt: 'money' },
-  { type: 'data', label: '純利益（$）', fmt: 'money' },
+  { type: 'data', label: '初期費用', fmt: 'money' },
+  { type: 'data', label: '元本', fmt: 'money' },
+  { type: 'data', label: '純利益', fmt: 'money' },
   { type: 'data', label: '利回り（%）', fmt: 'percent' },
-  { type: 'data', label: '経費（$）', fmt: 'money' },
+  { type: 'data', label: '経費', fmt: 'money' },
+  { type: 'data', label: '累計利益', fmt: 'money' },
+  { type: 'data', label: 'ROI（%）', fmt: 'percent' },
   { type: 'blank' },
   { type: 'header', label: '📈 現物（AIグリッド）' },
-  { type: 'data', label: '元本（$）', fmt: 'money' },
-  { type: 'data', label: '月次利益（$）', fmt: 'money' },
+  { type: 'data', label: '元本', fmt: 'money' },
+  { type: 'data', label: '月次利益', fmt: 'money' },
   { type: 'data', label: '月次利回り（%）', fmt: 'percent' },
-  { type: 'data', label: '手数料（$）', fmt: 'money' },
+  { type: 'data', label: '手数料', fmt: 'money' },
   { type: 'blank' },
   { type: 'header', label: '💱 FX（BigBoss）' },
-  { type: 'data', label: 'Balance（$）', fmt: 'money' },
-  { type: 'data', label: '月次利益（$）', fmt: 'money' },
+  { type: 'data', label: 'Balance', fmt: 'money' },
+  { type: 'data', label: '月次利益', fmt: 'money' },
   { type: 'data', label: '月次利回り（%）', fmt: 'percent' },
   { type: 'data', label: '取引回数', fmt: 'int' },
   { type: 'data', label: '勝ち', fmt: 'int' },
@@ -39,7 +44,7 @@ const KPI_ROWS = [
   { type: 'data', label: 'PF', fmt: 'decimal' },
   { type: 'data', label: 'RR比', fmt: 'decimal' },
   { type: 'data', label: '最大DD（%）', fmt: 'percent' },
-  { type: 'data', label: '取引コスト（$）', fmt: 'money' }
+  { type: 'data', label: '取引コスト', fmt: 'money' }
 ];
 
 const DASH_ASSUMPTIONS = {
@@ -49,7 +54,10 @@ const DASH_ASSUMPTIONS = {
   FX_MONTHLY_YIELD: 0.05,
   FX_MONTHLY_TRADES: 60,
   FX_WIN_RATE: 0.70,
-  SAGEMASTER_MONTHLY: 149
+  SAGEMASTER_MONTHLY: 149,
+  INITIAL_SETUP_USD: 2366,
+  INITIAL_SETUP_YEAR: 2026,
+  INITIAL_SETUP_MONTH: 4
 };
 
 // ======================================================
@@ -64,7 +72,6 @@ function initIntegratedDashboard() {
   const months = generateMonthList_();
   const lastCol = DASH_CONFIG.FIRST_DATA_COL + months.length - 1;
 
-  // Row 1: 通貨切替・為替・更新日時
   sheet.getRange('A1').setValue('通貨:').setFontWeight('bold');
   sheet.getRange('B1').setValue('USD');
   sheet.getRange('B1').setDataValidation(
@@ -77,7 +84,6 @@ function initIntegratedDashboard() {
   sheet.getRange('E1').setValue('最終更新:').setFontWeight('bold');
   sheet.getRange('F1').setValue(new Date()).setNumberFormat('yyyy/MM/dd HH:mm:ss');
 
-  // Row 3: 年ヘッダー（マージ）
   let col = DASH_CONFIG.FIRST_DATA_COL;
   for (let y = DASH_CONFIG.START_YEAR; y <= DASH_CONFIG.END_YEAR; y++) {
     const s = (y === DASH_CONFIG.START_YEAR) ? DASH_CONFIG.START_MONTH : 1;
@@ -91,13 +97,11 @@ function initIntegratedDashboard() {
     col += count;
   }
 
-  // Row 4: 月ヘッダー
   const monthLabels = months.map(m => m.month + '月');
   sheet.getRange(4, DASH_CONFIG.FIRST_DATA_COL, 1, months.length)
     .setValues([monthLabels])
     .setHorizontalAlignment('center').setFontWeight('bold').setBackground('#cfe2f3');
 
-  // データ行
   const DATA_START = 5;
   KPI_ROWS.forEach((kpi, i) => {
     const row = DATA_START + i;
@@ -110,9 +114,7 @@ function initIntegratedDashboard() {
     }
   });
 
-  // 当月列を黄色ハイライト
   const totalRows = DATA_START + KPI_ROWS.length - 1;
-  sheet.getRange(5, DASH_CONFIG.FIRST_DATA_COL, KPI_ROWS.length, 1).setBackground('#fff2cc');
 
   sheet.setColumnWidth(1, 180);
   sheet.setColumnWidths(DASH_CONFIG.FIRST_DATA_COL, months.length, 90);
@@ -124,20 +126,20 @@ function initIntegratedDashboard() {
 }
 
 // ======================================================
-// FX追加指標（5項目）追加
+// FX追加指標（5項目）
 // ======================================================
 function addFXAdditionalMetrics() {
   const ss = SpreadsheetApp.getActive();
   const sheet = ss.getSheetByName(DASH_CONFIG.SHEET_MAIN);
   const labels = [
     ['平均取引ロット数'],
-    ['必要証拠金（$）'],
-    ['証拠金維持率（%）'],
-    ['余剰証拠金（$）'],
+    ['必要証拠金'],
+    ['証拠金維持率（倍率）'],
+    ['余剰証拠金'],
     ['獲得値幅（pips）']
   ];
-  sheet.getRange(29, 1, 5, 1).setValues(labels);
-  Logger.log('✅ 5項目追加完了');
+  sheet.getRange(32, 1, 5, 1).setValues(labels);
+  Logger.log('✅ FX追加指標ラベル更新');
 }
 
 // ======================================================
@@ -154,15 +156,17 @@ function populateIntegratedDashboard() {
   const currentMonthIdx = findCurrentMonthIndex_(months);
 
   const ROW = {
-    TOTAL_PRINCIPAL: 6, TOTAL_NET: 7, TOTAL_YIELD: 8, TOTAL_EXPENSE: 9,
-    SPOT_PRINCIPAL: 12, SPOT_PROFIT: 13, SPOT_YIELD: 14, SPOT_FEE: 15,
-    FX_BALANCE: 18, FX_PROFIT: 19, FX_YIELD: 20,
-    FX_TRADES: 21, FX_WINS: 22, FX_LOSSES: 23,
-    FX_WINRATE: 24, FX_PF: 25, FX_RR: 26, FX_DD: 27, FX_COST: 28,
-    FX_AVG_LOT: 29, FX_REQ_MARGIN: 30, FX_MARGIN_LEVEL: 31,
-    FX_FREE_MARGIN: 32, FX_PIPS: 33
+    TOTAL_SETUP: 6, TOTAL_PRINCIPAL: 7, TOTAL_NET: 8, TOTAL_YIELD: 9,
+    TOTAL_EXPENSE: 10, TOTAL_CUMPROFIT: 11, TOTAL_ROI: 12,
+    SPOT_PRINCIPAL: 15, SPOT_PROFIT: 16, SPOT_YIELD: 17, SPOT_FEE: 18,
+    FX_BALANCE: 21, FX_PROFIT: 22, FX_YIELD: 23,
+    FX_TRADES: 24, FX_WINS: 25, FX_LOSSES: 26,
+    FX_WINRATE: 27, FX_PF: 28, FX_RR: 29, FX_DD: 30, FX_COST: 31,
+    FX_AVG_LOT: 32, FX_REQ_MARGIN: 33, FX_MARGIN_LEVEL: 34,
+    FX_FREE_MARGIN: 35, FX_PIPS: 36
   };
 
+  let cumulativeNet = 0;
   let spotPrincipal = DASH_ASSUMPTIONS.INITIAL_SPOT_USD;
   let fxPrincipal = DASH_ASSUMPTIONS.INITIAL_FX_USD;
 
@@ -220,13 +224,11 @@ function populateIntegratedDashboard() {
       fxPips = DASH_ASSUMPTIONS.FX_MONTHLY_TRADES * 10;
     }
 
-    // 現物
     sheet.getRange(ROW.SPOT_PRINCIPAL, col).setValue(spotPrincipal);
     sheet.getRange(ROW.SPOT_PROFIT, col).setValue(spotProfit);
     sheet.getRange(ROW.SPOT_YIELD, col).setValue(spotYield);
     sheet.getRange(ROW.SPOT_FEE, col).setValue(spotFee);
 
-    // FX
     sheet.getRange(ROW.FX_BALANCE, col).setValue(fxPrincipal);
     sheet.getRange(ROW.FX_PROFIT, col).setValue(fxProfit);
     sheet.getRange(ROW.FX_YIELD, col).setValue(fxYield);
@@ -245,16 +247,26 @@ function populateIntegratedDashboard() {
     sheet.getRange(ROW.FX_FREE_MARGIN, col).setValue(fxFreeMargin);
     sheet.getRange(ROW.FX_PIPS, col).setValue(fxPips);
 
-    // 統合
-    const totalPrincipal = spotPrincipal + fxPrincipal;
-    const totalNet = spotProfit + fxProfit - DASH_ASSUMPTIONS.SAGEMASTER_MONTHLY - spotFee - (fxCost || 0);
-    const totalYield = totalNet / totalPrincipal;
-    const totalExpense = DASH_ASSUMPTIONS.SAGEMASTER_MONTHLY + spotFee + (fxCost || 0);
+    // 統合（合計）
+    const isInitMonth = (m.year === DASH_ASSUMPTIONS.INITIAL_SETUP_YEAR && m.month === DASH_ASSUMPTIONS.INITIAL_SETUP_MONTH);
+    const initialSetup = isInitMonth ? DASH_ASSUMPTIONS.INITIAL_SETUP_USD : 0;
 
+    const totalPrincipal = spotPrincipal + fxPrincipal;
+    const totalGrossProfit = spotProfit + fxProfit;
+    const totalExpense = DASH_ASSUMPTIONS.SAGEMASTER_MONTHLY + spotFee;
+    const totalYield = totalPrincipal > 0 ? totalGrossProfit / totalPrincipal : 0;
+
+    cumulativeNet += totalGrossProfit - totalExpense - initialSetup;
+    const totalCost = DASH_ASSUMPTIONS.INITIAL_SPOT_USD + DASH_ASSUMPTIONS.INITIAL_FX_USD + DASH_ASSUMPTIONS.INITIAL_SETUP_USD;
+    const roi = totalCost > 0 ? cumulativeNet / totalCost : 0;
+
+    if (initialSetup > 0) sheet.getRange(ROW.TOTAL_SETUP, col).setValue(initialSetup);
     sheet.getRange(ROW.TOTAL_PRINCIPAL, col).setValue(totalPrincipal);
-    sheet.getRange(ROW.TOTAL_NET, col).setValue(totalNet);
+    sheet.getRange(ROW.TOTAL_NET, col).setValue(totalGrossProfit);
     sheet.getRange(ROW.TOTAL_YIELD, col).setValue(totalYield);
     sheet.getRange(ROW.TOTAL_EXPENSE, col).setValue(totalExpense);
+    sheet.getRange(ROW.TOTAL_CUMPROFIT, col).setValue(cumulativeNet);
+    sheet.getRange(ROW.TOTAL_ROI, col).setValue(roi);
 
     spotPrincipal = spotPrincipal + spotProfit;
     fxPrincipal = fxBalance;
@@ -266,9 +278,6 @@ function populateIntegratedDashboard() {
   Logger.log(`✅ データ投入完了（${months.length}ヶ月）`);
 }
 
-// ======================================================
-// スナップショット読み込み
-// ======================================================
 function readSpotForDashboard_(ss) {
   const sheet = ss.getSheetByName('現物_スナップショット');
   if (!sheet) return { totalUSD: DASH_ASSUMPTIONS.INITIAL_SPOT_USD };
@@ -315,16 +324,11 @@ function readFXForDashboard_(ss) {
     commission: commission,
     wins: Math.round(getNum('B10') * getNum('B11')),
     losses: getNum('B10') - Math.round(getNum('B10') * getNum('B11')),
-    avgLot: avgLot,
-    reqMargin: reqMargin,
-    marginLevel: marginLevel,
-    totalPips: totalPips
+    avgLot: avgLot, reqMargin: reqMargin,
+    marginLevel: marginLevel, totalPips: totalPips
   };
 }
 
-// ======================================================
-// ユーティリティ
-// ======================================================
 function generateMonthList_() {
   const months = [];
   for (let y = DASH_CONFIG.START_YEAR; y <= DASH_CONFIG.END_YEAR; y++) {
@@ -342,37 +346,33 @@ function findCurrentMonthIndex_(months) {
 
 function applyDashboardFormats_(sheet, monthCount) {
   const col1 = DASH_CONFIG.FIRST_DATA_COL;
-  const moneyRows = [6, 7, 9, 12, 13, 15, 18, 19, 28, 30, 32];
-  const pctRows = [8, 14, 20, 24, 27];
-  const intRows = [21, 22, 23, 33];
-  const decRows = [25, 26, 29];
+  const moneyRows = [6, 7, 8, 10, 11, 15, 16, 18, 21, 22, 31, 33, 35];
+  const pctRows = [9, 12, 17, 23, 27, 30];
+  const intRows = [24, 25, 26, 36];
+  const decRows = [28, 29, 32];
 
   moneyRows.forEach(r => sheet.getRange(r, col1, 1, monthCount).setNumberFormat('$#,##0'));
   pctRows.forEach(r => sheet.getRange(r, col1, 1, monthCount).setNumberFormat('0.0%'));
   intRows.forEach(r => sheet.getRange(r, col1, 1, monthCount).setNumberFormat('#,##0'));
   decRows.forEach(r => sheet.getRange(r, col1, 1, monthCount).setNumberFormat('0.00'));
-  // 証拠金維持率は倍率表記
-  sheet.getRange(31, col1, 1, monthCount).setNumberFormat('0.0"倍"');
+  sheet.getRange(34, col1, 1, monthCount).setNumberFormat('0.0"倍"');
 }
 
-// ======================================================
-// 修正適用（A列ラベル整理・倍率表記・フォントサイズ統一）
-// ======================================================
 function applyDashboardFixes() {
   const ss = SpreadsheetApp.getActive();
   const sheet = ss.getSheetByName(DASH_CONFIG.SHEET_MAIN);
 
   const newLabels = {
-    6: '元本', 7: '純利益', 9: '経費',
-    12: '元本', 13: '月次利益', 15: '手数料',
-    18: 'Balance', 19: '月次利益', 28: '取引コスト',
-    30: '必要証拠金', 32: '余剰証拠金'
+    7: '元本', 8: '純利益', 10: '経費',
+    15: '元本', 16: '月次利益', 18: '手数料',
+    21: 'Balance', 22: '月次利益', 31: '取引コスト',
+    33: '必要証拠金', 35: '余剰証拠金'
   };
   Object.keys(newLabels).forEach(r => sheet.getRange(Number(r), 1).setValue(newLabels[r]));
 
-  sheet.getRange(31, 1).setValue('証拠金維持率（倍率）');
+  sheet.getRange(34, 1).setValue('証拠金維持率（倍率）');
   const lastCol = sheet.getLastColumn();
-  sheet.getRange(31, 2, 1, lastCol - 1).setNumberFormat('0.0"倍"');
+  sheet.getRange(34, 2, 1, lastCol - 1).setNumberFormat('0.0"倍"');
 
   const lastRow = sheet.getLastRow();
   sheet.getRange(1, 1, lastRow, lastCol).setFontSize(10);
@@ -380,9 +380,6 @@ function applyDashboardFixes() {
   Logger.log('✅ ダッシュボード修正完了');
 }
 
-// ======================================================
-// 円/ドル切替（onEdit トリガー）
-// ======================================================
 function onEditDashboard(e) {
   if (!e || e.range.getA1Notation() !== 'B1') return;
   if (e.range.getSheet().getName() !== DASH_CONFIG.SHEET_MAIN) return;
@@ -391,7 +388,7 @@ function onEditDashboard(e) {
   const currency = e.range.getValue();
   const rate = Number(sheet.getRange('D1').getValue()) || 155;
 
-  const moneyRows = [6, 7, 9, 12, 13, 15, 18, 19, 28, 30, 32];
+  const moneyRows = [6, 7, 8, 10, 11, 15, 16, 18, 21, 22, 31, 33, 35];
   const lastCol = sheet.getLastColumn();
   const firstCol = DASH_CONFIG.FIRST_DATA_COL;
 
