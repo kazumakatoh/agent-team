@@ -199,7 +199,7 @@ function createFixedCostSheet_(ss) {
  * 予定マスタシートを作成する
  *
  * 列構成:
- *  A: 口座 (CF005/CF003/SEIBU)
+ *  A: 口座 (CF005/CF003/SEIBU/RAKUTEN)
  *  B: 内容
  *  C: 金額
  *  D: 区分 (入/出)
@@ -246,7 +246,7 @@ function createPlanMasterSheet_(ss) {
   const noteRow = samples.length + 3;
   sheet.getRange(noteRow, 1).setValue('【入力ガイド】').setFontWeight('bold');
   const notes = [
-    ['口座', 'CF005=PayPay005 / CF003=PayPay003 / SEIBU=西武信金'],
+    ['口座', 'CF005=PayPay005 / CF003=PayPay003 / SEIBU=西武信金 / RAKUTEN=楽天銀行'],
     ['金額', '0円でもOK（後から個別に変更可能）'],
     ['区分', '入 = 入金 / 出 = 出金'],
     ['頻度', 'monthly = 毎月 / bimonthly = 2ヶ月に1回 / yearly = 毎年'],
@@ -543,10 +543,11 @@ function createSettingsSheet_(ss) {
     ['CF005 (PayPay ビジネス)', '', 'MFの口座名（自動設定）'],
     ['CF003 (PayPay はやぶさ)', '', 'MFの口座名（自動設定）'],
     ['SEIBU (西武信金)', '', 'MFの口座名（自動設定）'],
+    ['RAKUTEN (楽天銀行)', '', 'MFの口座名（自動設定）'],
     ['', '', ''],
     ['アラート設定', '', ''],
-    ['危険水準', '5,000,000', 'PayPay 005残高がこの金額以下で🔴'],
-    ['注意水準', '10,000,000', 'PayPay 005残高がこの金額以下で🟡']
+    ['危険水準', '5,000,000', '監視対象口座（PayPay 005／楽天銀行）の残高がこの金額以下で🔴'],
+    ['注意水準', '10,000,000', '監視対象口座（PayPay 005／楽天銀行）の残高がこの金額以下で🟡']
   ];
 
   sheet.getRange(2, 1, settings.length, 3).setValues(settings);
@@ -591,9 +592,11 @@ function createCurrentBalanceSheet_(ss) {
     row++;
   });
 
-  // 合計行
+  // 合計行（口座数に応じてSUM範囲を動的に設定）
   sheet.getRange(row, 1).setValue('合計').setFontWeight('bold');
-  sheet.getRange(row, 2).setFormula('=SUM(B2:B4)').setNumberFormat('#,##0').setFontWeight('bold');
+  sheet.getRange(row, 2)
+    .setFormula(`=SUM(B2:B${row - 1})`)
+    .setNumberFormat('#,##0').setFontWeight('bold');
   sheet.getRange(row, 1, 1, 4).setBackground('#e8eaf6');
 
   sheet.setColumnWidth(1, 220);

@@ -275,7 +275,8 @@ function fetchAndSaveWalletIds_() {
   const matchPatterns = {
     CF005: ['ビジネス営業', 'PayPay.*005', 'PayPay.*ビジネス'],
     CF003: ['はやぶさ', 'PayPay.*003'],
-    SEIBU: ['西武信用金庫', '西武信金', '阿佐ヶ谷']
+    SEIBU: ['西武信用金庫', '西武信金', '阿佐ヶ谷'],
+    RAKUTEN: ['楽天銀行', '第三営業']
   };
 
   bankAccounts.forEach(b => {
@@ -300,8 +301,9 @@ function fetchAndSaveWalletIds_() {
   PropertiesService.getUserProperties().setProperty('MF_WALLET_MAP', JSON.stringify(walletMap));
 
   const matched = Object.keys(walletMap).length;
-  Logger.log(`口座マッピング完了: ${matched}/3 口座`);
-  if (matched < 3) {
+  const total = Object.keys(CF_CONFIG.ACCOUNTS).length;
+  Logger.log(`口座マッピング完了: ${matched}/${total} 口座`);
+  if (matched < total) {
     Logger.log('⚠️ 一部の口座がマッチしませんでした。設定シートで手動紐付けが必要です。');
   }
 }

@@ -503,9 +503,12 @@ function insertPlannedRow_(sheet, tx) {
  */
 function cleanupAllDailySheets() {
   const ui = SpreadsheetApp.getUi();
+  const sheetNames = Object.values(CF_CONFIG.ACCOUNTS)
+    .map(a => a.dailySheet)
+    .join('/');
   const result = ui.alert(
     'Dailyシートのクリーンアップ',
-    '全Dailyシート（Daily_005/Daily_003/Daily_西武）から、\n' +
+    `全Dailyシート（${sheetNames}）から、\n` +
     '日付が入っていない行を削除します。\n\n' +
     '※ 前月繰越行（2行目）は残ります。\n' +
     '※ この操作は元に戻せません。',
@@ -641,10 +644,11 @@ function applyAlertColors_(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow <= headerRows) return;
 
-  // このシートがアラート対象口座かチェック
-  const alertAccount = CF_CONFIG.ALERT.ALERT_ACCOUNT;
-  const alertSheetName = CF_CONFIG.ACCOUNTS[alertAccount].dailySheet;
-  if (sheet.getName() !== alertSheetName) return;
+  // このシートがアラート対象口座のいずれかかチェック
+  const alertSheetNames = CF_CONFIG.ALERT.ALERT_ACCOUNTS
+    .map(key => CF_CONFIG.ACCOUNTS[key] && CF_CONFIG.ACCOUNTS[key].dailySheet)
+    .filter(Boolean);
+  if (alertSheetNames.indexOf(sheet.getName()) === -1) return;
 
   const numRows = lastRow - headerRows;
   const balances = sheet.getRange(headerRows + 1, C.BALANCE, numRows, 1).getValues();
@@ -981,10 +985,10 @@ function columnToLetter_(col) {
 /**
  * 日別サマリーシートを更新する
  *
- * 3口座のDailyシートから全日付を収集し、日付ごとに
+ * 各口座のDailyシートから全日付を収集し、日付ごとに
  * 入金合計・出金合計・各口座残高・全体残高を表示する。
  *
- * 列: A:日付 / B:入金合計 / C:出金合計 / D:全体残高 / E:PayPay005残高 / F:PayPay003残高 / G:西武信金残高
+ * 列: A:日付 / B:入金合計 / C:出金合計 / D:全体残高 / E以降:各口座残高（ACCOUNTS定義順）
  */
 function updateDailySummary() {
   const ss = getCfSpreadsheet();
@@ -994,8 +998,14 @@ function updateDailySummary() {
     sheet = ss.insertSheet(CF_CONFIG.SHEETS.DAILY_SUMMARY);
   }
 
-  const headers = ['日付', '入金合計', '出金合計', '全体残高',
-    'PayPay 005\n残高', 'PayPay 003\n残高', '西武信用金庫\n残高'];
+  const C = CF_CONFIG.DAILY_COLS;
+  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
+  const accountKeys = Object.keys(CF_CONFIG.ACCOUNTS);
+
+  // ヘッダーをaccountKeysから動的生成（E列以降: 各口座の残高）
+  const baseHeaders = ['日付', '入金合計', '出金合計', '全体残高'];
+  const accountHeaders = accountKeys.map(k => `${CF_CONFIG.ACCOUNTS[k].shortName}\n残高`);
+  const headers = baseHeaders.concat(accountHeaders);
 
   sheet.clearContents();
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -1003,10 +1013,6 @@ function updateDailySummary() {
     .setBackground('#1a73e8').setFontColor('#ffffff')
     .setFontWeight('bold').setHorizontalAlignment('center')
     .setWrap(true);
-
-  const C = CF_CONFIG.DAILY_COLS;
-  const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
-  const accountKeys = Object.keys(CF_CONFIG.ACCOUNTS);
 
   // 全口座のデータを日付→{入金, 出金, 残高}のマップに集約
   const dateMap = {};
@@ -1068,15 +1074,9 @@ function updateDailySummary() {
 
     const totalBalance = accountKeys.reduce((sum, key) => sum + latestBalance[key], 0);
 
-    rows.push([
-      data.date,
-      totalDeposit || '',
-      totalWithdrawal || '',
-      totalBalance,
-      latestBalance.CF005,
-      latestBalance.CF003,
-      latestBalance.SEIBU
-    ]);
+    const baseRow = [data.date, totalDeposit || '', totalWithdrawal || '', totalBalance];
+    const accountBalances = accountKeys.map(k => latestBalance[k]);
+    rows.push(baseRow.concat(accountBalances));
   });
 
   if (rows.length > 0) {
@@ -1084,14 +1084,22 @@ function updateDailySummary() {
     sheet.getRange(2, 1, rows.length, 1).setNumberFormat('yyyy/MM/dd');
     sheet.getRange(2, 2, rows.length, headers.length - 1).setNumberFormat('#,##0');
 
-    // アラート色付け（PayPay005残高ベース）
+    // アラート色付け（ALERT_ACCOUNTSのうち最も深刻な状態で判定）
+    // 監視口座の列インデックス（rowsでの位置: 4 + accountKeysでの位置）
+    const alertColIdxs = CF_CONFIG.ALERT.ALERT_ACCOUNTS
+      .map(key => accountKeys.indexOf(key))
+      .filter(idx => idx >= 0)
+      .map(idx => 4 + idx);
+
     for (let i = 0; i < rows.length; i++) {
-      const cf005Bal = rows[i][4];
+      const alertBalances = alertColIdxs.map(c => Number(rows[i][c]) || 0).filter(v => v > 0);
+      if (alertBalances.length === 0) continue;
+      const minBal = Math.min.apply(null, alertBalances);
       const totalCell = sheet.getRange(i + 2, 4);
 
-      if (cf005Bal > 0 && cf005Bal <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
+      if (minBal <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
         totalCell.setBackground('#ffcdd2').setFontColor('#b71c1c').setFontWeight('bold');
-      } else if (cf005Bal > 0 && cf005Bal <= CF_CONFIG.ALERT.WARNING_THRESHOLD) {
+      } else if (minBal <= CF_CONFIG.ALERT.WARNING_THRESHOLD) {
         totalCell.setBackground('#fff9c4').setFontColor('#f57f17').setFontWeight('bold');
       }
     }

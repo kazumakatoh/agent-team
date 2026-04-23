@@ -45,11 +45,11 @@ function updateMonthlySheet(startYear, startMonth, endYear, endMonth) {
   }
 
   const accountKeys = Object.keys(CF_CONFIG.ACCOUNTS);
-  const accountLabels = {
-    CF005: CF_CONFIG.ACCOUNTS.CF005.shortName,
-    CF003: CF_CONFIG.ACCOUNTS.CF003.shortName,
-    SEIBU: CF_CONFIG.ACCOUNTS.SEIBU.shortName
-  };
+  // ACCOUNTSから各口座の表示ラベルを動的に生成
+  const accountLabels = {};
+  accountKeys.forEach(key => {
+    accountLabels[key] = CF_CONFIG.ACCOUNTS[key].shortName;
+  });
 
   // 各口座の前月繰越残高を取得
   const prevBalances = {};

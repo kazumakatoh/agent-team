@@ -54,6 +54,12 @@ const CF_CONFIG = {
       shortName: '西武信金',
       dailySheet: 'Daily_西武',
       walletId: ''
+    },
+    RAKUTEN: {
+      name: '楽天銀行 第三営業支店',
+      shortName: '楽天銀行',
+      dailySheet: 'Daily_楽天',
+      walletId: ''
     }
   },
 
@@ -94,12 +100,13 @@ const CF_CONFIG = {
   },
 
   // ==============================
-  // アラート基準（PayPay 005口座ベース）
+  // アラート基準
+  // 複数口座を監視対象にできる（配列で指定）
   // ==============================
   ALERT: {
     DANGER_THRESHOLD:  5000000,   // 500万円以下 = 🔴 危険
     WARNING_THRESHOLD: 10000000,  // 1,000万円以下 = 🟡 注意
-    ALERT_ACCOUNT: 'CF005'       // 監視対象口座
+    ALERT_ACCOUNTS: ['CF005', 'RAKUTEN']  // 監視対象口座（配列）
   },
 
   // ==============================

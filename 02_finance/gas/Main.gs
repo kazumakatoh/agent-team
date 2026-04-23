@@ -196,14 +196,16 @@ function updateCurrentBalanceSheet_() {
   const now = Utilities.formatDate(new Date(), CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy/MM/dd HH:mm');
   let row = 2;
 
+  const alertAccounts = CF_CONFIG.ALERT.ALERT_ACCOUNTS || [];
+
   Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
     const balance = getLatestBalance_(key);
 
     sheet.getRange(row, 2).setValue(balance).setNumberFormat('#,##0');
     sheet.getRange(row, 3).setValue(now);
 
-    // ステータス（CF005のみアラート判定）
-    if (key === CF_CONFIG.ALERT.ALERT_ACCOUNT) {
+    // ステータス（ALERT_ACCOUNTSに含まれる口座のみアラート判定）
+    if (alertAccounts.indexOf(key) !== -1) {
       if (balance <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
         sheet.getRange(row, 4).setValue('🔴 危険');
         sheet.getRange(row, 2).setFontColor('#b71c1c');
