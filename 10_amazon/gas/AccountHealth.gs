@@ -102,9 +102,10 @@ function runAccountHealthCheck() {
   Logger.log('スコア: ' + score + ' / 7日返品率: ' + (recentReturn7.rate * 100).toFixed(2) +
              '% / アカウント: ' + accountStatus);
 
-  if (issues.length > 0) {
-    notifyHealthIssues(issues, score, recentReturn7);
-  }
+  // 注: LINE 通知は廃止（頻繁な通知より週次レポートで俯瞰が運用に合う）。
+  // issues と score は D5 シートに蓄積されているので WeeklyAiReport.gs が読み取って
+  // 週次レポートのプロンプトに組み込む。
+  // 旧: if (issues.length > 0) notifyHealthIssues(issues, score, recentReturn7);
 }
 
 /**

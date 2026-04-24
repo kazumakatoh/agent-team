@@ -114,6 +114,14 @@ function collectWeeklyMetrics() {
   const topAsins = asinList.slice(0, WEEKLY_TOP_N);
   const bottomAsins = asinList.filter(a => a.profit < 0).slice(0, WEEKLY_TOP_N);
 
+  // アカウント健全性ログ（D5）を直近7日分だけ読み取り
+  let health = { latestScore: null, latestRow: null, issues: [], avgReturn7: null, avgReturn30: null };
+  try {
+    health = readRecentAccountHealth(periods.thisWeek.start, periods.thisWeek.end);
+  } catch (e) {
+    Logger.log('⚠️ アカウント健全性ログ読み取り失敗: ' + e.message);
+  }
+
   return {
     periods,
     thisWeek: thisSummary,
@@ -121,6 +129,85 @@ function collectWeeklyMetrics() {
     topAsins,
     bottomAsins,
     activeAsinCount: asinList.length,
+    health: health,
+  };
+}
+
+/**
+ * D5 アカウント健全性シートから直近期間のログを集計
+ * ヘッダー: 日付 | 総合 | 返品率(直近7日) | 返品率(直近30日) | 注意点
+ */
+function readRecentAccountHealth(startDate, endDate) {
+  const ss = getMainSpreadsheet();
+  const sheet = ss.getSheetByName(D5_HEALTH);
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return { latestScore: null, latestRow: null, issues: [], avgReturn7: null, avgReturn30: null };
+  }
+
+  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
+  const inRange = data.filter(row => {
+    const d = row[0] instanceof Date
+      ? Utilities.formatDate(row[0], 'Asia/Tokyo', 'yyyy-MM-dd')
+      : String(row[0]).substring(0, 10);
+    return d >= startDate && d <= endDate;
+  });
+
+  if (inRange.length === 0) {
+    // 期間内のログがない場合は最新行を返す
+    const last = data[data.length - 1];
+    return {
+      latestScore: last[1] != null ? parseFloat(last[1]) : null,
+      latestRow: {
+        date: last[0] instanceof Date ? Utilities.formatDate(last[0], 'Asia/Tokyo', 'yyyy-MM-dd') : String(last[0]).substring(0, 10),
+        score: last[1],
+        ret7: last[2],
+        ret30: last[3],
+        notes: last[4],
+      },
+      issues: [],
+      avgReturn7: null,
+      avgReturn30: null,
+    };
+  }
+
+  // 一番新しい行を基準値として取得
+  const latest = inRange[inRange.length - 1];
+  const parsePct = v => {
+    const s = String(v || '').replace('%', '').trim();
+    const n = parseFloat(s);
+    return isNaN(n) ? null : n / 100;
+  };
+
+  // 期間中に登場した「注意点」のユニーク一覧（異常なし行は除外）
+  const issueSet = new Set();
+  inRange.forEach(row => {
+    const notes = String(row[4] || '');
+    if (!notes || notes.includes('異常なし')) return;
+    // "/" 区切り要素を個別 issue として採用（アカウント状態プレフィックスはスキップ）
+    notes.split('/').map(s => s.trim()).forEach(part => {
+      if (!part) return;
+      // 数値付きの明確な問題だけ拾う
+      if (/件|日|率|急増|非参加|切れ|取得失敗/.test(part)) issueSet.add(part);
+    });
+  });
+
+  // 期間中の返品率平均
+  const ret7Vals = inRange.map(r => parsePct(r[2])).filter(v => v != null);
+  const ret30Vals = inRange.map(r => parsePct(r[3])).filter(v => v != null);
+  const avg = arr => arr.length > 0 ? arr.reduce((s, x) => s + x, 0) / arr.length : null;
+
+  return {
+    latestScore: latest[1] != null ? parseFloat(latest[1]) : null,
+    latestRow: {
+      date: latest[0] instanceof Date ? Utilities.formatDate(latest[0], 'Asia/Tokyo', 'yyyy-MM-dd') : String(latest[0]).substring(0, 10),
+      score: latest[1],
+      ret7: latest[2],
+      ret30: latest[3],
+      notes: latest[4],
+    },
+    issues: Array.from(issueSet),
+    avgReturn7: avg(ret7Vals),
+    avgReturn30: avg(ret30Vals),
   };
 }
 
@@ -209,13 +296,33 @@ function buildWeeklyPrompt(m) {
     });
   }
 
+  // アカウント健全性（D5 より）
+  const h = m.health || { latestScore: null, issues: [], avgReturn7: null, avgReturn30: null, latestRow: null };
+  s += '\n## 🏥 アカウント健全性（今週の状態）\n\n';
+  if (h.latestScore == null && !h.latestRow) {
+    s += '- ログ未取得\n';
+  } else {
+    const score = h.latestScore != null ? h.latestScore : '-';
+    const ret7 = h.avgReturn7 != null ? fmtP(h.avgReturn7, 2) : (h.latestRow ? h.latestRow.ret7 : '-');
+    const ret30 = h.avgReturn30 != null ? fmtP(h.avgReturn30, 2) : (h.latestRow ? h.latestRow.ret30 : '-');
+    s += '- 最新スコア: ' + score + ' / 100\n';
+    s += '- 直近7日返品率: ' + ret7 + ' / 直近30日返品率: ' + ret30 + '\n';
+    if (h.issues && h.issues.length > 0) {
+      s += '- 期間中に記録された注意点（重複排除）:\n';
+      h.issues.forEach(i => { s += '  - ' + i + '\n'; });
+    } else {
+      s += '- 期間中の注意事項: 特になし\n';
+    }
+  }
+
   s += '\n---\n\n';
   s += '上記データを踏まえ、以下の構成でMarkdownレポートを出力してください。\n\n';
   s += '## 1. 今週のハイライト\n（売上・利益・広告効率の主要3つを1〜2行で）\n\n';
   s += '## 2. 良かった点 / 課題\n（箇条書きそれぞれ2〜4点）\n\n';
   s += '## 3. 商品別アクション（TOP3）\n（ASIN/商品名・状況・推奨アクション・優先度A/B/C）\n\n';
   s += '## 4. 広告配分の提案\n（ACOS/ROAS/オーガニック比率の観点で、増減すべきASIN・キャンペーン方針）\n\n';
-  s += '## 5. 来週の優先タスク\n（チェックリスト形式・5件以内）\n';
+  s += '## 5. アカウント健全性の評価\n（スコア・返品率・注意点を踏まえた状態診断と対応要否。即対応/様子見/問題なし のいずれか + 具体策）\n\n';
+  s += '## 6. 来週の優先タスク\n（チェックリスト形式・5件以内）\n';
   return s;
 }
 
