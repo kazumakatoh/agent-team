@@ -418,3 +418,110 @@ function debugInventoryRaw() {
     Logger.log('[' + i + '] ' + JSON.stringify(s, null, 2));
   });
 }
+
+// ==========================================================
+//  長期在庫リスク（271日以上・AIS 追加保管手数料対象）
+// ==========================================================
+
+/**
+ * GET_FBA_INVENTORY_PLANNING_DATA レポートから長期在庫（271日以上）の情報を取得
+ *
+ * @returns {Object} {
+ *   totalSkus: 長期在庫を抱えるSKU数,
+ *   totalUnits: 対象数量合計,
+ *   estimatedFee: 推定AIS追加手数料（円）,
+ *   items: [{ sku, asin, name, qty271, qty365, qtyTotal, fee }, ...] （手数料降順）
+ * }
+ */
+function fetchLongTermInventoryRisk() {
+  const t0 = Date.now();
+  Logger.log('===== 長期在庫リスク取得 開始 =====');
+
+  let content;
+  try {
+    content = fetchReport('GET_FBA_INVENTORY_PLANNING_DATA');
+  } catch (e) {
+    Logger.log('❌ GET_FBA_INVENTORY_PLANNING_DATA 取得失敗: ' + e.message);
+    return { totalSkus: 0, totalUnits: 0, estimatedFee: 0, items: [] };
+  }
+
+  const rows = parseTsv(content);
+  if (rows.length <= 1) {
+    Logger.log('⚠️ データなし');
+    return { totalSkus: 0, totalUnits: 0, estimatedFee: 0, items: [] };
+  }
+
+  const headers = rows[0];
+  const colIndex = {};
+  headers.forEach((h, i) => { colIndex[h.trim().toLowerCase().replace(/[\s-]/g, '_')] = i; });
+
+  const skuCol = findCol(colIndex, ['sku', 'seller_sku']);
+  const asinCol = findCol(colIndex, ['asin']);
+  const nameCol = findCol(colIndex, ['product_name', 'product']);
+  // 271〜365日 / 365日超 の数量
+  const age271Col = findCol(colIndex, ['inv_age_271_to_365_days', 'aged_271_365_days', 'inv_age_271_365_days']);
+  const age365Col = findCol(colIndex, ['inv_age_365_plus_days', 'aged_365_plus_days']);
+  // AIS（Aged Inventory Surcharge）推定手数料
+  const fee271Col = findCol(colIndex, ['estimated_ais_271_to_365_days']);
+  const fee365Col = findCol(colIndex, ['estimated_ais_365_plus_days']);
+
+  Logger.log('カラム: sku=' + skuCol + ', asin=' + asinCol + ', age271=' + age271Col +
+             ', age365=' + age365Col + ', fee271=' + fee271Col + ', fee365=' + fee365Col);
+
+  const items = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const qty271 = age271Col !== -1 ? (parseInt(row[age271Col]) || 0) : 0;
+    const qty365 = age365Col !== -1 ? (parseInt(row[age365Col]) || 0) : 0;
+    const fee271 = fee271Col !== -1 ? (parseFloat(row[fee271Col]) || 0) : 0;
+    const fee365 = fee365Col !== -1 ? (parseFloat(row[fee365Col]) || 0) : 0;
+    const qtyTotal = qty271 + qty365;
+    const feeTotal = fee271 + fee365;
+
+    if (qtyTotal > 0 || feeTotal > 0) {
+      items.push({
+        sku: skuCol !== -1 ? String(row[skuCol] || '').trim() : '',
+        asin: asinCol !== -1 ? String(row[asinCol] || '').trim() : '',
+        name: nameCol !== -1 ? String(row[nameCol] || '').trim() : '',
+        qty271: qty271,
+        qty365: qty365,
+        qtyTotal: qtyTotal,
+        fee: feeTotal,
+      });
+    }
+  }
+
+  // 手数料降順でソート
+  items.sort((a, b) => b.fee - a.fee);
+
+  const totalUnits = items.reduce((s, x) => s + x.qtyTotal, 0);
+  const estimatedFee = items.reduce((s, x) => s + x.fee, 0);
+
+  Logger.log('✅ 対象SKU: ' + items.length + ' 件 / 対象数量: ' + totalUnits +
+             ' / 推定月次手数料: ¥' + Math.round(estimatedFee).toLocaleString() +
+             ' (' + (Date.now() - t0) + 'ms)');
+
+  return {
+    totalSkus: items.length,
+    totalUnits: totalUnits,
+    estimatedFee: estimatedFee,
+    items: items,
+  };
+}
+
+/**
+ * テスト: 長期在庫リスクを取得してログ出力のみ
+ */
+function testLongTermInventoryRisk() {
+  const risk = fetchLongTermInventoryRisk();
+  Logger.log('===== 結果サマリ =====');
+  Logger.log('対象SKU: ' + risk.totalSkus + ' / 対象数量: ' + risk.totalUnits +
+             ' / 推定手数料: ¥' + Math.round(risk.estimatedFee).toLocaleString());
+  Logger.log('--- TOP10（手数料順） ---');
+  risk.items.slice(0, 10).forEach((x, i) => {
+    Logger.log((i + 1) + '. ' + x.sku + ' / ' + x.asin + ' / ' +
+               (x.name || '').substring(0, 30) +
+               ' / 271-365: ' + x.qty271 + ' / 365+: ' + x.qty365 +
+               ' / 推定: ¥' + Math.round(x.fee).toLocaleString());
+  });
+}

@@ -134,6 +134,14 @@ function collectMonthlyMetrics() {
     return c;
   }).sort((a, b) => b.sales - a.sales);
 
+  // 長期在庫リスク（271日以上・AIS追加保管手数料対象）
+  let longTermInventory = { totalSkus: 0, totalUnits: 0, estimatedFee: 0, items: [] };
+  try {
+    longTermInventory = fetchLongTermInventoryRisk();
+  } catch (e) {
+    Logger.log('⚠️ 長期在庫リスク取得失敗（レポートをスキップ）: ' + e.message);
+  }
+
   return {
     periods,
     lastMonth: last,
@@ -143,6 +151,7 @@ function collectMonthlyMetrics() {
     bottomAsins,
     categories: categoryList,
     activeAsinCount: asinList.length,
+    longTermInventory: longTermInventory,
   };
 }
 
@@ -222,6 +231,24 @@ function buildMonthlyPrompt(m) {
     });
   }
 
+  // 長期在庫リスク（AIS 追加保管手数料）
+  const lti = m.longTermInventory || { totalSkus: 0, totalUnits: 0, estimatedFee: 0, items: [] };
+  s += '\n## 🚨 長期在庫リスク（271日以上・AIS追加保管手数料対象）\n\n';
+  s += '- 対象SKU数: ' + lti.totalSkus + ' 件\n';
+  s += '- 対象数量合計: ' + lti.totalUnits + ' 個\n';
+  s += '- 推定月次追加手数料: ¥' + Math.round(lti.estimatedFee).toLocaleString() + '\n\n';
+  if (lti.items.length > 0) {
+    s += '### 対象SKU TOP10（推定手数料の多い順）\n\n';
+    s += '| SKU | ASIN | 商品名 | 271-365日 | 365日+ | 合計 | 推定手数料/月 |\n|---|---|---|---:|---:|---:|---:|\n';
+    lti.items.slice(0, 10).forEach(it => {
+      s += '| ' + [
+        it.sku, it.asin, (it.name || '').substring(0, 20),
+        it.qty271, it.qty365, it.qtyTotal,
+        '¥' + Math.round(it.fee).toLocaleString(),
+      ].join(' | ') + ' |\n';
+    });
+  }
+
   s += '\n---\n\n';
   s += '上記の数値を踏まえ、以下の構成で戦略レポートをMarkdownで作成してください。\n\n';
   s += '## 1. エグゼクティブサマリー\n';
@@ -236,7 +263,11 @@ function buildMonthlyPrompt(m) {
   s += '（赤字商品の扱い、カテゴリ別の投資判断。「いつまでに・どうする」を明示）\n\n';
   s += '## 6. 来月の重点タスク（優先度付き）\n';
   s += '（A: 今週中 / B: 今月中 / C: 四半期内 の3ランクで5〜8件）\n\n';
-  s += '## 7. 経営上のリスク / 要注意点\n';
+  s += '## 7. 長期在庫（271日以上）の処分プラン\n';
+  s += '（AIS追加手数料を抑えるため、対象SKUごとに「値下げ販売」「バンドル化」「破棄(Removal Order)」のどれを選ぶか。' +
+       '各SKUについて「対応方法・目標期限・見込み回収額 vs 破棄コスト」を提示すること。' +
+       '推定月次追加手数料を抑える観点で優先順位を付ける）\n\n';
+  s += '## 8. 経営上のリスク / 要注意点\n';
   s += '（在庫・競合・規約・アカウント健全性の観点で懸念事項）\n';
   return s;
 }
