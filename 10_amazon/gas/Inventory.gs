@@ -461,22 +461,31 @@ function fetchLongTermInventoryRisk() {
   // 271〜365日 / 365日超 の数量
   const age271Col = findCol(colIndex, ['inv_age_271_to_365_days', 'aged_271_365_days', 'inv_age_271_365_days']);
   const age365Col = findCol(colIndex, ['inv_age_365_plus_days', 'aged_365_plus_days']);
-  // AIS（Aged Inventory Surcharge）推定手数料
-  const fee271Col = findCol(colIndex, ['estimated_ais_271_to_365_days']);
+  // AIS（Aged Inventory Surcharge）推定手数料（JP は 30日刻みで分割）
+  const fee271_300Col = findCol(colIndex, ['estimated_ais_271_300_days', 'estimated_ais_271_to_300_days']);
+  const fee301_330Col = findCol(colIndex, ['estimated_ais_301_330_days', 'estimated_ais_301_to_330_days']);
+  const fee331_365Col = findCol(colIndex, ['estimated_ais_331_365_days', 'estimated_ais_331_to_365_days', 'estimated_ais_271_to_365_days']);
   const fee365Col = findCol(colIndex, ['estimated_ais_365_plus_days']);
+  // 通常月次保管料（AIS抜き）
+  const storageCostCol = findCol(colIndex, ['estimated_storage_cost_next_month']);
 
   Logger.log('カラム: sku=' + skuCol + ', asin=' + asinCol + ', age271=' + age271Col +
-             ', age365=' + age365Col + ', fee271=' + fee271Col + ', fee365=' + fee365Col);
+             ', age365=' + age365Col + ', fee271-300=' + fee271_300Col +
+             ', fee301-330=' + fee301_330Col + ', fee331-365=' + fee331_365Col +
+             ', fee365+=' + fee365Col + ', storage=' + storageCostCol);
 
   const items = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     const qty271 = age271Col !== -1 ? (parseInt(row[age271Col]) || 0) : 0;
     const qty365 = age365Col !== -1 ? (parseInt(row[age365Col]) || 0) : 0;
-    const fee271 = fee271Col !== -1 ? (parseFloat(row[fee271Col]) || 0) : 0;
+    const fee271_300 = fee271_300Col !== -1 ? (parseFloat(row[fee271_300Col]) || 0) : 0;
+    const fee301_330 = fee301_330Col !== -1 ? (parseFloat(row[fee301_330Col]) || 0) : 0;
+    const fee331_365 = fee331_365Col !== -1 ? (parseFloat(row[fee331_365Col]) || 0) : 0;
     const fee365 = fee365Col !== -1 ? (parseFloat(row[fee365Col]) || 0) : 0;
+    const storageCost = storageCostCol !== -1 ? (parseFloat(row[storageCostCol]) || 0) : 0;
     const qtyTotal = qty271 + qty365;
-    const feeTotal = fee271 + fee365;
+    const feeTotal = fee271_300 + fee301_330 + fee331_365 + fee365;
 
     if (qtyTotal > 0 || feeTotal > 0) {
       items.push({
@@ -487,6 +496,7 @@ function fetchLongTermInventoryRisk() {
         qty365: qty365,
         qtyTotal: qtyTotal,
         fee: feeTotal,
+        storageCost: storageCost,
       });
     }
   }
