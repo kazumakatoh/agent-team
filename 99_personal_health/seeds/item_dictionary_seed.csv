@@ -1,0 +1,47 @@
+item_code,canonical_name,aliases,category,risk_link,unit_canonical,ref_low_default,ref_high_default,description,status
+total_cholesterol,総コレステロール,T-Cho|総コレ|TC,脂質,心疾患/脳血管疾患,mg/dL,140,219,血中コレステロール総量,confirmed
+hdl,HDLコレステロール,HDL-C|善玉コレステロール,脂質,心疾患/脳血管疾患,mg/dL,40,,動脈硬化を抑える善玉,confirmed
+ldl,LDLコレステロール,LDL-C|悪玉コレステロール,脂質,心疾患/脳血管疾患,mg/dL,,119,動脈硬化リスクの主要指標,confirmed
+triglycerides,中性脂肪,TG|トリグリセリド,脂質,心疾患/糖代謝,mg/dL,,149,食後上昇しやすい,confirmed
+non_hdl,Non-HDLコレステロール,Non-HDL,脂質,心疾患/脳血管疾患,mg/dL,,149,総コレ-HDLで動脈硬化総合指標,confirmed
+lh_ratio,LH比,LDL/HDL比,脂質,心疾患/脳血管疾患,,,2.0,LDL÷HDL 動脈硬化リスク,confirmed
+wbc,白血球数,WBC,血液,感染症/炎症/血液疾患,/μL,3300,8600,炎症や感染の指標,confirmed
+rbc,赤血球数,RBC,血液,貧血/多血症,万/μL,400,539,酸素運搬の指標,confirmed
+hgb,ヘモグロビン,Hb|ヘモグロビン濃度,血液,貧血,g/dL,13.7,16.8,鉄欠乏性貧血の主指標,confirmed
+hct,ヘマトクリット,Ht|ヘマトクリット値,血液,貧血/脱水,%,40.7,50.1,血液中の赤血球容積比,confirmed
+plt,血小板数,PLT,血液,出血/血栓,万/μL,15.8,34.8,止血機能の指標,confirmed
+mcv,平均赤血球容積,MCV,血液,貧血鑑別,fL,83.6,98.2,小球性/大球性貧血の鑑別,confirmed
+mch,平均赤血球ヘモグロビン量,MCH,血液,貧血鑑別,pg,27.5,33.2,赤血球1個あたりのHb量,confirmed
+mchc,平均赤血球ヘモグロビン濃度,MCHC,血液,貧血鑑別,%,31.7,35.3,赤血球の濃さ,confirmed
+vc,肺活量,VC,肺機能,呼吸器疾患,L,,,肺の総容量の指標,confirmed
+vc_pct,%肺活量,%VC|パーセント肺活量,肺機能,拘束性換気障害,%,80,,80%未満は拘束性障害疑い,confirmed
+fev1,1秒量,FEV1,肺機能,COPD/喘息,L,,,1秒間に吐ける息の量,confirmed
+fev1_ratio,1秒率,FEV1/FVC|FEV1.0%,肺機能,COPD,%,70,,70%未満は閉塞性障害疑い,confirmed
+fev1_pct,%1秒量,%FEV1.0,肺機能,COPD重症度,%,80,,予測値に対する比率,confirmed
+hba1c,HbA1c,HbA1c(NGSP)|ヘモグロビンA1c,糖代謝,糖尿病/心疾患/膵臓がん,%,4.6,5.9,過去1〜2ヶ月の平均血糖,confirmed
+fbg,空腹時血糖,FBG|FPG|空腹時血糖値,糖代謝,糖尿病,mg/dL,70,99,8時間以上絶食後の血糖,confirmed
+rbg,随時血糖,RBG,糖代謝,糖尿病,mg/dL,,139,食事時間に関係なく測定,confirmed
+ast,AST(GOT),AST|GOT,肝機能,肝疾患/心筋梗塞,U/L,10,30,肝細胞障害の指標,confirmed
+alt,ALT(GPT),ALT|GPT,肝機能,肝疾患/脂肪肝,U/L,7,30,肝臓特異的な逸脱酵素,confirmed
+gamma_gtp,γ-GTP,γGTP|ガンマGTP|GGT,肝機能,アルコール性肝障害/胆道,U/L,,50,アルコール影響を受けやすい,confirmed
+alp,ALP,アルカリフォスファターゼ,肝機能,胆道/骨疾患,U/L,38,113,胆汁うっ滞や骨代謝,confirmed
+t_bil,総ビリルビン,T-Bil,肝機能,肝胆道,mg/dL,0.4,1.5,黄疸の指標,confirmed
+tp,総蛋白,TP,肝機能,栄養/肝腎,g/dL,6.6,8.1,血中タンパク総量,confirmed
+alb,アルブミン,Alb,肝機能,栄養/肝機能,g/dL,4.1,5.1,血中タンパクの主成分,confirmed
+bun,尿素窒素,BUN|尿素チッ素,腎機能,腎機能/脱水,mg/dL,8,20,腎排泄能の指標,confirmed
+cre,クレアチニン,Cre|Cr,腎機能,腎機能,mg/dL,0.65,1.07,筋肉由来の老廃物,confirmed
+egfr,eGFR,推算糸球体濾過量,腎機能,慢性腎臓病,mL/min/1.73m2,60,,腎機能の総合指標,confirmed
+ua,尿酸,UA,腎機能,痛風/メタボ,mg/dL,3.7,7.0,高値で痛風リスク,confirmed
+sbp,収縮期血圧,SBP|最高血圧|上の血圧,血圧,高血圧/心疾患/脳血管疾患,mmHg,,129,降圧目標 130未満,confirmed
+dbp,拡張期血圧,DBP|最低血圧|下の血圧,血圧,高血圧/心疾患/脳血管疾患,mmHg,,84,降圧目標 80未満,confirmed
+weight,体重,WT,身体計測,肥満/メタボ,kg,,,,confirmed
+bmi,BMI,体格指数,身体計測,肥満/メタボ,,18.5,24.9,体重kg÷(身長m)²,confirmed
+waist,腹囲,腹回り|ウエスト,身体計測,メタボリックシンドローム,cm,,84,男性85cm未満が目標,confirmed
+total_testosterone,総テストステロン,T-Test|総テスト,ホルモン,男性更年期/QOL,ng/mL,2.5,11.0,加齢で低下,confirmed
+free_testosterone,遊離テストステロン,FT|フリーテスト,ホルモン,男性更年期/QOL,pg/mL,8.5,27.9,生理活性のある型,confirmed
+shbg,SHBG,性ホルモン結合グロブリン,ホルモン,テストステロン代謝,nmol/L,11,71,テストステロン結合タンパク,confirmed
+dhea_s,DHEA-S,DHEAサルフェート,ホルモン,副腎機能/抗加齢,μg/dL,80,560,加齢とともに低下,confirmed
+ca19_9,CA19-9,シーエー19-9,腫瘍マーカー,膵臓がん/胆道,U/mL,,37,膵がんスクリーニング,confirmed
+afp,AFP,αフェトプロテイン,腫瘍マーカー,肝臓がん,ng/mL,,10,肝がんスクリーニング,confirmed
+psa,PSA,前立腺特異抗原,腫瘍マーカー,前立腺がん,ng/mL,,4.0,前立腺がんスクリーニング,confirmed
+cea,CEA,癌胎児性抗原,腫瘍マーカー,大腸/胃/肺がん,ng/mL,,5.0,複数臓器のがん指標,confirmed
