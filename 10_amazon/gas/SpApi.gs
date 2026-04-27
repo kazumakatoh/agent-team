@@ -13,7 +13,8 @@
  * @param {Object} [body] - リクエストボディ
  * @returns {Object} レスポンスデータ
  */
-function callSpApi(method, path, queryParams, body) {
+function callSpApi(method, path, queryParams, body, retryAttempt) {
+  retryAttempt = retryAttempt || 0;
   const token = getSpApiAccessToken();
   let url = SP_API_ENDPOINT + path;
 
@@ -41,12 +42,23 @@ function callSpApi(method, path, queryParams, body) {
 
   const response = UrlFetchApp.fetch(url, options);
   const statusCode = response.getResponseCode();
-  const responseBody = JSON.parse(response.getContentText());
+  const responseText = response.getContentText();
+  let responseBody;
+  try { responseBody = JSON.parse(responseText); } catch (e) { responseBody = { raw: responseText }; }
 
-  if (statusCode === 429) {
-    // レート制限: 2秒待ってリトライ
-    Utilities.sleep(2000);
-    return callSpApi(method, path, queryParams, body);
+  // QuotaExceeded（帯域・スロットリング）の文言検知
+  const lowerBody = (responseText || '').toLowerCase();
+  const isQuotaErr = lowerBody.indexOf('quotaexceeded') >= 0
+                     || lowerBody.indexOf('bandwidth') >= 0
+                     || lowerBody.indexOf('帯域') >= 0;
+
+  // 429 / 503 / Quota 系は指数バックオフで最大4回リトライ
+  if ((statusCode === 429 || statusCode === 503 || isQuotaErr) && retryAttempt < 4) {
+    const waitMs = 2000 * Math.pow(2, retryAttempt); // 2s → 4s → 8s → 16s
+    Logger.log('⏳ SP-API throttled (status=' + statusCode + ', quota=' + isQuotaErr +
+               '). ' + waitMs + 'ms 待機後リトライ ' + (retryAttempt + 1) + '/4 …');
+    Utilities.sleep(waitMs);
+    return callSpApi(method, path, queryParams, body, retryAttempt + 1);
   }
 
   if (statusCode < 200 || statusCode >= 300) {

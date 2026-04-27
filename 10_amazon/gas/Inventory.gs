@@ -238,7 +238,8 @@ function fetchInventoryData() {
     // nextToken は payload ではなくルート直下の pagination にある
     nextToken = (res.pagination && res.pagination.nextToken) || null;
     page++;
-    if (nextToken) Utilities.sleep(500);
+    // ページング間隔: 1.5秒（SP-API レート制限 2req/sec の安全圏 + 並行トラフィック耐性）
+    if (nextToken) Utilities.sleep(1500);
   } while (nextToken && page < maxPages);
 
   Logger.log('在庫API取得: ' + all.length + ' 件（' + page + ' ページ）');
