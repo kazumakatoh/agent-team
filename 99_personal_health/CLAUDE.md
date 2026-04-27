@@ -38,11 +38,13 @@
 ## 主要ファイル
 | ファイル | 用途 |
 |---|---|
-| `DESIGN.md` | 完成イメージ・設計書（本プロジェクトの正） |
-| `data_model.md` | Sheets列設計・項目辞書仕様（フェーズ1で作成） |
-| `analysis_templates/` | 健診サマリー・月次・四半期テンプレート（フェーズ1で作成） |
-| `exam_protocols.md` | 男性がんTOP5＋心血管・脳血管の予防検査プロトコル |
-| `roadmap.md` | フェーズ別実装計画 |
+| `DESIGN.md` | 完成イメージ・設計書（**v0.3 確定**） |
+| `exam_protocols.md` | **予防検査ダッシュボード＋過去履歴入力欄＋部位別プロトコル**（既存） |
+| `data_model.md` | Sheets列設計・項目辞書仕様（フェーズ1Aで作成予定） |
+| `analysis_templates/annual_review.md` | 年次健診サマリーテンプレ（フェーズ1A） |
+| `analysis_templates/monthly_vitals.md` | 月次バイタルテンプレ（フェーズ1A） |
+| `analysis_templates/quarterly_review.md` | 四半期テンプレ（フェーズ1A） |
+| `analysis_templates/testosterone_review.md` | テストステロン専用テンプレ（フェーズ1A） |
 
 ## 参照すべきコンテキスト
 - `../COMPANY_CONTEXT.md` - 加藤社長の年齢・基本情報
