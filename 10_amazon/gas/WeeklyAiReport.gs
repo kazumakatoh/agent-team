@@ -346,7 +346,9 @@ function buildWeeklyPrompt(m) {
 
   s += '\n---\n\n';
   s += '上記データを踏まえ、以下の構成でMarkdownレポートを出力してください。\n\n';
-  s += '## 1. 今週のハイライト\n（売上・利益・広告効率の主要3つを1〜2行で）\n\n';
+  s += '## 1. 今週のハイライト\n';
+  s += '（売上・利益・広告費の3点について、**「今週 / 先週比 / 当月累計」を必ず1行で併記** してください。例: ' +
+       '「売上: 今週¥X (先週比+Y%) / 当月累計¥Z」）\n\n';
   s += '## 2. 良かった点 / 課題\n（箇条書きそれぞれ2〜4点）\n\n';
   s += '## 3. 商品別アクション（TOP3）\n（ASIN/商品名・状況・推奨アクション・優先度A/B/C）\n\n';
   s += '## 4. 広告配分の提案\n（ACOS/ROAS/オーガニック比率の観点で、増減すべきASIN・キャンペーン方針）\n\n';
@@ -361,23 +363,38 @@ function buildWeeklyPrompt(m) {
 function sendWeeklyMail(metrics, aiBody) {
   const to = getCredential('GMAIL_TO');
   const period = metrics.periods.thisWeek;
+  const mtdPeriod = metrics.periods.mtd;
+  const mtd = metrics.mtd;
   const subject = '【Amazon週次レポート】' + period.start + '〜' + period.end +
     '（売上 ' + Math.round(metrics.thisWeek.sales).toLocaleString() + '円）';
 
-  const summaryText =
-    '■ 集計期間: ' + period.start + ' 〜 ' + period.end + '\n' +
-    '■ 売上: ' + Math.round(metrics.thisWeek.sales).toLocaleString() + ' 円\n' +
-    '■ 利益: ' + Math.round(metrics.thisWeek.profit).toLocaleString() + ' 円' +
-    ' (利益率 ' + (metrics.thisWeek.profitMargin * 100).toFixed(1) + '%)\n' +
-    '■ 広告費: ' + Math.round(metrics.thisWeek.adCost).toLocaleString() + ' 円' +
-    ' (TACOS ' + (metrics.thisWeek.tacos * 100).toFixed(1) + '%)\n\n' +
-    '------ Claude AI 改善提案 ------\n\n' + aiBody +
+  const fmtY = n => Math.round(n).toLocaleString() + ' 円';
+  const dPct = (a, b) => b > 0 ? (((a - b) / b) * 100).toFixed(1) + '%' : '-';
+  const t = metrics.thisWeek, l = metrics.lastWeek;
+
+  let summaryText =
+    '■ 集計期間（今週）: ' + period.start + ' 〜 ' + period.end + '\n' +
+    '■ 売上: ' + fmtY(t.sales) + '\n' +
+    '■ 利益: ' + fmtY(t.profit) + ' (利益率 ' + (t.profitMargin * 100).toFixed(1) + '%)\n' +
+    '■ 広告費: ' + fmtY(t.adCost) + ' (TACOS ' + (t.tacos * 100).toFixed(1) + '%)\n';
+
+  if (mtd && mtdPeriod) {
+    summaryText +=
+      '\n● 主要3指標 (今週 / 先週 / 先週比 / 当月累計)\n' +
+      '  集計期間（当月累計）: ' + mtdPeriod.start + ' 〜 ' + mtdPeriod.end + '\n' +
+      '  売上 : ' + fmtY(t.sales) + ' / ' + fmtY(l.sales) + ' / ' + dPct(t.sales, l.sales) + ' / ' + fmtY(mtd.sales) + '\n' +
+      '  利益 : ' + fmtY(t.profit) + ' / ' + fmtY(l.profit) + ' / ' + dPct(t.profit, l.profit) + ' / ' + fmtY(mtd.profit) + '\n' +
+      '  広告費: ' + fmtY(t.adCost) + ' / ' + fmtY(l.adCost) + ' / ' + dPct(t.adCost, l.adCost) + ' / ' + fmtY(mtd.adCost) + '\n';
+  }
+
+  summaryText +=
+    '\n------ Claude AI 改善提案 ------\n\n' + aiBody +
     '\n\n--\nAmazon Dashboard 自動配信（' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd HH:mm') + '）';
 
   const htmlBody = '<pre style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; ' +
     'white-space: pre-wrap; line-height: 1.6;">' + escapeHtml(summaryText) + '</pre>';
 
-  GmailApp.sendEmail(to, subject, summaryText, { htmlBody: htmlBody, name: 'Amazon Dashboard' });
+  GmailApp.sendEmail(to, subject, summaryText, { htmlBody: htmlBody, name: 'Amazon Dashboard', charset: 'UTF-8' });
   Logger.log('📧 Gmail送信完了 → ' + to);
 }
 
