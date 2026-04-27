@@ -114,6 +114,14 @@ function collectWeeklyMetrics() {
   const topAsins = asinList.slice(0, WEEKLY_TOP_N);
   const bottomAsins = asinList.filter(a => a.profit < 0).slice(0, WEEKLY_TOP_N);
 
+  // 当月累計（MTD）= 今月1日 〜 昨日
+  const mtdStart = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
+  const mtdEnd = fmt(thisEnd);
+  const mtdFiltered = dailyData.filter(d => d.date >= mtdStart && d.date <= mtdEnd);
+  const mtdExp = aggregateExpenses(allExpenses, mtdStart, mtdEnd);
+  const mtdSummary = summarizePeriod(mtdFiltered, mtdExp);
+  const mtdPeriod = { start: mtdStart, end: mtdEnd };
+
   // アカウント健全性ログ（D5）を直近7日分だけ読み取り
   let health = { latestScore: null, latestRow: null, issues: [], avgReturn7: null, avgReturn30: null };
   try {
@@ -123,9 +131,10 @@ function collectWeeklyMetrics() {
   }
 
   return {
-    periods,
+    periods: Object.assign({}, periods, { mtd: mtdPeriod }),
     thisWeek: thisSummary,
     lastWeek: lastSummary,
+    mtd: mtdSummary,
     topAsins,
     bottomAsins,
     activeAsinCount: asinList.length,
@@ -252,7 +261,27 @@ function buildWeeklyPrompt(m) {
   s += '## 期間\n';
   s += '- 今週: ' + m.periods.thisWeek.start + ' 〜 ' + m.periods.thisWeek.end + '\n';
   s += '- 前週: ' + m.periods.lastWeek.start + ' 〜 ' + m.periods.lastWeek.end + '\n';
+  if (m.periods.mtd) {
+    s += '- 当月累計: ' + m.periods.mtd.start + ' 〜 ' + m.periods.mtd.end + '\n';
+  }
   s += '- アクティブASIN: ' + m.activeAsinCount + '\n\n';
+
+  // 売上 / 利益 / 広告費 — 今週・先週・先週比・当月累計
+  if (m.mtd) {
+    s += '## 売上・利益・広告費 — 主要指標サマリー\n\n';
+    s += '| 指標 | 今週 | 先週 | 先週比 | 当月累計 |\n|---|---:|---:|---:|---:|\n';
+    const focus = [
+      ['売上',   t.sales,  l.sales,  m.mtd.sales],
+      ['利益（広告後）', t.profit, l.profit, m.mtd.profit],
+      ['広告費', t.adCost, l.adCost, m.mtd.adCost],
+    ];
+    focus.forEach(r => {
+      s += '| ' + [
+        r[0], fmtN(r[1]), fmtN(r[2]), dPct(r[1], r[2]), fmtN(r[3]),
+      ].join(' | ') + ' |\n';
+    });
+    s += '\n';
+  }
 
   s += '## 全体KPI（今週 vs 前週）\n\n';
   s += '| 指標 | 今週 | 前週 | 前週比 |\n|---|---:|---:|---:|\n';
