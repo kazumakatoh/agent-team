@@ -107,8 +107,11 @@ function fetchOrdersByReport(startDate, endDate) {
   }
 
   if (dataRows.length > 0) {
+    // 同期間の既存行を削除してから追記（冪等性確保・重複防止）
+    const dates = new Set(dataRows.map(r => r[0]));
+    const removed = deleteD1RowsForDates(dates);
     appendRows(SHEET_NAMES.D1_DAILY, dataRows);
-    Logger.log('✅ D1 日次データ: ' + dataRows.length + ' 行書き込み完了');
+    Logger.log('✅ D1 日次データ: ' + dataRows.length + ' 行書き込み（既存 ' + removed + ' 行削除して上書き）');
   }
 
   // 新規ASIN追加
@@ -763,4 +766,95 @@ function fetchInventory() {
   });
 
   Logger.log('===== 完了 =====');
+}
+
+// ==========================================================
+//  D1 日次データの重複削除ヘルパー
+// ==========================================================
+
+/**
+ * D1 シートから指定日付集合に該当する行を全て削除
+ * fetchOrdersByReport が再追記する前のクリア処理に使う。
+ *
+ * @param {Set<string>} datesSet  'YYYY-MM-DD' の Set
+ * @returns {number} 削除した行数
+ */
+function deleteD1RowsForDates(datesSet) {
+  const sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return 0;
+
+  const dateValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  let deleted = 0;
+  // 下から削除（インデックスずれ回避）
+  for (let i = dateValues.length - 1; i >= 0; i--) {
+    const v = dateValues[i][0];
+    const dateStr = (v instanceof Date)
+      ? Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd')
+      : String(v).substring(0, 10);
+    if (datesSet.has(dateStr)) {
+      sheet.deleteRow(i + 2);
+      deleted++;
+    }
+  }
+  return deleted;
+}
+
+/**
+ * D1 全範囲を走査し「日付×ASIN」が重複している行を統合する。
+ * 統合方法:
+ *   - 数値セル → max（過去の重複は同値、欠落値は他行で補完）
+ *   - 文字セル → 空でない方を優先
+ * 1度だけ実行する用途のクリーンアップ関数。
+ */
+function dedupeDailyData() {
+  const t0 = Date.now();
+  const sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const lastRow = sheet.getLastRow();
+  const lastCol = Math.max(1, sheet.getLastColumn());
+  if (lastRow <= 1) { Logger.log('D1 空'); return; }
+
+  const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const groups = {};
+  const orderedKeys = [];
+
+  for (const row of data) {
+    const v = row[0];
+    const dateStr = (v instanceof Date)
+      ? Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd')
+      : String(v).substring(0, 10);
+    const asin = row[1] || '';
+    if (!dateStr || !asin) continue;
+    const key = dateStr + '_' + asin;
+
+    if (!groups[key]) {
+      groups[key] = row.slice();
+      orderedKeys.push(key);
+    } else {
+      const existing = groups[key];
+      for (let i = 0; i < row.length; i++) {
+        const a = existing[i];
+        const b = row[i];
+        if (typeof b === 'number' && typeof a === 'number') {
+          existing[i] = Math.max(a, b);
+        } else if ((a === '' || a == null) && b) {
+          existing[i] = b;
+        }
+      }
+    }
+  }
+
+  const merged = orderedKeys.map(k => groups[k]);
+  const removed = data.length - merged.length;
+
+  if (removed > 0) {
+    sheet.getRange(2, 1, data.length, lastCol).clearContent();
+    if (merged.length > 0) {
+      sheet.getRange(2, 1, merged.length, lastCol).setValues(merged);
+    }
+    Logger.log('🧹 D1 重複削除: ' + removed + ' 行を削除、' + merged.length +
+               ' 行残し (' + (Date.now() - t0) + 'ms)');
+  } else {
+    Logger.log('重複なし');
+  }
 }
