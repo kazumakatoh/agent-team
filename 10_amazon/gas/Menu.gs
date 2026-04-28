@@ -15,8 +15,9 @@ function onOpen() {
     .addItem('📊 ダッシュボード更新（L1 + L2 + L3）', 'menuRefreshAllDashboards')
     .addItem('📅 日次販売実績シート更新', 'menuRebuildDailySales')
     .addSeparator()
-    .addItem('📦 在庫取得 + アラート', 'menuFetchInventory')
-    .addItem('🔄 外部スプシ 在庫同期', 'menuSyncExternalSheets')
+    .addItem('📦 在庫取得 + 外部スプシ同期（一括）', 'menuFetchInventoryAndSync')
+    .addItem('📦 在庫取得 + アラート（在庫シートのみ）', 'menuFetchInventory')
+    .addItem('🔄 外部スプシ 在庫同期（発注管理表/CF管理のみ）', 'menuSyncExternalSheets')
     .addItem('🎯 Amazon Ads レポート取得（昨日）', 'menuFetchAdsReports')
     .addSeparator()
     .addItem('📈 週次AIレポートを今すぐ送信', 'menuSendWeeklyReport')
@@ -208,6 +209,46 @@ function menuFetchInventory() {
     ss.toast('✅ 在庫取得 + アラート判定 完了', '🚀 Amazon', 5);
   } catch (e) {
     SpreadsheetApp.getUi().alert('エラー', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}
+
+/**
+ * 在庫取得（自動集計の在庫シート更新 + LINEアラート判定）と
+ * 外部スプシ同期（発注管理表F/G/E列 + CF管理）を一括実行
+ */
+function menuFetchInventoryAndSync() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const t0 = Date.now();
+  const errors = [];
+
+  ss.toast('在庫一括処理を開始します（約2分）...', '🚀 Amazon', 180);
+
+  try {
+    ss.toast('[1/2] 在庫取得 + アラート判定中...', '🚀 Amazon', 90);
+    fetchInventoryAndAlert();
+  } catch (e) {
+    errors.push('在庫取得: ' + e.message);
+    Logger.log('❌ 在庫取得失敗: ' + e.message);
+  }
+
+  try {
+    ss.toast('[2/2] 発注管理表/CF管理へ同期中...', '🚀 Amazon', 90);
+    syncInventoryToExternalSheets();
+  } catch (e) {
+    errors.push('外部スプシ同期: ' + e.message);
+    Logger.log('❌ 外部スプシ同期失敗: ' + e.message);
+  }
+
+  const elapsed = Math.round((Date.now() - t0) / 1000);
+  if (errors.length === 0) {
+    ss.toast('✅ 在庫一括処理 完了（' + elapsed + '秒）', '🚀 Amazon', 8);
+  } else {
+    ss.toast('⚠️ ' + errors.length + '件失敗（' + elapsed + '秒） - 詳細は実行ログ', '🚀 Amazon', 12);
+    ui.alert('⚠️ 一部失敗',
+      '失敗ステップ:\n' + errors.map(e => '・' + e).join('\n') +
+      '\n\n成功分は反映済み。失敗分は個別メニューから再実行してください。',
+      ui.ButtonSet.OK);
   }
 }
 

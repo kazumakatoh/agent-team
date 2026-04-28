@@ -44,7 +44,11 @@ function fetchInventoryAndAlert() {
   const inventory = fetchInventoryData();
   if (inventory.length === 0) { Logger.log('在庫データなし'); return; }
 
-  const salesAvg = getRecentDailySalesByAsin(SALES_LOOKBACK_DAYS);
+  // 過去 N 日の日販平均（分母= N日全体・売れなかった日も 0 として算入。
+  // 旧ロジックの getRecentDailySalesByAsin は売れた日のみで割っていたため、
+  // 売れない日があるSKUの平均が過大に見えて残り日数が極端に短く出る不具合があった。
+  // 発注管理表 E列「販売set(1日)」と同じ getSalesAvgByAsin に統一）
+  const salesAvg = getSalesAvgByAsin(SALES_LOOKBACK_DAYS);
 
   // D6 を全削除して最新スナップショットで置換
   const sheet = getOrCreateSheetCompact(D6_INVENTORY, D6_INVENTORY_HEADERS.length, 500);
