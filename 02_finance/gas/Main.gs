@@ -17,7 +17,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('💰 CF管理')
     // メイン: 一括更新
-    .addItem('🚀 最新情報に一括更新（当月）', 'runFullUpdate')
+    .addItem('🚀 最新情報に一括更新（当月＋前月）', 'runFullUpdate')
     .addSeparator()
     // 予定管理
     .addItem('📝 単発予定を登録', 'addPlannedTransaction')
@@ -52,15 +52,17 @@ function onOpen() {
 // ==============================
 
 /**
- * 今日時点の最新情報に全シートを一括更新する
+ * 当月＋前月の最新情報に全シートを一括更新する
  *
- * 処理内容:
- *  1. MFから当月データ取得 → 各Daily_XXXに反映
+ * 処理内容（対象期間: 前月1日 〜 今日）:
+ *  1. MFから入出金取得 → 各Daily_XXXに反映（会計年度をまたぐ場合は自動分割）
  *  2. 全Dailyシートの残高再計算
- *  3. 日別サマリー更新
- *  4. 月別シート更新（今年度）
- *  5. 実口座残高更新（当月のみMF API）
+ *  3. 日別サマリー更新（全期間再描画）
+ *  4. 月別シート更新（前月＋当月）
+ *  5. 実口座残高更新（前月＋当月をMF試算表BSから取得）
  *  6. アラートチェック
+ *
+ * ※ 前月仕訳が当月に追加されるケースに対応するため、前月も再取込する
  */
 function runFullUpdate() {
   const ui = SpreadsheetApp.getUi();
@@ -76,25 +78,42 @@ function runFullUpdate() {
     const today = new Date();
     const year = today.getFullYear();
     const month = today.getMonth() + 1;
-    const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`;
+
+    // 前月の年月を計算（1月実行時は前年12月）
+    let prevYear = year;
+    let prevMonth = month - 1;
+    if (prevMonth === 0) { prevMonth = 12; prevYear--; }
+
+    // 前月1日 〜 今日 の期間
+    const dateFrom = `${prevYear}-${String(prevMonth).padStart(2, '0')}-01`;
     const dateTo = Utilities.formatDate(today, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
 
-    // 1〜3. MFデータ同期（当月）→ 残高再計算 → 日別サマリー
-    //       syncToDaily_が全てを実行（既存MF行を削除してから再挿入するためダブらない）
-    syncToDaily_(dateFrom, dateTo);
+    // 1〜3. MFデータ同期 → 残高再計算 → 日別サマリー
+    //       会計年度をまたぐ場合は分割して取得（splitByFiscalYear_）
+    //       syncToDaily_が期間内の既存MF行を削除してから再挿入するためダブらない
+    const periods = splitByFiscalYear_(dateFrom, dateTo);
+    periods.forEach(p => {
+      Logger.log(`MF同期: ${p.from} 〜 ${p.to}`);
+      syncToDaily_(p.from, p.to);
+    });
 
-    // 4. 月別シート更新（今年度の1月〜現在月）
+    // 4. 月別シート更新（前月〜当月）
     try {
-      updateMonthlySheet(year, 1, year, month);
+      updateMonthlySheet(prevYear, prevMonth, year, month);
     } catch (e) {
       Logger.log(`月別シート更新エラー: ${e.message}`);
     }
 
-    // 5. 実口座残高更新（当月）
+    // 5. 実口座残高更新（前月＋当月）
+    try {
+      updateRealBalanceMonth_(prevYear, prevMonth);
+    } catch (e) {
+      Logger.log(`実口座残高更新エラー（前月）: ${e.message}`);
+    }
     try {
       updateRealBalanceMonth_(year, month);
     } catch (e) {
-      Logger.log(`実口座残高更新エラー: ${e.message}`);
+      Logger.log(`実口座残高更新エラー（当月）: ${e.message}`);
     }
 
     // 6. アラートチェック
@@ -105,13 +124,16 @@ function runFullUpdate() {
 
     const elapsed = Math.round((new Date() - startTime) / 1000);
 
+    const prevLabel = `${prevYear}.${String(prevMonth).padStart(2,'0')}`;
+    const curLabel = `${year}.${String(month).padStart(2,'0')}`;
+
     ui.alert(
-      `✅ 最新情報に更新しました\n\n` +
-      `・MFデータ同期: ${year}年${month}月\n` +
+      `✅ 最新情報に更新しました（当月＋前月）\n\n` +
+      `・MFデータ同期: ${prevLabel} 〜 ${curLabel}\n` +
       `・Daily各口座: 残高再計算\n` +
       `・日別サマリー: 更新\n` +
-      `・月別: ${year}年1月〜${month}月\n` +
-      `・実口座残高: ${year}.${String(month).padStart(2,'0')}` +
+      `・月別: ${prevLabel} 〜 ${curLabel}\n` +
+      `・実口座残高: ${prevLabel} / ${curLabel}` +
       alertMsg +
       `\n\n処理時間: ${elapsed}秒`
     );
