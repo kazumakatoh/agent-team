@@ -195,9 +195,6 @@ function syncToDaily_(dateFrom, dateTo) {
     recalculateBalances_(sheet);
   });
 
-  // 現残高シート更新
-  updateCurrentBalanceSheet_();
-
   // 日別サマリー更新
   updateDailySummary();
 
@@ -356,8 +353,7 @@ function expandPlannedTransactions() {
     if (sheet) recalculateBalances_(sheet);
   });
 
-  // 5. 現残高と日別サマリー更新
-  updateCurrentBalanceSheet_();
+  // 5. 日別サマリー更新
   updateDailySummary();
 
   ui.alert(`✅ 予定を展開しました\n\n・展開件数: ${totalInserted}件`);
@@ -533,8 +529,7 @@ function cleanupAllDailySheets() {
     if (sheet) recalculateBalances_(sheet);
   });
 
-  // 現残高と日別サマリー更新
-  updateCurrentBalanceSheet_();
+  // 日別サマリー更新
   updateDailySummary();
 
   ui.alert(`✅ クリーンアップ完了\n\n合計 ${totalDeleted}行を削除しました。`);

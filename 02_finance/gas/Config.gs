@@ -14,11 +14,10 @@ const CF_CONFIG = {
   SPREADSHEET_ID: '', // 空の場合はアクティブなスプレッドシートを使用
 
   SHEETS: {
-    MONTHLY:     '月別',        // 月次集計（3口座集約）
-    DAILY_SUMMARY: '日別サマリー', // 日別の3口座合計
+    MONTHLY:     '月別',        // 月次集計（口座集約）
+    DAILY_SUMMARY: '日別サマリー', // 日別の口座合計
     INVENTORY:   '在庫残高',     // 在庫残高シート
-    SETTINGS:    '設定',        // カテゴリマスタ・設定
-    CURRENT_BAL: '現残高'       // 各口座の現在残高
+    SETTINGS:    '設定'         // カテゴリマスタ・設定
   },
 
   // ==============================

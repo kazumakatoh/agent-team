@@ -57,11 +57,10 @@ function onOpen() {
  * 処理内容:
  *  1. MFから当月データ取得 → 各Daily_XXXに反映
  *  2. 全Dailyシートの残高再計算
- *  3. 現残高シート更新
- *  4. 日別サマリー更新
- *  5. 月別シート更新（今年度）
- *  6. 実口座残高更新（当月のみMF API）
- *  7. アラートチェック
+ *  3. 日別サマリー更新
+ *  4. 月別シート更新（今年度）
+ *  5. 実口座残高更新（当月のみMF API）
+ *  6. アラートチェック
  */
 function runFullUpdate() {
   const ui = SpreadsheetApp.getUi();
@@ -80,25 +79,25 @@ function runFullUpdate() {
     const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`;
     const dateTo = Utilities.formatDate(today, CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy-MM-dd');
 
-    // 1〜4. MFデータ同期（当月）→ 残高再計算 → 現残高 → 日別サマリー
+    // 1〜3. MFデータ同期（当月）→ 残高再計算 → 日別サマリー
     //       syncToDaily_が全てを実行（既存MF行を削除してから再挿入するためダブらない）
     syncToDaily_(dateFrom, dateTo);
 
-    // 5. 月別シート更新（今年度の1月〜現在月）
+    // 4. 月別シート更新（今年度の1月〜現在月）
     try {
       updateMonthlySheet(year, 1, year, month);
     } catch (e) {
       Logger.log(`月別シート更新エラー: ${e.message}`);
     }
 
-    // 6. 実口座残高更新（当月）
+    // 5. 実口座残高更新（当月）
     try {
       updateRealBalanceMonth_(year, month);
     } catch (e) {
       Logger.log(`実口座残高更新エラー: ${e.message}`);
     }
 
-    // 7. アラートチェック
+    // 6. アラートチェック
     const alerts = checkCashOutRisk();
     const alertMsg = (alerts && alerts.length > 0)
       ? `\n\n⚠️ ${alerts.length}件のアラートがあります`
@@ -112,8 +111,7 @@ function runFullUpdate() {
       `・Daily各口座: 残高再計算\n` +
       `・日別サマリー: 更新\n` +
       `・月別: ${year}年1月〜${month}月\n` +
-      `・実口座残高: ${year}.${String(month).padStart(2,'0')}\n` +
-      `・現残高: 更新` +
+      `・実口座残高: ${year}.${String(month).padStart(2,'0')}` +
       alertMsg +
       `\n\n処理時間: ${elapsed}秒`
     );
@@ -181,48 +179,6 @@ function setupTriggers() {
     '✅ トリガー設定完了\n\n' +
     '・毎朝7時: 全シート一括更新（MF同期+集計+アラート）'
   );
-}
-
-// ==============================
-// 現残高シート更新
-// ==============================
-
-/**
- * 現残高シートを更新する
- */
-function updateCurrentBalanceSheet_() {
-  const ss = getCfSpreadsheet();
-  const sheet = ss.getSheetByName(CF_CONFIG.SHEETS.CURRENT_BAL);
-  if (!sheet) return;
-
-  const now = Utilities.formatDate(new Date(), CF_CONFIG.DISPLAY.TIMEZONE, 'yyyy/MM/dd HH:mm');
-  let row = 2;
-
-  const alertAccounts = CF_CONFIG.ALERT.ALERT_ACCOUNTS || [];
-
-  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
-    const balance = getLatestBalance_(key);
-
-    sheet.getRange(row, 2).setValue(balance).setNumberFormat('#,##0');
-    sheet.getRange(row, 3).setValue(now);
-
-    // ステータス（ALERT_ACCOUNTSに含まれる口座のみアラート判定）
-    if (alertAccounts.indexOf(key) !== -1) {
-      if (balance <= CF_CONFIG.ALERT.DANGER_THRESHOLD) {
-        sheet.getRange(row, 4).setValue('🔴 危険');
-        sheet.getRange(row, 2).setFontColor('#b71c1c');
-      } else if (balance <= CF_CONFIG.ALERT.WARNING_THRESHOLD) {
-        sheet.getRange(row, 4).setValue('🟡 注意');
-        sheet.getRange(row, 2).setFontColor('#f57f17');
-      } else {
-        sheet.getRange(row, 4).setValue('🟢 正常');
-        sheet.getRange(row, 2).setFontColor('#2e7d32');
-      }
-    } else {
-      sheet.getRange(row, 4).setValue('--');
-    }
-    row++;
-  });
 }
 
 // ==============================

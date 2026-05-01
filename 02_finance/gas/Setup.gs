@@ -14,8 +14,7 @@ function runSetup() {
     '以下のシートを作成します:\n\n' +
     '・Daily（日次入出金）\n' +
     '・月別（月次集計）\n' +
-    '・設定（マスタ設定）\n' +
-    '・現残高（各口座の現在残高）\n\n' +
+    '・設定（マスタ設定）\n\n' +
     '既にあるシートはスキップします。',
     ui.ButtonSet.OK_CANCEL
   );
@@ -34,7 +33,6 @@ function runSetup() {
   createRealBalanceSheet_(ss);
   createPlanMasterSheet_(ss);
   createSettingsSheet_(ss);
-  createCurrentBalanceSheet_(ss);
 
   ui.alert('✅ セットアップ完了！\n\n次にメニューから「MF連携開始」を実行してください。');
 }
@@ -560,51 +558,6 @@ function createSettingsSheet_(ss) {
   [5, 10].forEach(row => {
     sheet.getRange(row + 1, 1, 1, 3).setBackground('#e8eaf6').setFontWeight('bold');
   });
-
-  Logger.log(`${name}シート作成完了`);
-}
-
-/**
- * 現残高シートを作成する
- */
-function createCurrentBalanceSheet_(ss) {
-  const name = CF_CONFIG.SHEETS.CURRENT_BAL;
-  let sheet = ss.getSheetByName(name);
-  if (sheet) {
-    Logger.log(`${name}シートは既に存在します。スキップ。`);
-    return;
-  }
-
-  sheet = ss.insertSheet(name);
-
-  const headers = ['口座', '残高', '最終同期', 'ステータス'];
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  sheet.getRange(1, 1, 1, headers.length)
-    .setBackground('#1a73e8').setFontColor('#ffffff').setFontWeight('bold');
-
-  // 口座行
-  let row = 2;
-  Object.entries(CF_CONFIG.ACCOUNTS).forEach(([key, account]) => {
-    sheet.getRange(row, 1).setValue(account.name);
-    sheet.getRange(row, 2).setValue(0).setNumberFormat('#,##0');
-    sheet.getRange(row, 3).setValue('未同期');
-    sheet.getRange(row, 4).setValue('--');
-    row++;
-  });
-
-  // 合計行（口座数に応じてSUM範囲を動的に設定）
-  sheet.getRange(row, 1).setValue('合計').setFontWeight('bold');
-  sheet.getRange(row, 2)
-    .setFormula(`=SUM(B2:B${row - 1})`)
-    .setNumberFormat('#,##0').setFontWeight('bold');
-  sheet.getRange(row, 1, 1, 4).setBackground('#e8eaf6');
-
-  sheet.setColumnWidth(1, 220);
-  sheet.setColumnWidth(2, 130);
-  sheet.setColumnWidth(3, 150);
-  sheet.setColumnWidth(4, 80);
-
-  sheet.setFrozenRows(1);
 
   Logger.log(`${name}シート作成完了`);
 }
