@@ -192,7 +192,8 @@ function syncToDaily_(dateFrom, dateTo) {
       writeTransactionsToSheet_(sheet, txns);
     }
 
-    recalculateBalances_(sheet);
+    // 残高再計算（同期した期間以降のみ。それより前は既に正しい数式が入っている）
+    recalculateBalances_(sheet, periodStart);
   });
 
   // 日別サマリー更新
@@ -572,8 +573,12 @@ function cleanupDailySheet_(sheet) {
  *
  * 異常行の自動クリーンアップ:
  * - 日付なしの行 → 残高をクリア
+ *
+ * @param {Sheet} sheet - 対象Dailyシート
+ * @param {Date} [fromDate] - 指定すると、この日付以降の行のみ数式を再設定する（高速化）
+ *                            指定なしの場合は全期間を再計算する
  */
-function recalculateBalances_(sheet) {
+function recalculateBalances_(sheet, fromDate) {
   const C = CF_CONFIG.DAILY_COLS;
   const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
   const lastRow = sheet.getLastRow();
@@ -606,6 +611,13 @@ function recalculateBalances_(sheet) {
       continue;
     }
 
+    // fromDate指定があり、対象日付より前ならスキップ（数式は既に正しく入っているため再設定不要）
+    // ただし prevBalanceRow は更新しておく（後続行の参照元として）
+    if (fromDate && hasDate && date < fromDate) {
+      prevBalanceRow = currentRow;
+      continue;
+    }
+
     // 日付なしの行は残高をクリア
     if (!hasDate) {
       balanceCell.setValue('');
@@ -626,14 +638,16 @@ function recalculateBalances_(sheet) {
     prevBalanceRow = currentRow;
   }
 
-  // アラート色付け（PayPay 005のみ）
-  applyAlertColors_(sheet);
+  // アラート色付け（fromDate指定時は同範囲のみ）
+  applyAlertColors_(sheet, fromDate);
 }
 
 /**
  * アラート色付け
+ * @param {Sheet} sheet
+ * @param {Date} [fromDate] - 指定するとこの日付以降の行のみ色付けを更新する
  */
-function applyAlertColors_(sheet) {
+function applyAlertColors_(sheet, fromDate) {
   const C = CF_CONFIG.DAILY_COLS;
   const headerRows = CF_CONFIG.DAILY_HEADER_ROWS;
   const lastRow = sheet.getLastRow();
@@ -646,9 +660,16 @@ function applyAlertColors_(sheet) {
   if (alertSheetNames.indexOf(sheet.getName()) === -1) return;
 
   const numRows = lastRow - headerRows;
+  const dates = sheet.getRange(headerRows + 1, C.DATE, numRows, 1).getValues();
   const balances = sheet.getRange(headerRows + 1, C.BALANCE, numRows, 1).getValues();
 
   for (let i = 0; i < numRows; i++) {
+    // fromDate指定がある場合、その日付より前の行はスキップ
+    if (fromDate) {
+      const d = dates[i][0];
+      if (!(d instanceof Date) || d < fromDate) continue;
+    }
+
     const bal = Number(balances[i][0]) || 0;
     if (bal === 0) continue;
 
