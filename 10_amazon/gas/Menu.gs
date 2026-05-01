@@ -16,8 +16,6 @@ function onOpen() {
     .addItem('📅 日次販売実績シート更新', 'menuRebuildDailySales')
     .addSeparator()
     .addItem('📦 在庫取得 + 外部スプシ同期（一括）', 'menuFetchInventoryAndSync')
-    .addItem('📦 在庫取得 + アラート（在庫シートのみ）', 'menuFetchInventory')
-    .addItem('🔄 外部スプシ 在庫同期（発注管理表/CF管理のみ）', 'menuSyncExternalSheets')
     .addItem('🎯 Amazon Ads レポート取得（昨日）', 'menuFetchAdsReports')
     .addSeparator()
     .addItem('📈 週次AIレポートを今すぐ送信', 'menuSendWeeklyReport')
@@ -201,17 +199,6 @@ function menuRebuildDailySales() {
   }
 }
 
-function menuFetchInventory() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.toast('在庫を取得してアラート判定中...', '🚀 Amazon', 60);
-  try {
-    fetchInventoryAndAlert();
-    ss.toast('✅ 在庫取得 + アラート判定 完了', '🚀 Amazon', 5);
-  } catch (e) {
-    SpreadsheetApp.getUi().alert('エラー', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
-
 /**
  * 在庫取得（自動集計の在庫シート更新 + LINEアラート判定）と
  * 外部スプシ同期（発注管理表F/G/E列 + CF管理）を一括実行
@@ -249,17 +236,6 @@ function menuFetchInventoryAndSync() {
       '失敗ステップ:\n' + errors.map(e => '・' + e).join('\n') +
       '\n\n成功分は反映済み。失敗分は個別メニューから再実行してください。',
       ui.ButtonSet.OK);
-  }
-}
-
-function menuSyncExternalSheets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.toast('発注管理表 / CF管理に在庫同期中...', '🚀 Amazon', 120);
-  try {
-    syncInventoryToExternalSheets();
-    ss.toast('✅ 外部スプシ同期完了', '🚀 Amazon', 5);
-  } catch (e) {
-    SpreadsheetApp.getUi().alert('エラー', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 

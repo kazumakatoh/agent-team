@@ -21,7 +21,7 @@
  * ## トリガー: 毎日 AM10:30 (syncInventoryToExternalSheets)
  */
 
-const ORDER_SHEET_NAME = '発注タイミング';
+const ORDER_SHEET_NAME = '在庫一覧';
 const ORDER_SHEET_ASIN_COL = 3;      // C列
 const ORDER_SHEET_TOTAL_COL = 4;     // D列「在庫数」
 const ORDER_SHEET_SALES_COL = 5;     // E列「販売set（1日）」= 過去7日平均販売数
