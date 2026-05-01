@@ -17,7 +17,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('💰 CF管理')
     // メイン: 一括更新
-    .addItem('🚀 最新情報に一括更新', 'runFullUpdate')
+    .addItem('🚀 最新情報に一括更新（当月）', 'runFullUpdate')
     .addSeparator()
     // 予定管理
     .addItem('📝 単発予定を登録', 'addPlannedTransaction')
