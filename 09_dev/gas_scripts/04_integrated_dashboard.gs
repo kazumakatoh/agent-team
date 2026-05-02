@@ -144,8 +144,11 @@ function populateIntegratedDashboard() {
 
   const spot = readSpotForDashboard_(ss);
   const fx = readFXForDashboard_(ss);
+  const spotHist = readSpotMonthlyHistory_(ss);
   const months = generateMonthList_();
-  const currentMonthIdx = findCurrentMonthIndex_(months);
+  const spotCurrentIdx = findCurrentMonthIndex_(months);
+  const fxCurrentIdx = determineFxTargetIdx_(months, spotCurrentIdx);
+  Logger.log(`📍 Spot=${months[spotCurrentIdx].year}/${months[spotCurrentIdx].month}, FX=${months[fxCurrentIdx].year}/${months[fxCurrentIdx].month}`);
 
   let cumulativeDeposits = {};
   try { cumulativeDeposits = getCumulativePrincipalByMonth_(); } catch (e) {}
@@ -155,7 +158,7 @@ function populateIntegratedDashboard() {
     TOTAL_EXPENSE: 11, TOTAL_CUMPROFIT: 12, TOTAL_CUMYIELD: 13,
     SPOT_PRINCIPAL: 16, SPOT_VALUE: 17, SPOT_PROFIT: 18, SPOT_YIELD: 19,
     SPOT_CUMPROFIT: 20, SPOT_CUMYIELD: 21, SPOT_FEE: 22,
-    FX_PRINCIPAL: 25,  // 手入力管理（書き込まない）
+    FX_PRINCIPAL: 25,
     FX_BALANCE: 26, FX_PROFIT: 27, FX_YIELD: 28,
     FX_CUMPROFIT: 29, FX_CUMYIELD: 30,
     FX_TRADES: 31, FX_WINRATE: 32, FX_BREAKEVEN: 33,
@@ -175,10 +178,8 @@ function populateIntegratedDashboard() {
 
   months.forEach((m, idx) => {
     const col = DASH_CONFIG.FIRST_DATA_COL + idx;
-    const isCurrent = (idx === currentMonthIdx);
-    const isPast = (idx < currentMonthIdx);
-
     const monthKey = `${m.year}-${String(m.month).padStart(2, '0')}`;
+
     if (cumulativeDeposits[monthKey] !== undefined) {
       spotPrincipal = cumulativeDeposits[monthKey];
     } else {
@@ -188,55 +189,70 @@ function populateIntegratedDashboard() {
       }
     }
 
-    if (isPast) {
-      const sv = sheet.getRange(ROW.SPOT_VALUE, col).getValue();
-      if (typeof sv === 'number' && sv > 0) prevSpotValue = sv;
-      const fb = sheet.getRange(ROW.FX_BALANCE, col).getValue();
-      if (typeof fb === 'number' && fb > 0) prevFxBalance = fb;
-      const cp = sheet.getRange(ROW.SPOT_CUMPROFIT, col).getValue();
-      if (typeof cp === 'number') cumulativeSpotProfit = cp;
-      const fcp = sheet.getRange(ROW.FX_CUMPROFIT, col).getValue();
-      if (typeof fcp === 'number') cumulativeFxProfit = fcp;
-      const tcp = sheet.getRange(ROW.TOTAL_CUMPROFIT, col).getValue();
-      if (typeof tcp === 'number') cumulativeNet = tcp;
-      cumulativeGrossProfit = cumulativeSpotProfit + cumulativeFxProfit;
-      return;
+    // 初月特例：前月評価額がないので元本ベースで開始
+    if (idx === 0) {
+      prevSpotValue = spotPrincipal;
+      prevFxBalance = fxPrincipal;
     }
 
+    // === Spot ===
     let spotValue, spotProfit, spotYield, spotFee = 0;
-    let fxBalance, fxProfit, fxYield, fxTrades, fxWins, fxLosses, fxWinRate;
-    let fxPF, fxRR, fxDD, fxCost;
+    const spotIsCurrent = (idx === spotCurrentIdx);
+    const spotIsPast = (idx < spotCurrentIdx);
 
-    if (isCurrent) {
+    if (spotIsCurrent) {
       spotValue = spot.totalUSD;
-      spotProfit = spotValue - prevSpotValue;
-      spotYield = spotPrincipal > 0 ? spotProfit / spotPrincipal : 0;
-
-      fxBalance = fx ? fx.balance : prevFxBalance;
-      fxProfit = fxBalance - prevFxBalance;
-      fxYield = fxPrincipal > 0 ? fxProfit / fxPrincipal : 0;
-      fxTrades = fx ? fx.totalTrades : 0;
-      fxWins = fx ? fx.wins : 0;
-      fxLosses = fx ? fx.losses : 0;
-      fxWinRate = fx ? fx.winRate / 100 : 0;
-      fxPF = fx ? fx.profitFactor : null;
-      fxRR = fx ? fx.rrRatio : null;
-      fxDD = fx ? fx.maxDDPct / 100 : null;
-      fxCost = fx ? Math.abs(fx.commission) : null;
+    } else if (spotIsPast) {
+      const histVal = spotHist.values[monthKey];
+      const histPrincipal = spotHist.principals[monthKey];
+      if (typeof histPrincipal === 'number' && histPrincipal > 0) spotPrincipal = histPrincipal;
+      if (typeof histVal === 'number' && histVal > 0) {
+        spotValue = histVal;
+      } else {
+        const sv = sheet.getRange(ROW.SPOT_VALUE, col).getValue();
+        spotValue = (typeof sv === 'number' && sv > 0) ? sv : prevSpotValue;
+      }
     } else {
       spotProfit = prevSpotValue * DASH_ASSUMPTIONS.SPOT_MONTHLY_YIELD;
       spotValue = prevSpotValue + spotProfit;
-      spotYield = spotPrincipal > 0 ? spotProfit / spotPrincipal : 0;
+    }
+    if (spotProfit === undefined) spotProfit = spotValue - prevSpotValue;
+    spotYield = spotPrincipal > 0 ? spotProfit / spotPrincipal : 0;
 
+    // === FX ===
+    let fxBalance, fxProfit, fxYield;
+    let fxTrades = 0, fxWins = 0, fxLosses = 0, fxWinRate = 0;
+    let fxPF = null, fxRR = null, fxDD = null, fxCost = null;
+    let fxAvgLot = 0, fxReqMargin = 0;
+    const fxIsCurrent = (idx === fxCurrentIdx);
+    const fxIsPast = (idx < fxCurrentIdx);
+
+    if (fxIsCurrent) {
+      fxBalance = fx ? fx.balance : prevFxBalance;
+      if (fx) {
+        fxTrades = fx.totalTrades;
+        fxWins = fx.wins; fxLosses = fx.losses;
+        fxWinRate = fx.winRate / 100;
+        fxPF = fx.profitFactor; fxRR = fx.rrRatio;
+        fxDD = fx.maxDDPct / 100;
+        fxCost = Math.abs(fx.commission);
+        fxAvgLot = fx.avgLot; fxReqMargin = fx.reqMargin;
+      }
+    } else if (fxIsPast) {
+      const fb = sheet.getRange(ROW.FX_BALANCE, col).getValue();
+      fxBalance = (typeof fb === 'number' && fb > 0) ? fb : prevFxBalance;
+    } else {
       fxProfit = prevFxBalance * DASH_ASSUMPTIONS.FX_MONTHLY_YIELD;
       fxBalance = prevFxBalance + fxProfit;
-      fxYield = fxPrincipal > 0 ? fxProfit / fxPrincipal : 0;
       fxTrades = DASH_ASSUMPTIONS.FX_MONTHLY_TRADES;
       fxWins = Math.round(fxTrades * DASH_ASSUMPTIONS.FX_WIN_RATE);
       fxLosses = fxTrades - fxWins;
       fxWinRate = DASH_ASSUMPTIONS.FX_WIN_RATE;
-      fxPF = null; fxRR = null; fxDD = null; fxCost = null;
+      fxAvgLot = fx ? fx.avgLot : 0.24;
+      fxReqMargin = fx ? fx.reqMargin : 50;
     }
+    if (fxProfit === undefined) fxProfit = fxBalance - prevFxBalance;
+    fxYield = fxPrincipal > 0 ? fxProfit / fxPrincipal : 0;
 
     cumulativeSpotProfit += spotProfit;
     cumulativeFxProfit += fxProfit;
@@ -250,7 +266,6 @@ function populateIntegratedDashboard() {
     const totalGrossProfit = spotProfit + fxProfit;
     const totalExpense = DASH_ASSUMPTIONS.SAGEMASTER_MONTHLY + spotFee;
     const totalYield = totalPrincipal > 0 ? totalGrossProfit / totalPrincipal : 0;
-
     cumulativeGrossProfit += totalGrossProfit;
     cumulativeNet += totalGrossProfit - totalExpense - initialSetup;
     const totalCumYield = totalPrincipal > 0 ? cumulativeGrossProfit / totalPrincipal : 0;
@@ -277,25 +292,18 @@ function populateIntegratedDashboard() {
     sheet.getRange(ROW.FX_YIELD, col).setValue(fxYield);
     sheet.getRange(ROW.FX_CUMPROFIT, col).setValue(cumulativeFxProfit);
     sheet.getRange(ROW.FX_CUMYIELD, col).setValue(fxCumYield);
-    sheet.getRange(ROW.FX_TRADES, col).setValue(fxTrades);
-    sheet.getRange(ROW.FX_WINRATE, col).setValue(fxWinRate);
-
-    if (fxRR !== null && fxRR > 0) {
-      sheet.getRange(ROW.FX_BREAKEVEN, col).setValue(1 / (1 + fxRR));
+    if (!fxIsPast) {
+      sheet.getRange(ROW.FX_TRADES, col).setValue(fxTrades);
+      sheet.getRange(ROW.FX_WINRATE, col).setValue(fxWinRate);
+      if (fxRR !== null && fxRR > 0) sheet.getRange(ROW.FX_BREAKEVEN, col).setValue(1 / (1 + fxRR));
+      if (fxPF !== null) sheet.getRange(ROW.FX_PF, col).setValue(fxPF);
+      if (fxRR !== null) sheet.getRange(ROW.FX_RR, col).setValue(fxRR);
+      if (fxTrades > 0) sheet.getRange(ROW.FX_AVG_PROFIT, col).setValue(fxProfit / fxTrades);
+      if (fxDD !== null) sheet.getRange(ROW.FX_DD, col).setValue(fxDD);
+      if (fxCost !== null) sheet.getRange(ROW.FX_COST, col).setValue(fxCost);
+      sheet.getRange(ROW.FX_AVG_LOT, col).setValue(fxAvgLot);
+      sheet.getRange(ROW.FX_REQ_MARGIN, col).setValue(fxReqMargin);
     }
-    if (fxPF !== null) sheet.getRange(ROW.FX_PF, col).setValue(fxPF);
-    if (fxRR !== null) sheet.getRange(ROW.FX_RR, col).setValue(fxRR);
-
-    if (fxTrades > 0) {
-      sheet.getRange(ROW.FX_AVG_PROFIT, col).setValue(fxProfit / fxTrades);
-    }
-    if (fxDD !== null) sheet.getRange(ROW.FX_DD, col).setValue(fxDD);
-    if (fxCost !== null) sheet.getRange(ROW.FX_COST, col).setValue(fxCost);
-
-    const fxAvgLot = fx ? fx.avgLot : 0.24;
-    const fxReqMargin = fx ? fx.reqMargin : 50;
-    sheet.getRange(ROW.FX_AVG_LOT, col).setValue(fxAvgLot);
-    sheet.getRange(ROW.FX_REQ_MARGIN, col).setValue(fxReqMargin);
 
     prevSpotValue = spotValue;
     prevFxBalance = fxBalance;
@@ -426,4 +434,76 @@ function applyDashboardFixes() {
   const lastRow = sheet.getLastRow();
   sheet.getRange(1, 1, lastRow, lastCol).setFontSize(10);
   Logger.log('✅ ダッシュボード修正完了');
+}
+
+function readSpotMonthlyHistory_(ss) {
+  const sheet = ss.getSheetByName('現物_月次履歴');
+  if (!sheet) return { values: {}, principals: {} };
+
+  const data = sheet.getDataRange().getValues();
+
+  let headerRow = -1;
+  for (let i = 0; i < Math.min(10, data.length); i++) {
+    let cnt = 0;
+    for (let c = 1; c < Math.min(data[i].length, 15); c++) {
+      const v = data[i][c];
+      if (v instanceof Date) cnt++;
+      else if (typeof v === 'string' && (/月/.test(v) || /\d{4}\/\d+/.test(v))) cnt++;
+    }
+    if (cnt >= 5) { headerRow = i; break; }
+  }
+  if (headerRow < 0) return { values: {}, principals: {} };
+
+  let principalRow = -1, valueRow = -1;
+  for (let i = headerRow + 1; i < Math.min(headerRow + 20, data.length); i++) {
+    const a = String(data[i][0] || '').trim();
+    if (a === '投入元本' && principalRow < 0) principalRow = i;
+    if (a === '評価額' && valueRow < 0) { valueRow = i; break; }
+  }
+  if (valueRow < 0) return { values: {}, principals: {} };
+
+  const result = { values: {}, principals: {} };
+  for (let c = 1; c < data[headerRow].length; c++) {
+    const cellVal = data[headerRow][c];
+    let monthKey = null;
+    if (cellVal instanceof Date) {
+      monthKey = `${cellVal.getFullYear()}-${String(cellVal.getMonth() + 1).padStart(2, '0')}`;
+    } else {
+      const s = String(cellVal || '');
+      const m1 = s.match(/(\d{4})\/(\d+)/);
+      const m2 = s.match(/^(\d+)月$/);
+      if (m1) monthKey = `${m1[1]}-${String(m1[2]).padStart(2, '0')}`;
+      else if (m2) monthKey = `2026-${String(m2[1]).padStart(2, '0')}`;
+    }
+    if (!monthKey) continue;
+
+    const v = data[valueRow][c];
+    if (typeof v === 'number' && v > 0) result.values[monthKey] = v;
+    if (principalRow >= 0) {
+      const p = data[principalRow][c];
+      if (typeof p === 'number' && p > 0) result.principals[monthKey] = p;
+    }
+  }
+  return result;
+}
+
+function determineFxTargetIdx_(months, fallbackIdx) {
+  try {
+    const folder = DriveApp.getFolderById(MT4_CONFIG.FOLDER_ID);
+    const files = folder.getFiles();
+    let latestDate = new Date(0);
+    while (files.hasNext()) {
+      const f = files.next();
+      const name = f.getName();
+      if (!name.toLowerCase().endsWith('.htm') && !name.toLowerCase().endsWith('.html')) continue;
+      if (f.getLastUpdated() > latestDate) latestDate = f.getLastUpdated();
+    }
+    if (latestDate.getTime() > 0) {
+      const y = latestDate.getFullYear();
+      const m = latestDate.getMonth() + 1;
+      const idx = months.findIndex(mm => mm.year === y && mm.month === m);
+      if (idx >= 0) return idx;
+    }
+  } catch (e) { Logger.log(`FX target month detect failed: ${e.message}`); }
+  return fallbackIdx;
 }
