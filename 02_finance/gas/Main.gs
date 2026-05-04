@@ -3,7 +3,9 @@
  * 株式会社LEVEL1 資金繰り管理
  *
  * ■ 定期実行トリガー設定（setupTriggers() を1度だけ実行してください）
- *   - dailyCashFlowCheck() : 毎朝7時実行（全シート一括更新）
+ *   - dailyAutoUpdate() : 毎日23:30 ±15分実行
+ *     ① 在庫数を最新化（発注管理表 → 在庫残高）
+ *     ② MF同期＋全シート集計（runFullUpdate）
  */
 
 // ==============================
@@ -63,12 +65,15 @@ function onOpen() {
  *  6. アラートチェック
  *
  * ※ 前月仕訳が当月に追加されるケースに対応するため、前月も再取込する
+ *
+ * @param {boolean} [silent] - true なら UI ダイアログを出さずログのみ（トリガー実行用）
  */
-function runFullUpdate() {
-  const ui = SpreadsheetApp.getUi();
+function runFullUpdate(silent) {
+  const ui = silent ? null : SpreadsheetApp.getUi();
 
   if (!isMfConnected()) {
-    ui.alert('❌ MF未連携です。\n\nメニュー → MF連携 → MF連携開始 を実行してください。');
+    const msg = '❌ MF未連携です。\n\nメニュー → MF連携 → MF連携開始 を実行してください。';
+    if (ui) ui.alert(msg); else Logger.log(msg);
     return;
   }
 
@@ -127,7 +132,7 @@ function runFullUpdate() {
     const prevLabel = `${prevYear}.${String(prevMonth).padStart(2,'0')}`;
     const curLabel = `${year}.${String(month).padStart(2,'0')}`;
 
-    ui.alert(
+    const summaryMsg =
       `✅ 最新情報に更新しました（当月＋前月）\n\n` +
       `・MFデータ同期: ${prevLabel} 〜 ${curLabel}\n` +
       `・Daily各口座: 残高再計算\n` +
@@ -135,11 +140,13 @@ function runFullUpdate() {
       `・月別: ${prevLabel} 〜 ${curLabel}\n` +
       `・実口座残高: ${prevLabel} / ${curLabel}` +
       alertMsg +
-      `\n\n処理時間: ${elapsed}秒`
-    );
+      `\n\n処理時間: ${elapsed}秒`;
+
+    if (ui) ui.alert(summaryMsg); else Logger.log(summaryMsg);
 
   } catch (e) {
-    ui.alert(`❌ エラーが発生しました\n\n${e.message}`);
+    const errMsg = `❌ エラーが発生しました\n\n${e.message}`;
+    if (ui) ui.alert(errMsg); else Logger.log(errMsg);
     Logger.log(`runFullUpdate エラー: ${e.message}\n${e.stack}`);
   }
 }
@@ -173,33 +180,93 @@ function updateRealBalanceMonth_(year, month) {
 }
 
 // ==============================
+// 自動更新（トリガー専用）
+// ==============================
+
+/**
+ * 自動更新（毎日23時台）：在庫更新 + MF同期 + 全シート集計
+ *
+ * 1日の終わりに以下を実行する：
+ *  1. 発注管理表 → 在庫残高シート（当月の「在庫」行を最新値に上書き）
+ *  2. MF同期＋全シート集計（runFullUpdate）
+ *
+ * 月末日の23:30頃に発火することで、月末時点の在庫が在庫残高シートに
+ * 自動的に確定される運用を実現する。
+ *
+ * UI ダイアログは出さず、ログのみ出力する（トリガー実行用）。
+ */
+function dailyAutoUpdate() {
+  const startTime = new Date();
+  Logger.log(`=== 自動更新開始: ${startTime.toISOString()} ===`);
+
+  let inventoryOk = false;
+  let fullUpdateOk = false;
+
+  // 1. 在庫数を最新化（発注管理表 → 在庫残高）
+  try {
+    Logger.log('在庫数を最新化中...');
+    updateInventoryFromOrderMgmt(true);  // silent=true
+    inventoryOk = true;
+    Logger.log('✅ 在庫数を最新化完了');
+  } catch (e) {
+    Logger.log(`❌ 在庫更新エラー: ${e.message}\n${e.stack}`);
+  }
+
+  // 2. MF同期＋全シート更新
+  try {
+    Logger.log('MF同期＋全シート更新中...');
+    runFullUpdate(true);  // silent=true
+    fullUpdateOk = true;
+    Logger.log('✅ MF同期＋全シート更新完了');
+  } catch (e) {
+    Logger.log(`❌ 全シート更新エラー: ${e.message}\n${e.stack}`);
+  }
+
+  const elapsed = Math.round((new Date() - startTime) / 1000);
+  Logger.log(
+    `=== 自動更新完了（${elapsed}秒） / ` +
+    `在庫:${inventoryOk ? 'OK' : 'NG'} / ` +
+    `全シート:${fullUpdateOk ? 'OK' : 'NG'} ===`
+  );
+}
+
+// ==============================
 // トリガー設定
 // ==============================
 
 /**
  * 定期実行トリガーをセットアップする（初回に1度だけ実行）
+ *
+ * 毎日 23:30 ±15分（= 23:15〜23:45の範囲）に dailyAutoUpdate を実行。
+ * GASの nearMinute() は ±15分の誤差があるため、23:50指定だと翌日0時を
+ * 越える恐れがある。23:30指定なら確実に当日内に発火する。
  */
 function setupTriggers() {
   // 既存の本システム関連トリガーを削除
   ScriptApp.getProjectTriggers().forEach(t => {
     const fn = t.getHandlerFunction();
-    if (fn === 'dailyCashFlowCheck' || fn === 'runFullUpdate') {
+    if (fn === 'dailyCashFlowCheck' || fn === 'runFullUpdate' || fn === 'dailyAutoUpdate') {
       ScriptApp.deleteTrigger(t);
     }
   });
 
-  // 毎朝7時: 全シート一括更新
-  ScriptApp.newTrigger('runFullUpdate')
+  // 毎日23:30 ±15分: 在庫更新 + MF同期 + 全シート集計
+  ScriptApp.newTrigger('dailyAutoUpdate')
     .timeBased()
     .everyDays(1)
-    .atHour(7)
+    .atHour(23)
+    .nearMinute(30)
     .inTimezone('Asia/Tokyo')
     .create();
 
   Logger.log('トリガー設定完了');
   SpreadsheetApp.getUi().alert(
     '✅ トリガー設定完了\n\n' +
-    '・毎朝7時: 全シート一括更新（MF同期+集計+アラート）'
+    '・毎日 23:30 ±15分（23:15〜23:45）に以下を自動実行:\n' +
+    '  ① 在庫数を最新化（発注管理表 → 在庫残高）\n' +
+    '  ② MF同期＋全シート集計\n\n' +
+    '※ 月末日のこの時刻に発火することで、\n' +
+    '   月末在庫が在庫残高シートに自動確定されます。'
   );
 }
 

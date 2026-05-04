@@ -859,8 +859,8 @@ function getLatestBalance_(accountKey) {
  *  4. 見込売上 = 在庫数 × 販売単価 を自動再計算
  *  5. 棚卸原価 = 在庫数 × 仕入原価 を自動再計算
  */
-function updateInventoryFromOrderMgmt() {
-  const ui = SpreadsheetApp.getUi();
+function updateInventoryFromOrderMgmt(silent) {
+  const ui = silent ? null : SpreadsheetApp.getUi();
 
   try {
     // 1. 発注管理表を開く
@@ -967,16 +967,17 @@ function updateInventoryFromOrderMgmt() {
     invSheet.getRange(costRow, 4)
       .setFormula(`=SUM(${startCol}${costRow}:${endCol}${costRow})`);
 
-    ui.alert(
+    const successMsg =
       `✅ 在庫数を最新化しました\n\n` +
       `・対象月: ${yearMonth}\n` +
       `・マッチ: ${matched}商品\n` +
       `・未マッチ: ${unmatched}商品\n\n` +
-      `見込売上・棚卸原価も自動更新されました。`
-    );
+      `見込売上・棚卸原価も自動更新されました。`;
+    if (ui) ui.alert(successMsg); else Logger.log(successMsg);
 
   } catch (e) {
-    ui.alert(`❌ エラー\n\n${e.message}`);
+    const errMsg = `❌ エラー\n\n${e.message}`;
+    if (ui) ui.alert(errMsg); else Logger.log(errMsg);
     Logger.log(`在庫更新エラー: ${e.message}\n${e.stack}`);
   }
 }
