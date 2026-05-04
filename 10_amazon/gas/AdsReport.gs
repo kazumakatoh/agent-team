@@ -80,40 +80,20 @@ function dailyFetchAdsReports() {
 }
 
 /**
- * 指定レンジで3種取得 → D3 へ追記 + D1 の広告列を更新
+ * 指定レンジで spAdvertisedProduct を取得 → D1 の広告列を更新
+ * （旧 D3 シート群への書き込みは廃止。新カテゴリ別月次は D1 から月次合算で算出）
  *
  * @param {string} startDate YYYY-MM-DD
  * @param {string} endDate   YYYY-MM-DD
  */
 function fetchAdsReportsForRange(startDate, endDate) {
-  setupAdsDetailSheets();
-
-  // 1) spAdvertisedProduct → D3_ADS_ASIN + D1 更新
+  // spAdvertisedProduct: ASIN×日次 → D1 の広告4列（広告費/広告売上/IMP/CT）を更新
   try {
     const rows = fetchAdsReport('spAdvertisedProduct', startDate, endDate);
-    writeAdvertisedProductRows(rows);
     updateDailyAdsFromAdvertisedProduct(rows);
-    Logger.log('✅ spAdvertisedProduct (広告_商品別): ' + rows.length + ' 行');
+    Logger.log('✅ spAdvertisedProduct: ' + rows.length + ' 行 → D1 反映完了');
   } catch (e) {
     Logger.log('❌ spAdvertisedProduct 失敗: ' + e.message);
-  }
-
-  // 2) spSearchTerm → D3_ADS_SEARCHTERM
-  try {
-    const rows = fetchAdsReport('spSearchTerm', startDate, endDate);
-    writeSearchTermRows(rows);
-    Logger.log('✅ spSearchTerm: ' + rows.length + ' 行');
-  } catch (e) {
-    Logger.log('❌ spSearchTerm 失敗: ' + e.message);
-  }
-
-  // 3) spTargeting → D3_ADS_TARGET
-  try {
-    const rows = fetchAdsReport('spTargeting', startDate, endDate);
-    writeTargetingRows(rows);
-    Logger.log('✅ spTargeting: ' + rows.length + ' 行');
-  } catch (e) {
-    Logger.log('❌ spTargeting 失敗: ' + e.message);
   }
 
   Logger.log('===== Ads Reports 完了 =====');
@@ -220,189 +200,6 @@ function downloadAndParseAdsReport(url) {
   return Array.isArray(data) ? data : (data.data || []);
 }
 
-// ==========================================================
-//  D3 シート作成 + 書き込み
-// ==========================================================
-
-function setupAdsDetailSheets() {
-  setupAdsAsinSheet();
-  setupAdsSearchTermSheet();
-  setupAdsTargetSheet();
-}
-
-function setupAdsAsinSheet() {
-  const sheet = getOrCreateSheet(SHEET_NAMES.D3_ADS_ASIN);
-  const headers = [
-    '日付', 'キャンペーンID', 'キャンペーン名', '広告グループID', '広告グループ名',
-    'ASIN', 'SKU',
-    'IMP', 'CT', '広告費', 'CTR', 'CPC',
-    '注文数(7d)', '広告売上(7d)', '点数(7d)',
-    'ACOS(7d)', 'ROAS(7d)',
-  ];
-  if (sheet.getLastRow() === 0 || sheet.getRange(1, 1).getValue() !== headers[0]) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
-      .setFontWeight('bold').setBackground('#fff2cc');
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
-}
-
-function setupAdsSearchTermSheet() {
-  const sheet = getOrCreateSheet(SHEET_NAMES.D3_ADS_SEARCHTERM);
-  const headers = [
-    '日付', 'キャンペーンID', 'キャンペーン名', '広告グループID', '広告グループ名',
-    'キーワードID', 'キーワード', 'マッチタイプ', '検索用語',
-    'IMP', 'CT', '広告費', 'CTR', 'CPC',
-    '注文数(7d)', '広告売上(7d)',
-    'ACOS(7d)', 'ROAS(7d)',
-  ];
-  if (sheet.getLastRow() === 0 || sheet.getRange(1, 1).getValue() !== headers[0]) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
-      .setFontWeight('bold').setBackground('#fff2cc');
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
-}
-
-function setupAdsTargetSheet() {
-  const sheet = getOrCreateSheet(SHEET_NAMES.D3_ADS_TARGET);
-  const headers = [
-    '日付', 'キャンペーンID', 'キャンペーン名', '広告グループID', '広告グループ名',
-    'キーワードID', 'キーワード', 'マッチタイプ', 'ターゲット',
-    'IMP', 'CT', '広告費', 'CTR', 'CPC',
-    '注文数(7d)', '広告売上(7d)',
-    'ACOS(7d)', 'ROAS(7d)',
-  ];
-  if (sheet.getLastRow() === 0 || sheet.getRange(1, 1).getValue() !== headers[0]) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers])
-      .setFontWeight('bold').setBackground('#fff2cc');
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
-}
-
-/**
- * 同じ（日付×キャンペーン×広告グループ×ASIN）の既存行を削除してから新規分を追記。
- * 二重取得時の重複を防ぐ。
- */
-function writeAdvertisedProductRows(rows) {
-  if (!rows || rows.length === 0) return;
-  const sheet = setupAdsAsinSheet();
-  const dates = new Set(rows.map(r => r.date));
-  deleteAdsRowsForDates(sheet, dates, 1);
-
-  const out = rows.map(r => [
-    r.date || '',
-    r.campaignId || '',
-    r.campaignName || '',
-    r.adGroupId || '',
-    r.adGroupName || '',
-    r.advertisedAsin || '',
-    r.advertisedSku || '',
-    r.impressions || 0,
-    r.clicks || 0,
-    r.cost || 0,
-    r.clickThroughRate || 0,
-    r.costPerClick || 0,
-    r.purchases7d || 0,
-    r.sales7d || 0,
-    r.unitsSoldClicks7d || 0,
-    r.acosClicks7d || 0,
-    r.roasClicks7d || 0,
-  ]);
-  appendAdsRows(sheet, out);
-}
-
-function writeSearchTermRows(rows) {
-  if (!rows || rows.length === 0) return;
-  const sheet = setupAdsSearchTermSheet();
-  const dates = new Set(rows.map(r => r.date));
-  deleteAdsRowsForDates(sheet, dates, 1);
-
-  const out = rows.map(r => [
-    r.date || '',
-    r.campaignId || '',
-    r.campaignName || '',
-    r.adGroupId || '',
-    r.adGroupName || '',
-    r.keywordId || '',
-    r.keyword || '',
-    r.matchType || '',
-    r.searchTerm || '',
-    r.impressions || 0,
-    r.clicks || 0,
-    r.cost || 0,
-    r.clickThroughRate || 0,
-    r.costPerClick || 0,
-    r.purchases7d || 0,
-    r.sales7d || 0,
-    r.acosClicks7d || 0,
-    r.roasClicks7d || 0,
-  ]);
-  appendAdsRows(sheet, out);
-}
-
-function writeTargetingRows(rows) {
-  if (!rows || rows.length === 0) return;
-  const sheet = setupAdsTargetSheet();
-  const dates = new Set(rows.map(r => r.date));
-  deleteAdsRowsForDates(sheet, dates, 1);
-
-  const out = rows.map(r => [
-    r.date || '',
-    r.campaignId || '',
-    r.campaignName || '',
-    r.adGroupId || '',
-    r.adGroupName || '',
-    r.keywordId || '',
-    r.keyword || '',
-    r.matchType || '',
-    r.targeting || '',
-    r.impressions || 0,
-    r.clicks || 0,
-    r.cost || 0,
-    r.clickThroughRate || 0,
-    r.costPerClick || 0,
-    r.purchases7d || 0,
-    r.sales7d || 0,
-    r.acosClicks7d || 0,
-    r.roasClicks7d || 0,
-  ]);
-  appendAdsRows(sheet, out);
-}
-
-/**
- * 指定日集合に一致する行を削除（冪等性確保）
- */
-function deleteAdsRowsForDates(sheet, datesSet, dateCol) {
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return;
-  const values = sheet.getRange(2, dateCol, lastRow - 1, 1).getValues();
-  // 下から削除（インデックスずれ回避）
-  for (let i = values.length - 1; i >= 0; i--) {
-    const v = values[i][0];
-    const dateStr = (v instanceof Date)
-      ? Utilities.formatDate(v, 'Asia/Tokyo', 'yyyy-MM-dd')
-      : String(v).substring(0, 10);
-    if (datesSet.has(dateStr)) {
-      sheet.deleteRow(i + 2);
-    }
-  }
-}
-
-function appendAdsRows(sheet, rows) {
-  if (!rows.length) return;
-  const startRow = sheet.getLastRow() + 1;
-  const needed = startRow + rows.length - 1;
-  const maxRows = sheet.getMaxRows();
-  if (needed > maxRows) {
-    // 不足分 + 余裕100行を確保（デフォルト1000行超の書き込み対応）
-    sheet.insertRowsAfter(maxRows, needed - maxRows + 100);
-  }
-  retryOnTransient(() =>
-    sheet.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows));
-}
-
 /**
  * Spreadsheets API の一時的な失敗（INTERNAL / Service Spreadsheets failed 等）を
  * 指数バックオフで最大3回リトライする汎用ラッパー。
@@ -495,36 +292,6 @@ function updateDailyAdsFromAdvertisedProduct(rows) {
 // ==========================================================
 //  リセット・クリア
 // ==========================================================
-
-/**
- * D3 の3シート（広告_商品別 / 検索用語 / ターゲティング）の
- * ヘッダー以外を全削除してクリーンな状態にする。
- *
- * D1 の広告列（P〜S）はそのまま（既存の売上データに混ざっているため
- * 直接クリアするとバックフィルで再計算されない日が空欄として残る）。
- *
- * 用途:
- *   - 重複や部分失敗で D3 が汚れた時
- *   - バックフィルをゼロから再実行したい時
- */
-function clearAdsDetailSheets() {
-  const targets = [
-    SHEET_NAMES.D3_ADS_ASIN,
-    SHEET_NAMES.D3_ADS_SEARCHTERM,
-    SHEET_NAMES.D3_ADS_TARGET,
-  ];
-  for (const name of targets) {
-    const sheet = getOrCreateSheet(name);
-    const lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-      sheet.deleteRows(2, lastRow - 1);
-      Logger.log('🧹 ' + name + ': ' + (lastRow - 1) + ' 行削除');
-    } else {
-      Logger.log('🧹 ' + name + ': 既に空');
-    }
-  }
-  Logger.log('✅ D3 広告3シートのクリア完了（ヘッダー保持）');
-}
 
 /**
  * D1 日次データの広告4列（P〜S）を指定日範囲でクリア

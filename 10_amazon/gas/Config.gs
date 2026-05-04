@@ -28,8 +28,8 @@ function getIntermediateSheetId() {
 // ===== シート名定数 =====
 const SHEET_NAMES = {
   // 見るシート（ダッシュボード）
-  L1_DASHBOARD: '事業ダッシュボード',
-  L2_CATEGORY: 'カテゴリ分析',
+  // 旧 事業ダッシュボード（L1）/ カテゴリ分析（L2）/ アカウント健全性（D5）は廃止。
+  // カテゴリ別月次（CategoryMonthly.gs）に統合。
   L3_PRODUCT: '商品分析',
   // データシート
   D1_DAILY: '日次データ',
@@ -37,10 +37,8 @@ const SHEET_NAMES = {
   D2_SETTLEMENT: '経費明細',
   D2S_SETTLEMENT_SUMMARY: '経費月次集計',  // ASIN×月の事前集計（高速化用）
   D2F_FINANCE_EVENTS: '日次フィー（Finance）',  // Finance APIから日次でフィー取得
-  D3_ADS_DETAIL: '広告詳細',
-  D3_ADS_ASIN: '広告_商品別',                 // spAdvertisedProduct（ASIN×日次）
-  D3_ADS_SEARCHTERM: '広告_検索用語',         // spSearchTerm
-  D3_ADS_TARGET: '広告_ターゲティング',       // spTargeting
+  // 旧 広告詳細シート（D3_*）は廃止。Ads データは D1（日次データ）の広告列に集約され、
+  // 集計はカテゴリ別月次シート（CategoryMonthly.gs）で行う。
   // マスターシート
   M1_PRODUCT_MASTER: '商品マスター',
   M2_PURCHASE_PRICE: '月次仕入単価',
@@ -169,10 +167,6 @@ function setupDailyTriggers() {
   ScriptApp.newTrigger('runDailyAlerts')
     .timeBased().everyDays(1).atHour(9).create();
 
-  // 毎日 9:15 - アカウント健全性ログ
-  ScriptApp.newTrigger('runAccountHealthCheck')
-    .timeBased().everyDays(1).atHour(9).nearMinute(15).create();
-
   // 毎日 9:30 - 競合価格取得（Phase 4b）
   ScriptApp.newTrigger('fetchCompetitorPricing')
     .timeBased().everyDays(1).atHour(9).nearMinute(30).create();
@@ -214,7 +208,6 @@ function setupDailyTriggers() {
   Logger.log('  毎日 8:00 - 中間スプシ↔M3 同期');
   Logger.log('  毎日 8:30 - 日次販売実績シート');
   Logger.log('  毎日 9:00 - LINE 緊急アラート');
-  Logger.log('  毎日 9:15 - アカウント健全性');
   Logger.log('  毎日 9:30 - 競合価格');
   Logger.log('  毎日 11:00 - Amazon Ads レポート');
   Logger.log('  毎日 10:00 - 在庫＋在庫切れアラート');
@@ -241,8 +234,6 @@ function addPhase4Triggers() {
   const specs = [
     { fn: 'runDailyAlerts',         desc: '毎日 9:00 - LINE緊急アラート',
       create: () => ScriptApp.newTrigger('runDailyAlerts').timeBased().everyDays(1).atHour(9).create() },
-    { fn: 'runAccountHealthCheck',  desc: '毎日 9:15 - アカウント健全性',
-      create: () => ScriptApp.newTrigger('runAccountHealthCheck').timeBased().everyDays(1).atHour(9).nearMinute(15).create() },
     { fn: 'fetchCompetitorPricing', desc: '毎日 9:30 - 競合価格',
       create: () => ScriptApp.newTrigger('fetchCompetitorPricing').timeBased().everyDays(1).atHour(9).nearMinute(30).create() },
     { fn: 'checkUpcomingSales',     desc: '毎週月 7:30 - セール準備チェック',
@@ -324,12 +315,11 @@ function addPhase3Triggers() {
 }
 
 /**
- * Phase 4 で新規追加したシート（D4 競合価格 / D5 健全性 / M4 セールカレンダー）を一括初期化
+ * Phase 4 で新規追加したシート（D4 競合価格 / M4 セールカレンダー）を一括初期化
  * 1回だけ実行すればOK
  */
 function setupPhase4Sheets() {
   setupCompetitorSheet();        // D4 競合価格
-  setupHealthSheet();            // D5 アカウント健全性
   setupSaleCalendar();           // M4 セールカレンダー（プライムデー等を自動投入）
   Logger.log('✅ Phase 4 シート初期化完了');
 }
