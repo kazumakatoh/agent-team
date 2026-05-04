@@ -106,9 +106,31 @@ function collectReviewData_(ss) {
     const idx = months.findIndex(m => m.year === now.getFullYear() && m.month === now.getMonth() + 1);
     if (idx >= 0) {
       const col = DASH_CONFIG.FIRST_DATA_COL + idx;
-      data.mtd.netProfit = Number(dashSheet.getRange(7, col).getValue()) || 0;
-      data.mtd.spotYield = Number(dashSheet.getRange(14, col).getValue()) || 0;
-      data.mtd.fxYield = Number(dashSheet.getRange(20, col).getValue()) || 0;
+      const g = (r) => Number(dashSheet.getRange(r, col).getValue()) || 0;
+
+      // 統合
+      data.mtd.totalPrincipal = g(7);
+      data.mtd.totalValue     = g(8);
+      data.mtd.netProfit      = g(9);
+      data.mtd.totalYield     = g(10);
+      data.mtd.cumProfit      = g(12);
+      data.mtd.totalCumYield  = g(13);
+
+      // 現物
+      data.mtd.spotPrincipal  = g(16);
+      data.mtd.spotValue      = g(17);
+      data.mtd.spotProfit     = g(18);
+      data.mtd.spotYield      = g(19);
+      data.mtd.spotCumProfit  = g(20);
+      data.mtd.spotCumYield   = g(21);
+
+      // FX
+      data.mtd.fxPrincipal    = g(25);
+      data.mtd.fxBalance      = g(26);
+      data.mtd.fxProfit       = g(27);
+      data.mtd.fxYield        = g(28);
+      data.mtd.fxCumProfit    = g(29);
+      data.mtd.fxCumYield     = g(30);
     }
   }
 
