@@ -20,7 +20,7 @@ function onOpen() {
     .addItem('📑 月次AI戦略レポートを今すぐ送信', 'menuSendMonthlyReport')
     .addSeparator()
     .addItem('💰 商品マスター 数式再適用', 'menuSetupProductMaster')
-    .addItem('💱 D1 仕入原価バックフィル（M1ソース）', 'menuBackfillCogsFromM1')
+    .addItem('💱 D1 経費バックフィル（仕入原価+販売手数料）', 'menuBackfillD1FromM1')
     .addSeparator()
     .addSubMenu(ui.createMenu('🔍 診断・メンテナンス')
       .addItem('容量チェック', 'menuDiagnoseSheetSizes')
@@ -154,19 +154,21 @@ function menuSetupProductMaster() {
   }
 }
 
-function menuBackfillCogsFromM1() {
+function menuBackfillD1FromM1() {
   const ui = SpreadsheetApp.getUi();
   const confirm = ui.alert(
-    'D1 仕入原価バックフィル',
-    'M1 商品マスターの 仕入単価 を D1 日次データの 仕入単価/仕入原価合計 列に反映します。\n' +
+    'D1 経費バックフィル',
+    'M1 商品マスターの値を D1 日次データに反映します:\n' +
+    '  ・仕入単価 / 仕入原価合計（M1 仕入単価 × 注文点数）\n' +
+    '  ・販売手数料（M1 販売手数料率 × 売上）\n\n' +
     '全期間が最新の M1 値で上書きされます。よろしいですか？',
     ui.ButtonSet.YES_NO);
   if (confirm !== ui.Button.YES) return;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.toast('D1 仕入原価バックフィル中...', '🚀 Amazon', 60);
+  ss.toast('D1 経費バックフィル中...', '🚀 Amazon', 90);
   try {
-    backfillD1CogsFromM1();
-    ss.toast('✅ D1 仕入原価バックフィル完了', '🚀 Amazon', 5);
+    backfillD1FromM1();
+    ss.toast('✅ D1 経費バックフィル完了（仕入原価+販売手数料）', '🚀 Amazon', 5);
   } catch (e) {
     ui.alert('エラー', e.message, ui.ButtonSet.OK);
   }

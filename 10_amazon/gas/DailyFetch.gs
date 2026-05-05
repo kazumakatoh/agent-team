@@ -130,6 +130,7 @@ function fetchAndWriteOrders(dateStr, startOfDay, endOfDay) {
       unitPrice || '',                  // 仕入単価
       cogs || '',                       // 仕入原価合計
       '暫定',                           // ステータス
+      '',                               // 販売手数料（M1ベースのバックフィルで後日反映）
     ]);
   }
 

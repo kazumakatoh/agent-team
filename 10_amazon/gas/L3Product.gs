@@ -158,7 +158,14 @@ function updateDashboardL3() {
 }
 
 /**
- * ASIN別に日次データ + 経費を集計
+ * ASIN別に日次データを集計
+ *
+ * 経費の算出:
+ *   仕入        = ΣD1.仕入原価合計（M1 仕入単価 × 注文点数 でバックフィル済み）
+ *   販売手数料   = ΣD1.販売手数料  （M1 販売手数料率 × 売上 でバックフィル済み）
+ *   その他経費   = ΣD1.FBA手数料 + ΣD1.返品額
+ *   広告費      = ΣD1.広告費
+ *   利益        = 売上 - 仕入 - 販売手数料 - 広告費 - その他経費
  */
 function aggregateByAsinWithExpense(dailyData, expByMonthAsin, yearMonth) {
   const byAsin = {};
@@ -171,6 +178,7 @@ function aggregateByAsinWithExpense(dailyData, expByMonthAsin, yearMonth) {
         category: d.category || '(未分類)',
         sales: 0, cv: 0, units: 0,
         adCost: 0, adSales: 0, cogs: 0,
+        commission: 0, fbaFee: 0, returnAmount: 0,
       };
     }
     const a = byAsin[d.asin];
@@ -179,25 +187,16 @@ function aggregateByAsinWithExpense(dailyData, expByMonthAsin, yearMonth) {
     a.units += d.units;
     a.adCost += d.adCost;
     a.adSales += d.adSales;
-    a.cogs += d.cogs || 0; // CF連携: D1 仕入原価合計から集計
+    a.cogs += d.cogs || 0;
+    a.commission += d.commission || 0;
+    a.fbaFee += d.fbaFee || 0;
+    a.returnAmount += d.returnAmount || 0;
   }
 
-  // その月の commission率 / other率 を算出（D2S の全ASIN合計から）
-  const monthExp = expByMonthAsin[yearMonth] || {};
-  let totalCommission = 0, totalOther = 0, totalPrincipal = 0;
-  for (const exp of Object.values(monthExp)) {
-    totalCommission += exp.commission || 0;
-    totalOther += exp.other || 0;
-    totalPrincipal += exp.principal || 0;
-  }
-  const commissionRate = totalPrincipal > 0 ? totalCommission / totalPrincipal : 0;
-  const otherRate = totalPrincipal > 0 ? totalOther / totalPrincipal : 0;
-
-  // 各ASINの経費を売上 × 率 で推定
+  // 派生指標
   for (const asin of Object.keys(byAsin)) {
     const a = byAsin[asin];
-    a.commission = a.sales * commissionRate;
-    a.otherExpense = a.sales * otherRate;
+    a.otherExpense = a.fbaFee + a.returnAmount;
     a.profit = a.sales - a.cogs - a.commission - a.otherExpense - a.adCost;
     a.adRate = a.sales > 0 ? a.adCost / a.sales : 0;
     a.grossMargin = a.sales > 0 ? (a.sales - a.cogs) / a.sales : 0;

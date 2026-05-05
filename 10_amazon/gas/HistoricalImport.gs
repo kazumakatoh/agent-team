@@ -158,7 +158,7 @@ function importHistoricalData() {
     const commission = parseFloat(r[11]) || 0;
     const otherExpense = parseFloat(r[12]) || 0;
 
-    // D1 日次データ形式（22列）
+    // D1 日次データ形式（23列）
     d1Rows.push([
       date,              // 1 日付
       asin,              // 2 ASIN
@@ -176,6 +176,7 @@ function importHistoricalData() {
       '', '',            // 18 IMP, 19 CT
       '', '',            // 20 仕入単価, 21 仕入原価合計
       HISTORICAL_STATUS, // 22 ステータス
+      '',                // 23 販売手数料（バックフィル後付け）
     ]);
 
     // 経費が入力されていれば D2S にも追加（ダッシュボードの利益計算に反映される）

@@ -25,6 +25,16 @@ function getOrCreateSheet(sheetName) {
 
 /**
  * D1 日次データにヘッダーを設定
+ *
+ * 列構成（23列）:
+ *   1: 日付, 2: ASIN, 3: 商品名, 4: カテゴリ
+ *   5: 売上金額, 6: CV, 7: 注文点数
+ *   8: セッション数, 9: PV, 10: CTR, 11: CVR, 12: BuyBox率
+ *   13: FBA手数料, 14: 返品数, 15: 返品額
+ *   16: 広告費, 17: 広告売上, 18: IMP, 19: CT
+ *   20: 仕入単価, 21: 仕入原価合計
+ *   22: ステータス
+ *   23: 販売手数料 （M1 商品マスター × 売上 で推定）
  */
 function setupDailyDataHeaders() {
   const sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
@@ -34,15 +44,18 @@ function setupDailyDataHeaders() {
     'セッション数', 'PV', 'CTR(%)', 'CVR(%)', 'BuyBox率(%)',
     'FBA手数料', '返品数', '返品額',
     '広告費', '広告売上', 'IMP', 'CT',
-    '仕入単価', '仕入原価合計', 'ステータス'
+    '仕入単価', '仕入原価合計', 'ステータス',
+    '販売手数料',
   ];
 
   const existing = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  if (existing[0] !== headers[0]) {
+  const needsUpdate = existing[0] !== headers[0] ||
+                      existing[headers.length - 1] !== headers[headers.length - 1];
+  if (needsUpdate) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.setFrozenRows(1);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-    Logger.log('✅ D1 日次データ: ヘッダー設定完了');
+    Logger.log('✅ D1 日次データ: ヘッダー設定完了（23列）');
   }
   return sheet;
 }

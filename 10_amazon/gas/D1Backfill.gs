@@ -11,7 +11,18 @@
  * 過去は M2 月次仕入単価から取っていたが廃止し、最新値で全期間バックフィルする。
  */
 
-// ===== 仕入原価（M1 → D1）=====
+// ===== 仕入原価 + 販売手数料（M1 → D1）=====
+
+/**
+ * D1 仕入原価 + 販売手数料 を M1 商品マスターから一括バックフィル
+ *
+ * - 仕入単価(列20) / 仕入原価合計(列21) ← M1.仕入単価 × 注文点数
+ * - 販売手数料(列23)                    ← M1.販売手数料率 × 売上
+ */
+function backfillD1FromM1() {
+  backfillD1CogsFromM1();
+  backfillD1CommissionFromM1();
+}
 
 /**
  * D1 日次データの 仕入単価（列20）/ 仕入原価合計（列21）を M1 商品マスターから反映
@@ -58,6 +69,51 @@ function backfillD1CogsFromM1() {
     d1Sheet.getRange(2, 20, updates.length, 2).setValues(updates);
   }
   Logger.log('✅ D1 仕入原価バックフィル: ' + updates.length + ' 行更新');
+  return updates.length;
+}
+
+/**
+ * D1 日次データの 販売手数料（列23）を M1 商品マスターから反映
+ *
+ * 販売手数料 = D1.売上 × M1.販売手数料率（カテゴリ別レート）
+ *
+ * 全D1行を一括上書きする。
+ */
+function backfillD1CommissionFromM1() {
+  Logger.log('===== D1 販売手数料バックフィル（M1ソース） 開始 =====');
+
+  const masterMap = getProductMasterMap();
+  const rateMap = {};
+  for (const [asin, m] of Object.entries(masterMap)) {
+    if (m.commissionRate > 0) rateMap[asin] = m.commissionRate;
+  }
+  Logger.log('  M1 販売手数料率設定済みASIN数: ' + Object.keys(rateMap).length);
+
+  const d1Sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const d1Last = d1Sheet.getLastRow();
+  if (d1Last <= 1) { Logger.log('D1 空'); return 0; }
+
+  // 列1:日付, 列2:ASIN, 列5:売上, 列23:販売手数料
+  const d1Data = d1Sheet.getRange(2, 1, d1Last - 1, 5).getValues();
+  const updates = [];
+  let matched = 0, unmatched = 0;
+
+  for (const row of d1Data) {
+    const asin = String(row[1] || '').trim();
+    const sales = parseFloat(row[4]) || 0;
+    const rate = rateMap[asin] || 0;
+    const commission = Math.round(sales * rate);
+    updates.push([commission || '']);
+    if (rate > 0) matched++;
+    else if (asin) unmatched++;
+  }
+
+  Logger.log('  マッチ: ' + matched + ' / 手数料率未設定: ' + unmatched);
+
+  if (updates.length > 0) {
+    d1Sheet.getRange(2, 23, updates.length, 1).setValues(updates);
+  }
+  Logger.log('✅ D1 販売手数料バックフィル: ' + updates.length + ' 行更新');
   return updates.length;
 }
 

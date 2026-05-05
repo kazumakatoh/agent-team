@@ -12,7 +12,8 @@ function getDailyDataAll() {
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) return [];
 
-  const data = sheet.getRange(2, 1, lastRow - 1, 22).getValues();
+  // 23列: 1-22 既存 + 23 販売手数料(M1ベース推定)
+  const data = sheet.getRange(2, 1, lastRow - 1, 23).getValues();
   return data.map(row => ({
     date: row[0] instanceof Date ? Utilities.formatDate(row[0], 'Asia/Tokyo', 'yyyy-MM-dd') : String(row[0]).substring(0, 10),
     asin: row[1],
@@ -30,6 +31,7 @@ function getDailyDataAll() {
     adSales: parseFloat(row[16]) || 0,
     unitPrice: parseFloat(row[19]) || 0, // 仕入単価（列20）
     cogs: parseFloat(row[20]) || 0,      // 仕入原価合計（列21）
+    commission: parseFloat(row[22]) || 0, // 販売手数料（列23）
   }));
 }
 
