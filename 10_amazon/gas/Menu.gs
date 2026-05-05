@@ -10,7 +10,7 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🚀 Amazon')
-    .addItem('📊 ダッシュボード更新（L1 + L2 + L3）', 'menuRefreshAllDashboards')
+    .addItem('📊 商品分析シート更新', 'menuRefreshAllDashboards')
     .addItem('📅 日次販売実績シート更新', 'menuRebuildDailySales')
     .addSeparator()
     .addItem('📦 在庫取得 + アラート', 'menuFetchInventory')
@@ -62,12 +62,10 @@ function setupOnOpenTrigger() {
 function menuRefreshAllDashboards() {
   const ui = SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.toast('ダッシュボードを更新中...', '🚀 Amazon', 60);
+  ss.toast('商品分析を更新中...', '🚀 Amazon', 60);
   try {
-    updateDashboardL1();
-    updateDashboardL2();
     updateDashboardL3();
-    ss.toast('✅ L1 + L2 + L3 更新完了', '🚀 Amazon', 5);
+    ss.toast('✅ 商品分析 更新完了', '🚀 Amazon', 5);
   } catch (e) {
     ui.alert('エラー', e.message, ui.ButtonSet.OK);
   }

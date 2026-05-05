@@ -8,7 +8,6 @@
  *   1. 在庫切れ間近: FBA在庫 < 直近7日平均日販 × 3日分
  *   2. 広告費異常: 直近1日の広告費が 過去7日平均 × 2 を超過
  *   3. 大型返金: Settlement で1日あたり Refund/Adjustment > 10,000円
- *   4. アカウント健全性警告: Account Health API（Phase 4b 実装後）
  *
  * ## 重複抑止
  *   同一アラートを毎日送らないよう、ScriptProperties に「日付＋アラートキー」を保存し

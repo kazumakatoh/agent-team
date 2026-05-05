@@ -26,14 +26,14 @@
  *    → D2S 経費月次集計に（L列/M列があれば）経費を書き込み
  *    → 同じ ASIN×年月 の既存行はスキップ（冪等）
  *
- * 4. `updateDashboardL1()` / `updateDashboardL2()` で反映確認
+ * 4. `updateDashboardL3()` で反映確認
  *
  * ## 設計メモ
  *
  * - 既存ExcelはWeekly 10シート + Monthly 8シート構成（kpi_and_operations.md）
  * - 日次粒度での復元は不可能なため、月単位で YYYY-MM-01 として記録
  * - ステータスは「確定（履歴）」で通常の暫定/確定とは区別
- * - 経費列が空の場合、L1/L2 では経費ゼロとして計算されるので注意
+ * - 経費列が空の場合、L3 では経費ゼロとして計算されるので注意
  */
 
 const HISTORICAL_IMPORT_COLS = 13; // A〜M列
