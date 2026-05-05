@@ -86,21 +86,70 @@ function setupProductMasterHeaders() {
     migrateProductMasterV2ToV3(sheet);
   }
 
-  const needsHeaderUpdate = existing[0] !== M1_HEADERS[0] ||
-                            existing[M1_COLS.SELL_PRICE - 1] !== '販売単価' ||
-                            existing[M1_COLS.PURCHASE_PRICE - 1] !== '仕入単価';
+  // ヘッダーを毎回上書き（v3 規約に揃える）
+  sheet.getRange(1, 1, 1, M1_HEADERS.length).setValues([M1_HEADERS])
+    .setFontWeight('bold').setBackground('#e8f0fe');
+  sheet.setFrozenRows(1);
+  Logger.log('✅ M1 商品マスター: ヘッダー設定完了（11列）');
 
-  if (needsHeaderUpdate || isV2) {
-    sheet.getRange(1, 1, 1, M1_HEADERS.length).setValues([M1_HEADERS])
-      .setFontWeight('bold').setBackground('#e8f0fe');
-    sheet.setFrozenRows(1);
-    Logger.log('✅ M1 商品マスター: ヘッダー設定完了（11列）');
-  }
+  // 余剰列（L以降）を削除（v2残骸の粗利単価列など）
+  cleanupExcessColumns(sheet);
+
+  // 仕入単価列に紛れ込んだ非数値テキストを備考へ退避
+  cleanupStrayTextInPurchasePrice(sheet);
 
   // 既存データ行に販売手数料・粗利単価の数式を流し込む
   applyProductMasterFormulas(sheet);
 
   return sheet;
+}
+
+/**
+ * M1_HEADERS.length より右にある余分な列を削除する。
+ * v2(12列)→v3(11列) 移行で残った L列「粗利単価」ヘッダーなどを除去。
+ */
+function cleanupExcessColumns(sheet) {
+  const maxCols = sheet.getMaxColumns();
+  const target = M1_HEADERS.length;
+  if (maxCols <= target) return;
+  sheet.deleteColumns(target + 1, maxCols - target);
+  Logger.log('✅ M1 余剰列削除: ' + (maxCols - target) + ' 列（列' + (target + 1) + '-' + maxCols + '）');
+}
+
+/**
+ * 仕入単価(F)に紛れ込んだ非数値テキスト（'自動検出' / 'CFシートからインポート' 等）を
+ * 備考(K)に退避してFをクリアする。
+ *
+ * 旧スキーマ時代のレポート系インポートが「自動検出」を E列(旧仕入単価) に書き込んでいたため、
+ * v2→v3 移行で row[4] → 新F(仕入単価) に持ち込まれてしまうケースに対応。
+ */
+function cleanupStrayTextInPurchasePrice(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  const priceRange = sheet.getRange(2, M1_COLS.PURCHASE_PRICE, lastRow - 1, 1);
+  const noteRange = sheet.getRange(2, M1_COLS.NOTE, lastRow - 1, 1);
+  const priceData = priceRange.getValues();
+  const noteData = noteRange.getValues();
+
+  let moved = 0;
+  for (let i = 0; i < priceData.length; i++) {
+    const v = priceData[i][0];
+    if (v === '' || v === null) continue;
+    const num = parseFloat(v);
+    if (isNaN(num) && typeof v === 'string') {
+      // 備考に既存の値があれば「 / 」連結、なければそのまま移動
+      noteData[i][0] = noteData[i][0] ? (noteData[i][0] + ' / ' + v) : v;
+      priceData[i][0] = '';
+      moved++;
+    }
+  }
+
+  if (moved > 0) {
+    priceRange.setValues(priceData);
+    noteRange.setValues(noteData);
+    Logger.log('✅ M1 仕入単価の非数値テキストを備考へ移動: ' + moved + ' 行');
+  }
 }
 
 /**
