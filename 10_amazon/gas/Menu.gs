@@ -19,6 +19,9 @@ function onOpen() {
     .addItem('📈 週次AIレポートを今すぐ送信', 'menuSendWeeklyReport')
     .addItem('📑 月次AI戦略レポートを今すぐ送信', 'menuSendMonthlyReport')
     .addSeparator()
+    .addItem('💰 商品マスター 数式再適用', 'menuSetupProductMaster')
+    .addItem('💱 D1 仕入原価バックフィル（M1ソース）', 'menuBackfillCogsFromM1')
+    .addSeparator()
     .addSubMenu(ui.createMenu('🔍 診断・メンテナンス')
       .addItem('容量チェック', 'menuDiagnoseSheetSizes')
       .addItem('トラフィックカバレッジ（過去30日）', 'menuDiagnoseTraffic30')
@@ -134,6 +137,36 @@ function menuSendMonthlyReport() {
   try {
     sendMonthlyAiReport();
     ss.toast('✅ Gmail送信完了', '🚀 Amazon', 5);
+  } catch (e) {
+    ui.alert('エラー', e.message, ui.ButtonSet.OK);
+  }
+}
+
+function menuSetupProductMaster() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.toast('商品マスターのヘッダー・数式を再適用中...', '🚀 Amazon', 30);
+  try {
+    setupProductMasterHeaders();
+    ss.toast('✅ 商品マスター 数式再適用完了', '🚀 Amazon', 5);
+  } catch (e) {
+    ui.alert('エラー', e.message, ui.ButtonSet.OK);
+  }
+}
+
+function menuBackfillCogsFromM1() {
+  const ui = SpreadsheetApp.getUi();
+  const confirm = ui.alert(
+    'D1 仕入原価バックフィル',
+    'M1 商品マスターの 仕入単価 を D1 日次データの 仕入単価/仕入原価合計 列に反映します。\n' +
+    '全期間が最新の M1 値で上書きされます。よろしいですか？',
+    ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) return;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.toast('D1 仕入原価バックフィル中...', '🚀 Amazon', 60);
+  try {
+    backfillD1CogsFromM1();
+    ss.toast('✅ D1 仕入原価バックフィル完了', '🚀 Amazon', 5);
   } catch (e) {
     ui.alert('エラー', e.message, ui.ButtonSet.OK);
   }

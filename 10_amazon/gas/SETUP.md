@@ -18,7 +18,6 @@
    - `日次データ`
    - `経費明細`
    - `商品マスター`
-   - `月次仕入単価`
    - `販促費マスター`
 4. スプレッドシートのURLからIDをコピー
    - URL: `https://docs.google.com/spreadsheets/d/XXXXXXX/edit`

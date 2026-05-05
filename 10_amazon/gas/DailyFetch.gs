@@ -103,9 +103,11 @@ function fetchAndWriteOrders(dateStr, startOfDay, endOfDay) {
     Utilities.sleep(500);
   }
 
-  // 仕入単価マップを読み込み（M2 から当月分を取得）
-  const yearMonth = dateStr.substring(0, 7);
-  const priceMap = getPriceMapForMonth(yearMonth);
+  // 仕入単価マップを読み込み（M1 商品マスター から取得）
+  const priceMap = {};
+  for (const [asin, m] of Object.entries(productMaster)) {
+    if (m.purchasePrice > 0) priceMap[asin] = m.purchasePrice;
+  }
 
   // D1シートに書き込み
   const rows = [];
@@ -136,12 +138,14 @@ function fetchAndWriteOrders(dateStr, startOfDay, endOfDay) {
     Logger.log('✅ D1 日次データ: ' + rows.length + ' 行書き込み完了');
   }
 
-  // 新規ASINを商品マスターに追加
+  // 新規ASINを商品マスターに追加（12列構成）
   if (newAsins.length > 0) {
     const masterRows = newAsins.map(asin => [
-      asin, '', '', 'アクティブ', '', '', '自動検出 ' + dateStr
+      asin, '', '', 'アクティブ', '', '', '自動検出 ' + dateStr,
+      '', '', '', '', ''
     ]);
     appendRows(SHEET_NAMES.M1_PRODUCT_MASTER, masterRows);
+    applyProductMasterFormulas(getOrCreateSheet(SHEET_NAMES.M1_PRODUCT_MASTER));
     Logger.log('✅ M1 商品マスター: 新規ASIN ' + newAsins.length + ' 件追加');
   }
 

@@ -37,7 +37,6 @@ const SHEET_NAMES = {
   D2F_FINANCE_EVENTS: '日次フィー（Finance）',  // Finance APIから日次でフィー取得
   // マスターシート
   M1_PRODUCT_MASTER: '商品マスター',
-  M2_PURCHASE_PRICE: '月次仕入単価',
   M3_PROMO_COST: '販促費マスター',
   // インポートシート
   HISTORICAL_IMPORT: 'インポート_履歴データ',  // 過去Excelデータの一括取り込み用
@@ -187,10 +186,6 @@ function setupDailyTriggers() {
   ScriptApp.newTrigger('sendMonthlyAiReport')
     .timeBased().onMonthDay(1).atHour(9).create();
 
-  // 毎月3日 6:00 - CFシート → M2 仕入単価同期
-  ScriptApp.newTrigger('syncPurchasePriceFromCfSheet')
-    .timeBased().onMonthDay(3).atHour(6).create();
-
   Logger.log('✅ トリガー設定完了');
   Logger.log('  毎日 6:00 - 注文データ');
   Logger.log('  毎日 6:15 - トラフィック');
@@ -206,7 +201,6 @@ function setupDailyTriggers() {
   Logger.log('  毎週月 7:30 - セール準備チェック');
   Logger.log('  毎週月 8:00 - 週次AIレポート');
   Logger.log('  毎月1日 9:00 - 月次AI戦略レポート');
-  Logger.log('  毎月3日 6:00 - CF→M2 仕入単価同期');
 }
 
 /**

@@ -48,23 +48,83 @@ function setupDailyDataHeaders() {
 }
 
 /**
- * M1 商品マスターにヘッダーを設定
+ * M1 商品マスターにヘッダーを設定（12列構成）
+ *
+ * 列構造:
+ *   A: ASIN
+ *   B: 商品名
+ *   C: カテゴリ
+ *   D: ステータス
+ *   E: 仕入単価           （手入力 / D1 仕入原価バックフィルのソース）
+ *   F: 仕入れ先
+ *   G: 備考
+ *   H: 販売単価           （手入力）
+ *   I: 販売手数料率        （手入力 / カテゴリ別レート 例: 8%）
+ *   J: 販売手数料          （数式 =H*I）
+ *   K: FBA手数料           （手入力）
+ *   L: 粗利単価           （数式 =H-E-J-K）
  */
+const M1_HEADERS = [
+  'ASIN', '商品名', 'カテゴリ', 'ステータス',
+  '仕入単価', '仕入れ先', '備考',
+  '販売単価', '販売手数料率', '販売手数料', 'FBA手数料', '粗利単価',
+];
+
+const M1_COLS = {
+  ASIN: 1, NAME: 2, CATEGORY: 3, STATUS: 4,
+  PURCHASE_PRICE: 5, SUPPLIER: 6, NOTE: 7,
+  SELL_PRICE: 8, COMMISSION_RATE: 9, COMMISSION: 10, FBA_FEE: 11, GROSS_PROFIT: 12,
+};
+
 function setupProductMasterHeaders() {
   const sheet = getOrCreateSheet(SHEET_NAMES.M1_PRODUCT_MASTER);
-  const headers = [
-    'ASIN', '商品名', 'カテゴリ', 'ステータス',
-    '現在の仕入単価', '仕入れ先', '備考'
-  ];
 
-  const existing = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  if (existing[0] !== headers[0]) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  const existing = sheet.getRange(1, 1, 1, M1_HEADERS.length).getValues()[0];
+  const needsUpdate = existing[0] !== M1_HEADERS[0] ||
+                      existing[M1_COLS.SELL_PRICE - 1] !== '販売単価';
+
+  if (needsUpdate) {
+    sheet.getRange(1, 1, 1, M1_HEADERS.length).setValues([M1_HEADERS])
+      .setFontWeight('bold').setBackground('#e8f0fe');
     sheet.setFrozenRows(1);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
-    Logger.log('✅ M1 商品マスター: ヘッダー設定完了');
+    Logger.log('✅ M1 商品マスター: ヘッダー設定完了（12列）');
   }
+
+  // 既存データ行に販売手数料・粗利単価の数式を流し込む（空の行はスキップ）
+  applyProductMasterFormulas(sheet);
+
   return sheet;
+}
+
+/**
+ * M1 の販売手数料(J) / 粗利単価(L) に数式を流し込む。
+ * ASIN が入っている全行に対して適用。手入力列が空でも数式自体は維持する。
+ */
+function applyProductMasterFormulas(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  const asinCol = sheet.getRange(2, M1_COLS.ASIN, lastRow - 1, 1).getValues();
+  const formulaJ = [];
+  const formulaL = [];
+  for (let i = 0; i < asinCol.length; i++) {
+    const r = i + 2;
+    const hasAsin = String(asinCol[i][0] || '').trim() !== '';
+    formulaJ.push([hasAsin ? '=IFERROR(H' + r + '*I' + r + ', "")' : '']);
+    formulaL.push([hasAsin ? '=IFERROR(H' + r + '-E' + r + '-J' + r + '-K' + r + ', "")' : '']);
+  }
+  sheet.getRange(2, M1_COLS.COMMISSION, formulaJ.length, 1).setFormulas(formulaJ);
+  sheet.getRange(2, M1_COLS.GROSS_PROFIT, formulaL.length, 1).setFormulas(formulaL);
+
+  // 表示フォーマット
+  sheet.getRange(2, M1_COLS.PURCHASE_PRICE, lastRow - 1, 1).setNumberFormat('#,##0');
+  sheet.getRange(2, M1_COLS.SELL_PRICE, lastRow - 1, 1).setNumberFormat('#,##0');
+  sheet.getRange(2, M1_COLS.COMMISSION_RATE, lastRow - 1, 1).setNumberFormat('0.0%');
+  sheet.getRange(2, M1_COLS.COMMISSION, lastRow - 1, 1).setNumberFormat('#,##0');
+  sheet.getRange(2, M1_COLS.FBA_FEE, lastRow - 1, 1).setNumberFormat('#,##0');
+  sheet.getRange(2, M1_COLS.GROSS_PROFIT, lastRow - 1, 1).setNumberFormat('#,##0');
+
+  Logger.log('✅ M1 数式適用: ' + formulaJ.length + ' 行');
 }
 
 /**
@@ -200,21 +260,31 @@ function trimAllSheets() {
 }
 
 /**
- * 商品マスターからASIN→商品名のマッピングを取得
+ * 商品マスターから ASIN → 商品情報のマッピングを取得
+ *
+ * 返却フィールド:
+ *   name / category / status / purchasePrice / sellPrice /
+ *   commissionRate / commission / fbaFee / grossProfit
  */
 function getProductMasterMap() {
   const sheet = getOrCreateSheet(SHEET_NAMES.M1_PRODUCT_MASTER);
   const lastRow = sheet.getLastRow();
   if (lastRow <= 1) return {};
 
-  const data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  const data = sheet.getRange(2, 1, lastRow - 1, M1_HEADERS.length).getValues();
   const map = {};
   data.forEach(row => {
     if (row[0]) {
       map[row[0]] = {
-        name: row[1] || '',
-        category: row[2] || '',
-        status: row[3] || 'アクティブ',
+        name: row[M1_COLS.NAME - 1] || '',
+        category: row[M1_COLS.CATEGORY - 1] || '',
+        status: row[M1_COLS.STATUS - 1] || 'アクティブ',
+        purchasePrice: parseFloat(row[M1_COLS.PURCHASE_PRICE - 1]) || 0,
+        sellPrice: parseFloat(row[M1_COLS.SELL_PRICE - 1]) || 0,
+        commissionRate: parseFloat(row[M1_COLS.COMMISSION_RATE - 1]) || 0,
+        commission: parseFloat(row[M1_COLS.COMMISSION - 1]) || 0,
+        fbaFee: parseFloat(row[M1_COLS.FBA_FEE - 1]) || 0,
+        grossProfit: parseFloat(row[M1_COLS.GROSS_PROFIT - 1]) || 0,
       };
     }
   });
