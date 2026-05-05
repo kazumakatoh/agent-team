@@ -154,20 +154,19 @@ function importProductsFromCfSheet() {
     return;
   }
 
-  // 商品マスターに追加（12列構成）
+  // 商品マスターに追加（11列構成）
   const rows = newProducts.map(p => [
     p.asin,                    // A: ASIN
     p.name,                    // B: 商品名
     '',                        // C: カテゴリ（後で手入力）
     'アクティブ',               // D: ステータス
-    '',                        // E: 仕入単価
-    '',                        // F: 仕入れ先
-    'CFシートからインポート',    // G: 備考
-    '',                        // H: 販売単価
-    '',                        // I: 販売手数料率
-    '',                        // J: 販売手数料（数式）
-    '',                        // K: FBA手数料
-    '',                        // L: 粗利単価（数式）
+    '',                        // E: 販売単価
+    '',                        // F: 仕入単価
+    '',                        // G: 販売手数料率
+    '',                        // H: 販売手数料（数式）
+    '',                        // I: FBA手数料
+    '',                        // J: 粗利単価（数式）
+    'CFシートからインポート',    // K: 備考
   ]);
 
   appendRows(SHEET_NAMES.M1_PRODUCT_MASTER, rows);

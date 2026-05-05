@@ -111,11 +111,12 @@ function fetchOrdersByReport(startDate, endDate) {
     Logger.log('✅ D1 日次データ: ' + dataRows.length + ' 行書き込み完了');
   }
 
-  // 新規ASIN追加（M1 12列構成）
+  // 新規ASIN追加（M1 11列構成）
   if (newAsins.length > 0) {
     const masterRows = newAsins.map(asin => [
-      asin, '', '', 'アクティブ', '', '', '自動検出',
-      '', '', '', '', ''
+      asin, '', '', 'アクティブ',
+      '', '', '', '', '', '',
+      '自動検出',
     ]);
     appendRows(SHEET_NAMES.M1_PRODUCT_MASTER, masterRows);
     applyProductMasterFormulas(getOrCreateSheet(SHEET_NAMES.M1_PRODUCT_MASTER));

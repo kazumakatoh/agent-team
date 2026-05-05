@@ -138,11 +138,12 @@ function fetchAndWriteOrders(dateStr, startOfDay, endOfDay) {
     Logger.log('✅ D1 日次データ: ' + rows.length + ' 行書き込み完了');
   }
 
-  // 新規ASINを商品マスターに追加（12列構成）
+  // 新規ASINを商品マスターに追加（11列構成）
   if (newAsins.length > 0) {
     const masterRows = newAsins.map(asin => [
-      asin, '', '', 'アクティブ', '', '', '自動検出 ' + dateStr,
-      '', '', '', '', ''
+      asin, '', '', 'アクティブ',
+      '', '', '', '', '', '',
+      '自動検出 ' + dateStr,
     ]);
     appendRows(SHEET_NAMES.M1_PRODUCT_MASTER, masterRows);
     applyProductMasterFormulas(getOrCreateSheet(SHEET_NAMES.M1_PRODUCT_MASTER));

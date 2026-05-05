@@ -48,56 +48,101 @@ function setupDailyDataHeaders() {
 }
 
 /**
- * M1 商品マスターにヘッダーを設定（12列構成）
+ * M1 商品マスターにヘッダーを設定（11列構成）
  *
  * 列構造:
  *   A: ASIN
  *   B: 商品名
  *   C: カテゴリ
  *   D: ステータス
- *   E: 仕入単価           （手入力 / D1 仕入原価バックフィルのソース）
- *   F: 仕入れ先
- *   G: 備考
- *   H: 販売単価           （手入力）
- *   I: 販売手数料率        （手入力 / カテゴリ別レート 例: 8%）
- *   J: 販売手数料          （数式 =H*I）
- *   K: FBA手数料           （手入力）
- *   L: 粗利単価           （数式 =H-E-J-K）
+ *   E: 販売単価           （手入力）
+ *   F: 仕入単価           （手入力 / D1 仕入原価バックフィルのソース）
+ *   G: 販売手数料率        （手入力 / カテゴリ別レート 例: 8%）
+ *   H: 販売手数料          （数式 =E*G）
+ *   I: FBA手数料           （手入力）
+ *   J: 粗利単価           （数式 =E-F-H-I）
+ *   K: 備考
  */
 const M1_HEADERS = [
   'ASIN', '商品名', 'カテゴリ', 'ステータス',
-  '仕入単価', '仕入れ先', '備考',
-  '販売単価', '販売手数料率', '販売手数料', 'FBA手数料', '粗利単価',
+  '販売単価', '仕入単価', '販売手数料率', '販売手数料', 'FBA手数料', '粗利単価',
+  '備考',
 ];
 
 const M1_COLS = {
   ASIN: 1, NAME: 2, CATEGORY: 3, STATUS: 4,
-  PURCHASE_PRICE: 5, SUPPLIER: 6, NOTE: 7,
-  SELL_PRICE: 8, COMMISSION_RATE: 9, COMMISSION: 10, FBA_FEE: 11, GROSS_PROFIT: 12,
+  SELL_PRICE: 5, PURCHASE_PRICE: 6, COMMISSION_RATE: 7, COMMISSION: 8,
+  FBA_FEE: 9, GROSS_PROFIT: 10, NOTE: 11,
 };
 
 function setupProductMasterHeaders() {
   const sheet = getOrCreateSheet(SHEET_NAMES.M1_PRODUCT_MASTER);
 
-  const existing = sheet.getRange(1, 1, 1, M1_HEADERS.length).getValues()[0];
-  const needsUpdate = existing[0] !== M1_HEADERS[0] ||
-                      existing[M1_COLS.SELL_PRICE - 1] !== '販売単価';
+  // 既存スキーマ判定（v2: 12列 / 仕入れ先入り → 今回の v3: 11列 へ移行）
+  const existing = sheet.getRange(1, 1, 1, Math.max(M1_HEADERS.length, 12)).getValues()[0];
+  const isV2 = existing[4] === '仕入単価' && existing[5] === '仕入れ先' && existing[7] === '販売単価';
+  if (isV2) {
+    Logger.log('🔄 M1 v2 スキーマを検出 → v3 (11列) へ移行します');
+    migrateProductMasterV2ToV3(sheet);
+  }
 
-  if (needsUpdate) {
+  const needsHeaderUpdate = existing[0] !== M1_HEADERS[0] ||
+                            existing[M1_COLS.SELL_PRICE - 1] !== '販売単価' ||
+                            existing[M1_COLS.PURCHASE_PRICE - 1] !== '仕入単価';
+
+  if (needsHeaderUpdate || isV2) {
     sheet.getRange(1, 1, 1, M1_HEADERS.length).setValues([M1_HEADERS])
       .setFontWeight('bold').setBackground('#e8f0fe');
     sheet.setFrozenRows(1);
-    Logger.log('✅ M1 商品マスター: ヘッダー設定完了（12列）');
+    Logger.log('✅ M1 商品マスター: ヘッダー設定完了（11列）');
   }
 
-  // 既存データ行に販売手数料・粗利単価の数式を流し込む（空の行はスキップ）
+  // 既存データ行に販売手数料・粗利単価の数式を流し込む
   applyProductMasterFormulas(sheet);
 
   return sheet;
 }
 
 /**
- * M1 の販売手数料(J) / 粗利単価(L) に数式を流し込む。
+ * v2(12列, 仕入れ先入り) → v3(11列) への列順マイグレーション
+ *
+ * 列マッピング:
+ *   v2 E(仕入単価)        → v3 F(仕入単価)
+ *   v2 F(仕入れ先)        → 削除
+ *   v2 G(備考)            → v3 K(備考)
+ *   v2 H(販売単価)        → v3 E(販売単価)
+ *   v2 I(販売手数料率)     → v3 G(販売手数料率)
+ *   v2 J(販売手数料・式)   → v3 H で再生成
+ *   v2 K(FBA手数料)        → v3 I(FBA手数料)
+ *   v2 L(粗利単価・式)     → v3 J で再生成
+ */
+function migrateProductMasterV2ToV3(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  const v2Data = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
+  const v3Data = v2Data.map(row => [
+    row[0],    // A: ASIN
+    row[1],    // B: 商品名
+    row[2],    // C: カテゴリ
+    row[3],    // D: ステータス
+    row[7],    // E: 販売単価 (was H)
+    row[4],    // F: 仕入単価 (was E)
+    row[8],    // G: 販売手数料率 (was I)
+    '',        // H: 販売手数料 (formula 後で適用)
+    row[10],   // I: FBA手数料 (was K)
+    '',        // J: 粗利単価 (formula 後で適用)
+    row[6],    // K: 備考 (was G)
+  ]);
+
+  // 既存セル値を一旦クリア（数式含む）
+  sheet.getRange(2, 1, lastRow - 1, 12).clearContent();
+  sheet.getRange(2, 1, v3Data.length, M1_HEADERS.length).setValues(v3Data);
+  Logger.log('✅ M1 移行完了: ' + v3Data.length + ' 行を v3 列順に再配置');
+}
+
+/**
+ * M1 の販売手数料(H) / 粗利単価(J) に数式を流し込む。
  * ASIN が入っている全行に対して適用。手入力列が空でも数式自体は維持する。
  */
 function applyProductMasterFormulas(sheet) {
@@ -105,26 +150,26 @@ function applyProductMasterFormulas(sheet) {
   if (lastRow <= 1) return;
 
   const asinCol = sheet.getRange(2, M1_COLS.ASIN, lastRow - 1, 1).getValues();
+  const formulaH = [];
   const formulaJ = [];
-  const formulaL = [];
   for (let i = 0; i < asinCol.length; i++) {
     const r = i + 2;
     const hasAsin = String(asinCol[i][0] || '').trim() !== '';
-    formulaJ.push([hasAsin ? '=IFERROR(H' + r + '*I' + r + ', "")' : '']);
-    formulaL.push([hasAsin ? '=IFERROR(H' + r + '-E' + r + '-J' + r + '-K' + r + ', "")' : '']);
+    formulaH.push([hasAsin ? '=IFERROR(E' + r + '*G' + r + ', "")' : '']);
+    formulaJ.push([hasAsin ? '=IFERROR(E' + r + '-F' + r + '-H' + r + '-I' + r + ', "")' : '']);
   }
-  sheet.getRange(2, M1_COLS.COMMISSION, formulaJ.length, 1).setFormulas(formulaJ);
-  sheet.getRange(2, M1_COLS.GROSS_PROFIT, formulaL.length, 1).setFormulas(formulaL);
+  sheet.getRange(2, M1_COLS.COMMISSION, formulaH.length, 1).setFormulas(formulaH);
+  sheet.getRange(2, M1_COLS.GROSS_PROFIT, formulaJ.length, 1).setFormulas(formulaJ);
 
   // 表示フォーマット
-  sheet.getRange(2, M1_COLS.PURCHASE_PRICE, lastRow - 1, 1).setNumberFormat('#,##0');
   sheet.getRange(2, M1_COLS.SELL_PRICE, lastRow - 1, 1).setNumberFormat('#,##0');
+  sheet.getRange(2, M1_COLS.PURCHASE_PRICE, lastRow - 1, 1).setNumberFormat('#,##0');
   sheet.getRange(2, M1_COLS.COMMISSION_RATE, lastRow - 1, 1).setNumberFormat('0.0%');
   sheet.getRange(2, M1_COLS.COMMISSION, lastRow - 1, 1).setNumberFormat('#,##0');
   sheet.getRange(2, M1_COLS.FBA_FEE, lastRow - 1, 1).setNumberFormat('#,##0');
   sheet.getRange(2, M1_COLS.GROSS_PROFIT, lastRow - 1, 1).setNumberFormat('#,##0');
 
-  Logger.log('✅ M1 数式適用: ' + formulaJ.length + ' 行');
+  Logger.log('✅ M1 数式適用: ' + formulaH.length + ' 行');
 }
 
 /**
