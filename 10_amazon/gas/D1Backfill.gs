@@ -20,6 +20,8 @@
  * - 販売手数料(列23)                    ← M1.販売手数料率 × 売上
  */
 function backfillD1FromM1() {
+  // 列23（販売手数料）ヘッダー未設定の場合は先に整える
+  setupDailyDataHeaders();
   backfillD1CogsFromM1();
   backfillD1CommissionFromM1();
 }
