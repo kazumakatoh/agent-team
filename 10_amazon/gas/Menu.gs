@@ -20,7 +20,7 @@ function onOpen() {
     .addItem('📑 月次AI戦略レポートを今すぐ送信', 'menuSendMonthlyReport')
     .addSeparator()
     .addItem('💰 商品マスター 数式再適用', 'menuSetupProductMaster')
-    .addItem('💱 D1 経費バックフィル（仕入原価+販売手数料）', 'menuBackfillD1FromM1')
+    .addItem('💱 日次データ 経費バックフィル', 'menuBackfillD1FromM1')
     .addSeparator()
     .addSubMenu(ui.createMenu('🔍 診断・メンテナンス')
       .addItem('容量チェック', 'menuDiagnoseSheetSizes')
@@ -157,18 +157,20 @@ function menuSetupProductMaster() {
 function menuBackfillD1FromM1() {
   const ui = SpreadsheetApp.getUi();
   const confirm = ui.alert(
-    'D1 経費バックフィル',
-    'M1 商品マスターの値を D1 日次データに反映します:\n' +
-    '  ・仕入単価 / 仕入原価合計（M1 仕入単価 × 注文点数）\n' +
-    '  ・販売手数料（M1 販売手数料率 × 売上）\n\n' +
-    '全期間が最新の M1 値で上書きされます。よろしいですか？',
+    '日次データ 経費バックフィル',
+    '商品マスターの値を 日次データシートに反映します:\n' +
+    '  ・仕入原価合計 ＝ 商品マスター.仕入単価 × 注文点数\n' +
+    '  ・販売手数料   ＝ 商品マスター.販売手数料率 × 売上\n' +
+    '  ・FBA手数料    ＝ 商品マスター.FBA手数料 × 注文点数\n' +
+    '  ・返品数 / 返品額 ＝ 経費明細(Settlement) 月別率 × 売上/点数\n\n' +
+    '全期間が最新の値で上書きされます。よろしいですか？',
     ui.ButtonSet.YES_NO);
   if (confirm !== ui.Button.YES) return;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ss.toast('D1 経費バックフィル中...', '🚀 Amazon', 90);
+  ss.toast('日次データ 経費バックフィル中...', '🚀 Amazon', 120);
   try {
     backfillD1FromM1();
-    ss.toast('✅ D1 経費バックフィル完了（仕入原価+販売手数料）', '🚀 Amazon', 5);
+    ss.toast('✅ 日次データ 経費バックフィル完了', '🚀 Amazon', 5);
   } catch (e) {
     ui.alert('エラー', e.message, ui.ButtonSet.OK);
   }

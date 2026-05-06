@@ -14,9 +14,11 @@
 // ===== 仕入原価 + 販売手数料（M1 → D1）=====
 
 /**
- * D1 仕入原価 + 販売手数料 を M1 商品マスターから一括バックフィル
+ * D1 経費 を一括バックフィル（仕入原価 + 販売手数料 + FBA手数料 + 返品）
  *
  * - 仕入単価(列20) / 仕入原価合計(列21) ← M1.仕入単価 × 注文点数
+ * - FBA手数料(列13)                     ← M1.FBA手数料 × 注文点数
+ * - 返品数(列14) / 返品額(列15)         ← Settlement Report の月別返品率 × D1売上/点数
  * - 販売手数料(列23)                    ← M1.販売手数料率 × 売上
  */
 function backfillD1FromM1() {
@@ -24,6 +26,8 @@ function backfillD1FromM1() {
   setupDailyDataHeaders();
   backfillD1CogsFromM1();
   backfillD1CommissionFromM1();
+  backfillD1FbaFeeFromM1();
+  backfillD1RefundsFromSettlement();
 }
 
 /**
@@ -116,6 +120,51 @@ function backfillD1CommissionFromM1() {
     d1Sheet.getRange(2, 23, updates.length, 1).setValues(updates);
   }
   Logger.log('✅ D1 販売手数料バックフィル: ' + updates.length + ' 行更新');
+  return updates.length;
+}
+
+// ===== FBA手数料（M1 → D1）=====
+
+/**
+ * D1 日次データの FBA手数料（列13）を M1 商品マスターから反映
+ *
+ * FBA手数料 = M1.FBA手数料(単価) × D1.注文点数
+ *
+ * 全D1行を一括上書きする。Settlement Report 推定（backfillD1FbaFeeFromSettlement）
+ * よりこちらが優先（M1 が真のソース）。
+ */
+function backfillD1FbaFeeFromM1() {
+  Logger.log('===== D1 FBA手数料バックフィル（M1ソース） 開始 =====');
+
+  const masterMap = getProductMasterMap();
+  const fbaMap = {};
+  for (const [asin, m] of Object.entries(masterMap)) {
+    if (m.fbaFee > 0) fbaMap[asin] = m.fbaFee;
+  }
+  Logger.log('  M1 FBA手数料設定済みASIN数: ' + Object.keys(fbaMap).length);
+
+  const d1Sheet = getOrCreateSheet(SHEET_NAMES.D1_DAILY);
+  const d1Last = d1Sheet.getLastRow();
+  if (d1Last <= 1) { Logger.log('D1 空'); return 0; }
+
+  // 列1:日付, 列2:ASIN, 列7:点数, 列13:FBA手数料
+  const d1Data = d1Sheet.getRange(2, 1, d1Last - 1, 7).getValues();
+  const updates = [];
+  let matched = 0;
+
+  for (const row of d1Data) {
+    const asin = String(row[1] || '').trim();
+    const units = parseFloat(row[6]) || 0;
+    const fbaPerUnit = fbaMap[asin] || 0;
+    const fbaTotal = Math.round(fbaPerUnit * units);
+    updates.push([fbaTotal || '']);
+    if (fbaPerUnit > 0) matched++;
+  }
+
+  if (updates.length > 0) {
+    d1Sheet.getRange(2, 13, updates.length, 1).setValues(updates);
+  }
+  Logger.log('✅ D1 FBA手数料バックフィル: ' + updates.length + ' 行 (M1マッチ: ' + matched + ')');
   return updates.length;
 }
 
