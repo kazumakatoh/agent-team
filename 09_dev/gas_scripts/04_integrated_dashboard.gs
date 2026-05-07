@@ -345,7 +345,10 @@ function readFXForDashboard_(ss) {
   }
 
   const goldPrice = 4800;
-  const reqMargin = avgLot * 100 * goldPrice / 2222;
+  const activeBroker = (typeof BROKERS !== 'undefined')
+    ? (BROKERS.find(b => b.active) || BROKERS[0])
+    : { leverage: 2222 };
+  const reqMargin = avgLot * 100 * goldPrice / activeBroker.leverage;
   const balance = getNum('B5');
   const equity = getNum('B6');
   const freeMargin = getNum('B7');
@@ -489,15 +492,22 @@ function readSpotMonthlyHistory_(ss) {
 
 function determineFxTargetIdx_(months, fallbackIdx) {
   try {
-    const folder = DriveApp.getFolderById(MT4_CONFIG.FOLDER_ID);
-    const files = folder.getFiles();
     let latestDate = new Date(0);
-    while (files.hasNext()) {
-      const f = files.next();
-      const name = f.getName();
-      if (!name.toLowerCase().endsWith('.htm') && !name.toLowerCase().endsWith('.html')) continue;
-      if (f.getLastUpdated() > latestDate) latestDate = f.getLastUpdated();
-    }
+    const targets = (typeof BROKERS !== 'undefined')
+      ? BROKERS.filter(b => b.active)
+      : [{ folderId: MT4_CONFIG.FOLDER_ID }];
+    targets.forEach(broker => {
+      try {
+        const folder = DriveApp.getFolderById(broker.folderId);
+        const files = folder.getFiles();
+        while (files.hasNext()) {
+          const f = files.next();
+          const name = f.getName();
+          if (!name.toLowerCase().endsWith('.htm') && !name.toLowerCase().endsWith('.html')) continue;
+          if (f.getLastUpdated() > latestDate) latestDate = f.getLastUpdated();
+        }
+      } catch (e) {}
+    });
     if (latestDate.getTime() > 0) {
       const y = latestDate.getFullYear();
       const m = latestDate.getMonth() + 1;

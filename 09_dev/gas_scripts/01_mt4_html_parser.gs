@@ -15,13 +15,33 @@
 // 設定値
 // ======================================================
 const MT4_CONFIG = {
-  FOLDER_ID: '1JzrH902S5Vy1ZYFgQy3FzxD6exK7Q0js',  // MT4_Reports フォルダの直接ID
+  FOLDER_ID: '1JzrH902S5Vy1ZYFgQy3FzxD6exK7Q0js',  // 後方互換用（BigBoss）
   SHEET_RAW: 'raw_FX_trades',
   SHEET_MONTHLY: 'FX_月次',
   SHEET_SUMMARY: 'FX_サマリー',
   ACCOUNT_ID: '1139773',
   CREDIT_BONUS_USD: 3128.76
 };
+
+// ブローカー定義（active=true のみが合算対象）
+const BROKERS = [
+  {
+    name: 'BigBoss',
+    folderId: '1JzrH902S5Vy1ZYFgQy3FzxD6exK7Q0js',
+    accountId: '1139773',
+    leverage: 2222,
+    snapshotSheet: 'FX_スナップショット_BigBoss',
+    active: false  // クローズ済（過去月の参照用にデータは残す）
+  },
+  {
+    name: 'FXTRADING',
+    folderId: '1FkUTsBqwTPg-jIj570nYVBwjfBu_hKMH',
+    accountId: '888077276',
+    leverage: 500,
+    snapshotSheet: 'FX_スナップショット_FXTRADING',
+    active: true
+  }
+];
 
 // ======================================================
 // メイン関数（トリガー実行対象）
@@ -48,24 +68,46 @@ function runMT4Aggregation() {
 // Drive から最新HTML取得
 // ======================================================
 function getLatestReportFromDrive_() {
-  const folder = DriveApp.getFolderById(MT4_CONFIG.FOLDER_ID);
-  const files = folder.getFiles();
-  let latest = null;
-  let latestDate = new Date(0);
+  // active ブローカーで最新の HTML を返す（後方互換）
+  const perBroker = getLatestReportPerBroker_();
+  const activeItems = Object.values(perBroker).filter(r => r.broker.active);
+  if (activeItems.length === 0) return null;
+  const latest = activeItems.reduce((best, cur) => cur.date > best.date ? cur : best);
+  Logger.log(`📄 最新（${latest.broker.name}）：${latest.fileName}（更新：${latest.date}）`);
+  return latest.html;
+}
 
-  while (files.hasNext()) {
-    const f = files.next();
-    const name = f.getName();
-    if (!name.toLowerCase().endsWith('.htm') && !name.toLowerCase().endsWith('.html')) continue;
-    if (f.getLastUpdated() > latestDate) {
-      latest = f;
-      latestDate = f.getLastUpdated();
+function getLatestReportPerBroker_() {
+  const result = {};
+  BROKERS.forEach(broker => {
+    try {
+      const folder = DriveApp.getFolderById(broker.folderId);
+      const files = folder.getFiles();
+      let latest = null;
+      let latestDate = new Date(0);
+      while (files.hasNext()) {
+        const f = files.next();
+        const name = f.getName();
+        if (!name.toLowerCase().endsWith('.htm') && !name.toLowerCase().endsWith('.html')) continue;
+        if (f.getLastUpdated() > latestDate) {
+          latest = f;
+          latestDate = f.getLastUpdated();
+        }
+      }
+      if (latest) {
+        result[broker.name] = {
+          broker: broker,
+          html: latest.getBlob().getDataAsString('UTF-8'),
+          date: latestDate,
+          fileName: latest.getName()
+        };
+        Logger.log(`📄 ${broker.name}: ${latest.getName()} (${latestDate})`);
+      }
+    } catch (e) {
+      Logger.log(`${broker.name} 取得失敗: ${e.message}`);
     }
-  }
-
-  if (!latest) return null;
-  Logger.log(`📄 読み込みファイル：${latest.getName()}（更新：${latestDate}）`);
-  return latest.getBlob().getDataAsString('UTF-8');
+  });
+  return result;
 }
 
 // ======================================================
@@ -365,16 +407,89 @@ function testMT4Parse() {
 }
 
 // ======================================================
-// FX実績をスナップショットシートへ書き込み
+// FX実績をスナップショットシートへ書き込み（per-broker + 合算）
 // ======================================================
 function testWriteFXToSheet() {
-  const html = getLatestReportFromDrive_();
-  if (!html) { Logger.log('❌ HTMLなし'); return; }
-  const parsed = parseMT4HTML_(html);
-
   const ss = SpreadsheetApp.getActive();
-  let sheet = ss.getSheetByName('FX_スナップショット');
-  if (!sheet) sheet = ss.insertSheet('FX_スナップショット');
+  const perBroker = getLatestReportPerBroker_();
+  if (Object.keys(perBroker).length === 0) {
+    Logger.log('❌ どのブローカーフォルダにもHTMLなし');
+    return;
+  }
+
+  // ブローカー別シート書き込み
+  Object.values(perBroker).forEach(item => {
+    const parsed = parseMT4HTML_(item.html);
+    writeFXSnapshotSheet_(ss, item.broker.snapshotSheet, parsed, item.broker.name);
+  });
+
+  // 合算シート書き込み（active のみ）
+  const activeItems = Object.values(perBroker).filter(r => r.broker.active);
+  if (activeItems.length > 0) {
+    const aggregated = aggregateBrokers_(activeItems);
+    writeFXSnapshotSheet_(ss, 'FX_スナップショット', aggregated.parsed,
+      activeItems.map(i => i.broker.name).join('+'));
+  }
+
+  Logger.log(`✅ FX_スナップショット書き込み完了（${Object.keys(perBroker).length}ブローカー + 合算）`);
+}
+
+function aggregateBrokers_(items) {
+  const allTrades = [];
+  let balance = 0, equity = 0, freeMargin = 0, deposit = 0, credit = 0;
+  let maxDD = 0, maxDDPct = 0, largestProfit = 0, largestLoss = 0;
+
+  items.forEach(item => {
+    const parsed = parseMT4HTML_(item.html);
+    allTrades.push(...(parsed.trades || []));
+    balance += parsed.summary.balance || 0;
+    equity += parsed.summary.equity || 0;
+    freeMargin += parsed.summary.freeMargin || 0;
+    deposit += parsed.summary.deposit || 0;
+    credit += parsed.summary.creditFacility || 0;
+    if ((parsed.stats.maximalDrawdownPct || 0) > maxDDPct) maxDDPct = parsed.stats.maximalDrawdownPct;
+    if ((parsed.stats.maximalDrawdown || 0) > maxDD) maxDD = parsed.stats.maximalDrawdown;
+    if ((parsed.stats.largestProfit || 0) > largestProfit) largestProfit = parsed.stats.largestProfit;
+    if ((parsed.stats.largestLoss || 0) < largestLoss) largestLoss = parsed.stats.largestLoss;
+  });
+
+  const tradingOnly = allTrades.filter(t => ['buy', 'sell'].includes(t.type));
+  const wins = tradingOnly.filter(t => t.profit > 0);
+  const losses = tradingOnly.filter(t => t.profit < 0);
+  const grossProfit = wins.reduce((s, t) => s + t.profit, 0);
+  const grossLoss = Math.abs(losses.reduce((s, t) => s + t.profit, 0));
+  const avgProfit = wins.length > 0 ? grossProfit / wins.length : 0;
+  const avgLoss = losses.length > 0 ? -grossLoss / losses.length : 0;
+  const totalNet = grossProfit - grossLoss;
+
+  return {
+    parsed: {
+      summary: {
+        balance, equity, freeMargin, deposit, creditFacility: credit, realBalance: balance,
+        floatingPL: 0, closedTradePL: totalNet, margin: 0
+      },
+      stats: {
+        totalTrades: tradingOnly.length,
+        winRate: tradingOnly.length > 0 ? (wins.length / tradingOnly.length) * 100 : 0,
+        profitFactor: grossLoss > 0 ? grossProfit / grossLoss : 0,
+        grossProfit, grossLoss,
+        totalNetProfit: totalNet,
+        avgProfit, avgLoss,
+        expectedPayoff: tradingOnly.length > 0 ? totalNet / tradingOnly.length : 0,
+        maximalDrawdown: maxDD,
+        maximalDrawdownPct: maxDDPct,
+        largestProfit, largestLoss,
+        absoluteDrawdown: 0,
+        maxConsecWins: 0, maxConsecLosses: 0
+      },
+      trades: allTrades
+    }
+  };
+}
+
+function writeFXSnapshotSheet_(ss, sheetName, parsed, brokerLabel) {
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) sheet = ss.insertSheet(sheetName);
   else sheet.clear();
 
   const rrRatio = parsed.stats.avgLoss !== 0
@@ -410,9 +525,9 @@ function testWriteFXToSheet() {
   ];
 
   // 取引明細
-  const tradeHeader = [['📋 取引明細（直近）', '', '', '', '', '', '']];
+  const tradeHeader = [[`📋 取引明細（${brokerLabel || '直近'}）`, '', '', '', '', '', '']];
   const tradeCols = [['チケット', '建玉時刻', 'タイプ', 'ロット', '建値', '決済', 'P/L($)']];
-  const tradingOnly = parsed.trades.filter(t => ['buy', 'sell'].includes(t.type));
+  const tradingOnly = (parsed.trades || []).filter(t => ['buy', 'sell'].includes(t.type));
   const tradeRows = tradingOnly.map(t => [
     t.ticket, t.openTime, t.type, t.size, t.openPrice, t.closePrice, t.profit
   ]);
@@ -468,7 +583,7 @@ function testWriteFXToSheet() {
   sheet.setColumnWidth(1, 220);
   sheet.setColumnWidths(2, 6, 170);
 
-  Logger.log('✅ FX_スナップショット書き込み完了');
+  Logger.log(`✅ ${sheetName} 書き込み完了`);
 }
 
 function judgeFX_(actual, target) {
