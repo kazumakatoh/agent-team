@@ -420,6 +420,13 @@ function testWriteFXToSheet() {
   // ブローカー別シート書き込み
   Object.values(perBroker).forEach(item => {
     const parsed = parseMT4HTML_(item.html);
+    if (!item.broker.active) {
+      // クローズ済ブローカー: 残高関連を0にオーバーライド（取引履歴・統計は保持）
+      parsed.summary.balance = 0;
+      parsed.summary.equity = 0;
+      parsed.summary.freeMargin = 0;
+      parsed.summary.realBalance = 0;
+    }
     writeFXSnapshotSheet_(ss, item.broker.snapshotSheet, parsed, item.broker.name);
   });
 
