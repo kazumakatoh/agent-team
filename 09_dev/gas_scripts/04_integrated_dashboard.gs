@@ -301,28 +301,54 @@ function populateIntegratedDashboard() {
     cumulativeNet += totalGrossProfit - totalExpense - initialSetup;
     const totalCumYield = totalPrincipal > 0 ? cumulativeGrossProfit / totalPrincipal : 0;
 
-    if (initialSetup > 0) sheet.getRange(ROW.TOTAL_SETUP, col).setValue(initialSetup);
-    sheet.getRange(ROW.TOTAL_PRINCIPAL, col).setValue(totalPrincipal);
-    sheet.getRange(ROW.TOTAL_VALUE, col).setValue(totalValue);
-    sheet.getRange(ROW.TOTAL_NET, col).setValue(totalGrossProfit);
-    sheet.getRange(ROW.TOTAL_YIELD, col).setValue(totalYield);
-    sheet.getRange(ROW.TOTAL_EXPENSE, col).setValue(totalExpense);
-    sheet.getRange(ROW.TOTAL_CUMPROFIT, col).setValue(cumulativeNet);
-    sheet.getRange(ROW.TOTAL_CUMYIELD, col).setValue(totalCumYield);
+    // === 列文字（A1記法） ===
+    const c = colLetter_(col);
+    const isFirstCol = (col === DASH_CONFIG.FIRST_DATA_COL);
+    const pc = isFirstCol ? null : colLetter_(col - 1);
 
+    // === 統合（生データ） ===
+    if (initialSetup > 0) sheet.getRange(ROW.TOTAL_SETUP, col).setValue(initialSetup);
+    sheet.getRange(ROW.TOTAL_EXPENSE, col).setValue(totalExpense);
+    // 統合（数式：現物+FXから動的計算）
+    sheet.getRange(ROW.TOTAL_PRINCIPAL, col).setFormula(`=${c}${ROW.SPOT_PRINCIPAL}+${c}${ROW.FX_PRINCIPAL}`);
+    sheet.getRange(ROW.TOTAL_VALUE, col).setFormula(`=${c}${ROW.SPOT_VALUE}+${c}${ROW.FX_BALANCE}`);
+    sheet.getRange(ROW.TOTAL_NET, col).setFormula(`=${c}${ROW.SPOT_PROFIT}+${c}${ROW.FX_PROFIT}`);
+    sheet.getRange(ROW.TOTAL_YIELD, col).setFormula(`=IFERROR(${c}${ROW.TOTAL_NET}/${c}${ROW.TOTAL_PRINCIPAL},0)`);
+    if (isFirstCol) {
+      sheet.getRange(ROW.TOTAL_CUMPROFIT, col).setFormula(`=${c}${ROW.TOTAL_NET}`);
+      sheet.getRange(ROW.TOTAL_CUMYIELD, col).setFormula(`=${c}${ROW.TOTAL_YIELD}`);
+    } else {
+      sheet.getRange(ROW.TOTAL_CUMPROFIT, col).setFormula(`=${pc}${ROW.TOTAL_CUMPROFIT}+${c}${ROW.TOTAL_NET}`);
+      sheet.getRange(ROW.TOTAL_CUMYIELD, col).setFormula(`=${pc}${ROW.TOTAL_CUMYIELD}+${c}${ROW.TOTAL_YIELD}`);
+    }
+
+    // === 現物（生データ） ===
     sheet.getRange(ROW.SPOT_PRINCIPAL, col).setValue(spotPrincipal);
     sheet.getRange(ROW.SPOT_VALUE, col).setValue(spotValue);
     sheet.getRange(ROW.SPOT_PROFIT, col).setValue(spotProfit);
-    sheet.getRange(ROW.SPOT_YIELD, col).setValue(spotYield);
-    sheet.getRange(ROW.SPOT_CUMPROFIT, col).setValue(cumulativeSpotProfit);
-    sheet.getRange(ROW.SPOT_CUMYIELD, col).setValue(spotCumYield);
     sheet.getRange(ROW.SPOT_FEE, col).setValue(spotFee);
+    // 現物（数式）
+    sheet.getRange(ROW.SPOT_YIELD, col).setFormula(`=IFERROR(${c}${ROW.SPOT_PROFIT}/${c}${ROW.SPOT_PRINCIPAL},0)`);
+    if (isFirstCol) {
+      sheet.getRange(ROW.SPOT_CUMPROFIT, col).setFormula(`=${c}${ROW.SPOT_PROFIT}`);
+      sheet.getRange(ROW.SPOT_CUMYIELD, col).setFormula(`=${c}${ROW.SPOT_YIELD}`);
+    } else {
+      sheet.getRange(ROW.SPOT_CUMPROFIT, col).setFormula(`=${pc}${ROW.SPOT_CUMPROFIT}+${c}${ROW.SPOT_PROFIT}`);
+      sheet.getRange(ROW.SPOT_CUMYIELD, col).setFormula(`=${pc}${ROW.SPOT_CUMYIELD}+${c}${ROW.SPOT_YIELD}`);
+    }
 
+    // === FX（生データ） ===
     sheet.getRange(ROW.FX_BALANCE, col).setValue(fxBalance);
     sheet.getRange(ROW.FX_PROFIT, col).setValue(fxProfit);
-    sheet.getRange(ROW.FX_YIELD, col).setValue(fxYield);
-    sheet.getRange(ROW.FX_CUMPROFIT, col).setValue(cumulativeFxProfit);
-    sheet.getRange(ROW.FX_CUMYIELD, col).setValue(fxCumYield);
+    // FX（数式）
+    sheet.getRange(ROW.FX_YIELD, col).setFormula(`=IFERROR(${c}${ROW.FX_PROFIT}/${c}${ROW.FX_PRINCIPAL},0)`);
+    if (isFirstCol) {
+      sheet.getRange(ROW.FX_CUMPROFIT, col).setFormula(`=${c}${ROW.FX_PROFIT}`);
+      sheet.getRange(ROW.FX_CUMYIELD, col).setFormula(`=${c}${ROW.FX_YIELD}`);
+    } else {
+      sheet.getRange(ROW.FX_CUMPROFIT, col).setFormula(`=${pc}${ROW.FX_CUMPROFIT}+${c}${ROW.FX_PROFIT}`);
+      sheet.getRange(ROW.FX_CUMYIELD, col).setFormula(`=${pc}${ROW.FX_CUMYIELD}+${c}${ROW.FX_YIELD}`);
+    }
     // 月次取引データ or projection があれば trade 統計を書き込む
     // （過去月でも当月クローズのtradeがあれば上書き、なければ既存値保持）
     const hasFxStats = (monthTrades.length > 0) || fxIsFuture;
@@ -426,6 +452,17 @@ function generateMonthList_() {
 function findCurrentMonthIndex_(months) {
   const now = new Date();
   return months.findIndex(mm => mm.year === now.getFullYear() && mm.month === now.getMonth() + 1);
+}
+
+function colLetter_(col) {
+  let letter = '';
+  let n = col;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letter;
 }
 
 function applyDashboardFormats_(sheet, monthCount) {
