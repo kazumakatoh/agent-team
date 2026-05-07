@@ -227,58 +227,54 @@ function populateIntegratedDashboard() {
     const fxIsCurrent = (idx === fxCurrentIdx);
     const fxIsPast = (idx < fxCurrentIdx);
 
+    // Balance決定
     if (fxIsCurrent) {
       fxBalance = fx ? fx.balance : prevFxBalance;
-
-      // 月次トレード（クローズ日が当月のもの）から計算
-      let monthTrades = [];
-      if (fx && fx.trades) {
-        const monthStart = new Date(m.year, m.month - 1, 1);
-        const monthEnd = new Date(m.year, m.month, 1);
-        monthTrades = fx.trades.filter(t =>
-          ['buy', 'sell'].includes(t.type) &&
-          t.closeTime instanceof Date &&
-          t.closeTime >= monthStart && t.closeTime < monthEnd
-        );
-      }
-
-      if (monthTrades.length > 0) {
-        // 月次フィルタが効いた場合：当月のtradeのみで集計
-        fxProfit = monthTrades.reduce((s, t) => s + (t.profit || 0), 0);
-        fxTrades = monthTrades.length;
-        const monthWins = monthTrades.filter(t => t.profit > 0);
-        const monthLosses = monthTrades.filter(t => t.profit < 0);
-        fxWins = monthWins.length;
-        fxLosses = monthLosses.length;
-        fxWinRate = fxTrades > 0 ? fxWins / fxTrades : 0;
-        const monthGP = monthWins.reduce((s, t) => s + t.profit, 0);
-        const monthGL = Math.abs(monthLosses.reduce((s, t) => s + t.profit, 0));
-        fxPF = monthGL > 0 ? monthGP / monthGL : 0;
-        const monthAP = fxWins > 0 ? monthGP / fxWins : 0;
-        const monthAL = fxLosses > 0 ? -monthGL / fxLosses : 0;
-        fxRR = monthAL < 0 ? Math.abs(monthAP / monthAL) : 0;
-        fxCost = Math.abs(monthTrades.reduce((s, t) => s + (t.commission || 0), 0));
-        let totalLots = 0;
-        monthTrades.forEach(t => totalLots += (t.size || 0));
-        fxAvgLot = fxTrades > 0 ? totalLots / fxTrades : 0;
-        fxDD = fx ? fx.maxDDPct / 100 : null;
-        fxReqMargin = fx ? fx.reqMargin : 0;
-      } else if (fx) {
-        // フォールバック：snapshot全体
-        fxTrades = fx.totalTrades;
-        fxWins = fx.wins; fxLosses = fx.losses;
-        fxWinRate = fx.winRate / 100;
-        fxPF = fx.profitFactor; fxRR = fx.rrRatio;
-        fxDD = fx.maxDDPct / 100;
-        fxCost = Math.abs(fx.commission);
-        fxAvgLot = fx.avgLot; fxReqMargin = fx.reqMargin;
-      }
     } else if (fxIsPast) {
       const fb = sheet.getRange(ROW.FX_BALANCE, col).getValue();
       fxBalance = (typeof fb === 'number' && fb > 0) ? fb : prevFxBalance;
     } else {
+      // 将来月：projection
       fxProfit = prevFxBalance * DASH_ASSUMPTIONS.FX_MONTHLY_YIELD;
       fxBalance = prevFxBalance + fxProfit;
+    }
+
+    // 月次取引フィルタ（過去・現在）：当月クローズのトレードを抽出
+    let monthTrades = [];
+    const fxIsFuture = (idx > fxCurrentIdx);
+    if (!fxIsFuture && fx && fx.trades) {
+      const monthStart = new Date(m.year, m.month - 1, 1);
+      const monthEnd = new Date(m.year, m.month, 1);
+      monthTrades = fx.trades.filter(t =>
+        ['buy', 'sell'].includes(t.type) &&
+        t.closeTime instanceof Date &&
+        t.closeTime >= monthStart && t.closeTime < monthEnd
+      );
+    }
+
+    if (monthTrades.length > 0) {
+      // 月次フィルタが効いた場合：当月のtradeのみで集計
+      fxProfit = monthTrades.reduce((s, t) => s + (t.profit || 0), 0);
+      fxTrades = monthTrades.length;
+      const monthWins = monthTrades.filter(t => t.profit > 0);
+      const monthLosses = monthTrades.filter(t => t.profit < 0);
+      fxWins = monthWins.length;
+      fxLosses = monthLosses.length;
+      fxWinRate = fxTrades > 0 ? fxWins / fxTrades : 0;
+      const monthGP = monthWins.reduce((s, t) => s + t.profit, 0);
+      const monthGL = Math.abs(monthLosses.reduce((s, t) => s + t.profit, 0));
+      fxPF = monthGL > 0 ? monthGP / monthGL : 0;
+      const monthAP = fxWins > 0 ? monthGP / fxWins : 0;
+      const monthAL = fxLosses > 0 ? -monthGL / fxLosses : 0;
+      fxRR = monthAL < 0 ? Math.abs(monthAP / monthAL) : 0;
+      fxCost = Math.abs(monthTrades.reduce((s, t) => s + (t.commission || 0), 0));
+      let totalLots = 0;
+      monthTrades.forEach(t => totalLots += (t.size || 0));
+      fxAvgLot = fxTrades > 0 ? totalLots / fxTrades : 0;
+      fxDD = fx ? fx.maxDDPct / 100 : null;
+      fxReqMargin = fx ? fx.reqMargin : 0;
+    } else if (fxIsFuture) {
+      // 将来月：projection 統計
       fxTrades = DASH_ASSUMPTIONS.FX_MONTHLY_TRADES;
       fxWins = Math.round(fxTrades * DASH_ASSUMPTIONS.FX_WIN_RATE);
       fxLosses = fxTrades - fxWins;
@@ -327,7 +323,10 @@ function populateIntegratedDashboard() {
     sheet.getRange(ROW.FX_YIELD, col).setValue(fxYield);
     sheet.getRange(ROW.FX_CUMPROFIT, col).setValue(cumulativeFxProfit);
     sheet.getRange(ROW.FX_CUMYIELD, col).setValue(fxCumYield);
-    if (!fxIsPast) {
+    // 月次取引データ or projection があれば trade 統計を書き込む
+    // （過去月でも当月クローズのtradeがあれば上書き、なければ既存値保持）
+    const hasFxStats = (monthTrades.length > 0) || fxIsFuture;
+    if (hasFxStats) {
       sheet.getRange(ROW.FX_TRADES, col).setValue(fxTrades);
       sheet.getRange(ROW.FX_WINRATE, col).setValue(fxWinRate);
       if (fxRR !== null && fxRR > 0) sheet.getRange(ROW.FX_BREAKEVEN, col).setValue(1 / (1 + fxRR));
