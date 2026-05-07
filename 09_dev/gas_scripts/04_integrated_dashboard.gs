@@ -39,7 +39,7 @@ const KPI_ROWS = [
   { type: 'data', label: '累計利回り(%)', fmt: 'percent' },
   { type: 'data', label: '手数料', fmt: 'money' },
   { type: 'blank' },
-  { type: 'header', label: '💱 FX(BigBoss)' },
+  { type: 'header', label: '💱 FX' },
   { type: 'data', label: '元本', fmt: 'money' },
   { type: 'data', label: 'Balance', fmt: 'money' },
   { type: 'data', label: '月次利益', fmt: 'money' },
@@ -229,7 +229,42 @@ function populateIntegratedDashboard() {
 
     if (fxIsCurrent) {
       fxBalance = fx ? fx.balance : prevFxBalance;
-      if (fx) {
+
+      // 月次トレード（クローズ日が当月のもの）から計算
+      let monthTrades = [];
+      if (fx && fx.trades) {
+        const monthStart = new Date(m.year, m.month - 1, 1);
+        const monthEnd = new Date(m.year, m.month, 1);
+        monthTrades = fx.trades.filter(t =>
+          ['buy', 'sell'].includes(t.type) &&
+          t.closeTime instanceof Date &&
+          t.closeTime >= monthStart && t.closeTime < monthEnd
+        );
+      }
+
+      if (monthTrades.length > 0) {
+        // 月次フィルタが効いた場合：当月のtradeのみで集計
+        fxProfit = monthTrades.reduce((s, t) => s + (t.profit || 0), 0);
+        fxTrades = monthTrades.length;
+        const monthWins = monthTrades.filter(t => t.profit > 0);
+        const monthLosses = monthTrades.filter(t => t.profit < 0);
+        fxWins = monthWins.length;
+        fxLosses = monthLosses.length;
+        fxWinRate = fxTrades > 0 ? fxWins / fxTrades : 0;
+        const monthGP = monthWins.reduce((s, t) => s + t.profit, 0);
+        const monthGL = Math.abs(monthLosses.reduce((s, t) => s + t.profit, 0));
+        fxPF = monthGL > 0 ? monthGP / monthGL : 0;
+        const monthAP = fxWins > 0 ? monthGP / fxWins : 0;
+        const monthAL = fxLosses > 0 ? -monthGL / fxLosses : 0;
+        fxRR = monthAL < 0 ? Math.abs(monthAP / monthAL) : 0;
+        fxCost = Math.abs(monthTrades.reduce((s, t) => s + (t.commission || 0), 0));
+        let totalLots = 0;
+        monthTrades.forEach(t => totalLots += (t.size || 0));
+        fxAvgLot = fxTrades > 0 ? totalLots / fxTrades : 0;
+        fxDD = fx ? fx.maxDDPct / 100 : null;
+        fxReqMargin = fx ? fx.reqMargin : 0;
+      } else if (fx) {
+        // フォールバック：snapshot全体
         fxTrades = fx.totalTrades;
         fxWins = fx.wins; fxLosses = fx.losses;
         fxWinRate = fx.winRate / 100;
@@ -327,22 +362,32 @@ function readFXForDashboard_(ss) {
   if (!sheet) return null;
   const getNum = (range) => Number(sheet.getRange(range).getValue()) || 0;
 
-  let html = null;
-  try { html = getLatestReportFromDrive_(); } catch (e) { Logger.log(`Drive取得スキップ: ${e.message}`); }
+  // 全ブローカーから取引履歴を集める（月次フィルタリング用）
+  let allTrades = [];
+  try {
+    if (typeof BROKERS !== 'undefined' && typeof getLatestReportPerBroker_ === 'function') {
+      const perBroker = getLatestReportPerBroker_();
+      Object.values(perBroker).forEach(item => {
+        const parsed = parseMT4HTML_(item.html);
+        allTrades.push(...(parsed.trades || []));
+      });
+    } else {
+      const html = getLatestReportFromDrive_();
+      if (html) allTrades = parseMT4HTML_(html).trades || [];
+    }
+  } catch (e) { Logger.log(`trades取得スキップ: ${e.message}`); }
+
   let avgLot = 0, totalPips = 0, totalLots = 0, tradeCount = 0, commission = 0;
-  if (html) {
-    const parsed = parseMT4HTML_(html);
-    const trading = parsed.trades.filter(t => ['buy', 'sell'].includes(t.type));
-    tradeCount = trading.length;
-    trading.forEach(t => {
-      totalLots += t.size;
-      const diff = t.closePrice - t.openPrice;
-      const sign = (t.type === 'sell') ? -1 : 1;
-      totalPips += diff * sign * 10;
-      commission += (t.commission || 0);
-    });
-    avgLot = tradeCount > 0 ? totalLots / tradeCount : 0;
-  }
+  const trading = allTrades.filter(t => ['buy', 'sell'].includes(t.type));
+  tradeCount = trading.length;
+  trading.forEach(t => {
+    totalLots += t.size;
+    const diff = t.closePrice - t.openPrice;
+    const sign = (t.type === 'sell') ? -1 : 1;
+    totalPips += diff * sign * 10;
+    commission += (t.commission || 0);
+  });
+  avgLot = tradeCount > 0 ? totalLots / tradeCount : 0;
 
   const goldPrice = 4800;
   const activeBroker = (typeof BROKERS !== 'undefined')
@@ -364,7 +409,8 @@ function readFXForDashboard_(ss) {
     commission: commission,
     wins: Math.round(getNum('B10') * getNum('B11')),
     losses: getNum('B10') - Math.round(getNum('B10') * getNum('B11')),
-    avgLot: avgLot, reqMargin: reqMargin, marginLevel: marginLevel, totalPips: totalPips
+    avgLot: avgLot, reqMargin: reqMargin, marginLevel: marginLevel, totalPips: totalPips,
+    trades: allTrades
   };
 }
 
