@@ -430,12 +430,12 @@ function testWriteFXToSheet() {
     writeFXSnapshotSheet_(ss, item.broker.snapshotSheet, parsed, item.broker.name);
   });
 
-  // 合算シート書き込み（active のみ）
-  const activeItems = Object.values(perBroker).filter(r => r.broker.active);
-  if (activeItems.length > 0) {
-    const aggregated = aggregateBrokers_(activeItems);
+  // 合算シート書き込み（全ブローカー、非activeは残高0扱いだが履歴は含む）
+  const allItems = Object.values(perBroker);
+  if (allItems.length > 0) {
+    const aggregated = aggregateBrokers_(allItems);
     writeFXSnapshotSheet_(ss, 'FX_スナップショット', aggregated.parsed,
-      activeItems.map(i => i.broker.name).join('+'));
+      allItems.map(i => i.broker.name).join('+'));
   }
 
   Logger.log(`✅ FX_スナップショット書き込み完了（${Object.keys(perBroker).length}ブローカー + 合算）`);
@@ -449,11 +449,16 @@ function aggregateBrokers_(items) {
   items.forEach(item => {
     const parsed = parseMT4HTML_(item.html);
     allTrades.push(...(parsed.trades || []));
-    balance += parsed.summary.balance || 0;
-    equity += parsed.summary.equity || 0;
-    freeMargin += parsed.summary.freeMargin || 0;
-    deposit += parsed.summary.deposit || 0;
-    credit += parsed.summary.creditFacility || 0;
+
+    // 残高関連は active ブローカーのみ集計（クローズ済は実残高0扱い）
+    if (item.broker.active) {
+      balance += parsed.summary.balance || 0;
+      equity += parsed.summary.equity || 0;
+      freeMargin += parsed.summary.freeMargin || 0;
+      deposit += parsed.summary.deposit || 0;
+      credit += parsed.summary.creditFacility || 0;
+    }
+
     if ((parsed.stats.maximalDrawdownPct || 0) > maxDDPct) maxDDPct = parsed.stats.maximalDrawdownPct;
     if ((parsed.stats.maximalDrawdown || 0) > maxDD) maxDD = parsed.stats.maximalDrawdown;
     if ((parsed.stats.largestProfit || 0) > largestProfit) largestProfit = parsed.stats.largestProfit;
